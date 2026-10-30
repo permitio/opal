@@ -3,6 +3,7 @@ import math
 import os
 import pathlib
 from collections import OrderedDict
+from functools import partial
 from typing import Awaitable, Callable, List, Optional, Set, Tuple, cast
 
 import pygit2
@@ -100,9 +101,9 @@ _clone_wait_clamp_logged = False
 _branch_refresh_requested: "OrderedDict[str, float]" = OrderedDict()
 _BRANCH_REFRESH_TRACKED_MAX = 10_000
 
-# Sync requests still being published after the request that made them
-# stopped waiting (its hold ran out first). Referenced here until they end:
-# the event loop keeps only weak references to tasks.
+# Sync requests being published, some after the request that made them stopped
+# waiting (its hold ran out, or it was cancelled). Referenced here until they
+# end: the event loop keeps only weak references to tasks.
 _branch_refresh_publishes: "Set[asyncio.Future[None]]" = set()
 
 _CLONE_WAIT_METRIC = "opal_server.scopes.policy_clone_wait"
@@ -215,13 +216,38 @@ def _record_branch_refresh(scope_id: str, now: float) -> Optional[float]:
     return previous
 
 
-def _branch_refresh_published(publish: "asyncio.Future[None]") -> None:
-    _branch_refresh_publishes.discard(publish)
-    if not publish.cancelled():
-        # Retrieved, so asyncio does not report it as unhandled: the request
-        # that awaited it has reported it, or stopped waiting with its claim
-        # kept, as for a publish that never returns.
-        publish.exception()
+def _branch_refresh_failed(
+    scope_id: str, claim: float, previous: Optional[float], exc: BaseException
+) -> None:
+    """A sync request's publish raised: give its claim back, count and log it.
+
+    Only this request's own claim, and the one it replaced is restored:
+    a newer claim is another request's sync, and the requests riding an
+    older one are not this publish's to release.
+    """
+    if _branch_refresh_requested.get(scope_id) == claim:
+        if previous is None:
+            del _branch_refresh_requested[scope_id]
+        else:
+            _branch_refresh_requested[scope_id] = previous
+    metrics.increment(_BRANCH_REFRESH_METRIC, tags={"outcome": "publish_failed"})
+    logger.warning(
+        "Scope {scope_id} has no branch in its clone, and its sync could "
+        "not be requested: {exc}",
+        scope_id=scope_id,
+        exc=redact_url_in_text(repr(exc)),
+    )
+
+
+def _abandoned_publish_done(
+    scope_id: str,
+    claim: float,
+    previous: Optional[float],
+    publish: "asyncio.Future[None]",
+) -> None:
+    """A publish nobody is waiting for any more ended."""
+    if not publish.cancelled() and publish.exception() is not None:
+        _branch_refresh_failed(scope_id, claim, previous, publish.exception())
 
 
 async def _branch_wait_claim(
@@ -238,7 +264,10 @@ async def _branch_wait_claim(
 
     The publish is bounded by the request's ``deadline``: a slow broadcast
     backend must not hold the request past its hold. On a timeout the claim
-    is kept, since the publish may still go out.
+    is kept, since the publish may still go out; if it then raises, the claim
+    is given back and the failure reported then. "Timeout" means the publish
+    was still running when the hold ended, which includes a clone that landed
+    on the hold's last poll.
 
     A sync that cannot be requested is the same no, and gives this request's
     claim back: holding would wait for a fetch nobody asked for, and keeping
@@ -255,12 +284,21 @@ async def _branch_wait_claim(
         return claim  # rides the sync another request asked for
     previous = _record_branch_refresh(scope_id, now)
     loop = asyncio.get_running_loop()
+    publish = asyncio.ensure_future(request_refresh())
+    _branch_refresh_publishes.add(publish)
+    publish.add_done_callback(_branch_refresh_publishes.discard)
+    abandoned = partial(_abandoned_publish_done, scope_id, now, previous)
     try:
-        publish = asyncio.ensure_future(request_refresh())
-        _branch_refresh_publishes.add(publish)
-        publish.add_done_callback(_branch_refresh_published)
-        await asyncio.wait_for(asyncio.shield(publish), deadline - loop.time())
-    except asyncio.TimeoutError:
+        # asyncio.wait neither cancels the publish nor raises its exception,
+        # so a TimeoutError of the publish's own is a failed publish.
+        done, _ = await asyncio.wait(
+            {publish}, timeout=max(0.0, deadline - loop.time())
+        )
+    except asyncio.CancelledError:
+        publish.add_done_callback(abandoned)
+        raise
+    if not done:
+        publish.add_done_callback(abandoned)
         metrics.increment(_BRANCH_REFRESH_METRIC, tags={"outcome": "publish_timeout"})
         logger.warning(
             "Scope {scope_id} has no branch in its clone, and its sync request "
@@ -268,22 +306,10 @@ async def _branch_wait_claim(
             scope_id=scope_id,
         )
         return claim
+    try:
+        publish.result()
     except Exception as exc:
-        # Only this request's own claim, and the one it replaced is restored:
-        # a newer claim is another request's sync, and the requests riding an
-        # older one are not this publish's to release.
-        if _branch_refresh_requested.get(scope_id) == now:
-            if previous is None:
-                del _branch_refresh_requested[scope_id]
-            else:
-                _branch_refresh_requested[scope_id] = previous
-        metrics.increment(_BRANCH_REFRESH_METRIC, tags={"outcome": "publish_failed"})
-        logger.warning(
-            "Scope {scope_id} has no branch in its clone, and its sync could "
-            "not be requested: {exc}",
-            scope_id=scope_id,
-            exc=redact_url_in_text(repr(exc)),
-        )
+        _branch_refresh_failed(scope_id, now, previous, exc)
         return None
     metrics.increment(_BRANCH_REFRESH_METRIC, tags={"outcome": "requested"})
     logger.info(

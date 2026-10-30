@@ -166,8 +166,10 @@ def bed(tmp_path, monkeypatch):
     monkeypatch.setattr(scopes_api, "_CLONE_WAIT_POLL_SECONDS", 0.02)
     monkeypatch.setattr(scopes_api, "_clone_wait_inflight", 0)
     monkeypatch.setattr(scopes_api, "_branch_refresh_requested", OrderedDict())
+    monkeypatch.setattr(scopes_api, "_branch_refresh_publishes", set())
     yield
     assert scopes_api._clone_wait_inflight == 0, "a wait slot leaked"
+    assert not scopes_api._branch_refresh_publishes, "a publish was left running"
 
 
 @pytest.fixture
@@ -1132,6 +1134,17 @@ def test_put_stores_the_record_exactly_as_sent(monkeypatch):
 # --- review round 3: what a hold costs, a missing clone, pruning, claims -----
 
 
+async def _until(condition, timeout=5.0):
+    """Polls ``condition`` under a deadline, so a regression fails, not
+    hangs."""
+
+    async def poll():
+        while not condition():
+            await asyncio.sleep(0.001)
+
+    await asyncio.wait_for(poll(), timeout)
+
+
 def _route_app(scopes, pubsub, service):
     app = FastAPI()
     app.include_router(
@@ -1314,7 +1327,7 @@ async def test_a_publish_that_does_not_return_is_bounded_by_the_hold(
     loop = asyncio.get_running_loop()
     started = loop.time()
 
-    with pytest.raises(BranchHeadNotFoundError):
+    with pytest.raises(BranchHeadNotFoundError) as raised:
         await asyncio.wait_for(
             scopes_api._make_bundle_waiting_for_clone(
                 fetcher, None, "live", request_refresh=never_returns
@@ -1324,6 +1337,9 @@ async def test_a_publish_that_does_not_return_is_bounded_by_the_hold(
 
     assert loop.time() - started < 2 * WAIT
     assert _refreshes(emitted) == ["publish_timeout"]
+    # Still a wait, reported as one.
+    assert _waits(emitted) == [{"outcome": "timeout", "for": "branch"}]
+    assert raised.value.waited_seconds >= 0.9 * WAIT
     assert "live" in scopes_api._branch_refresh_requested
     [publish] = scopes_api._branch_refresh_publishes  # still referenced
     stuck.set()
@@ -1369,8 +1385,7 @@ async def test_a_failed_publish_gives_back_only_its_own_claim(monkeypatch, emitt
     pending = asyncio.ensure_future(
         scopes_api._branch_wait_claim("live", fails_late, now, WAIT, now + WAIT)
     )
-    while claims.get("live") != now:  # its claim is recorded
-        await asyncio.sleep(0)
+    await _until(lambda: claims.get("live") == now)  # its claim is recorded
     claims["live"] = now + 1.0  # a newer request's
     release.set()
     assert await pending is None
@@ -1412,3 +1427,201 @@ async def test_a_branch_that_lands_as_the_claim_goes_is_served(monkeypatch, emit
 
     assert bundle.hash == "head"
     assert _waits(emitted) == [{"outcome": "served", "for": "branch"}]
+
+
+def _hold(fetcher, request_refresh):
+    return asyncio.ensure_future(
+        scopes_api._make_bundle_waiting_for_clone(
+            fetcher, None, "live", request_refresh=request_refresh
+        )
+    )
+
+
+async def _not_asked():
+    raise AssertionError("a rider requested a sync")
+
+
+@pytest.mark.asyncio
+async def test_a_publish_that_fails_after_its_hold_is_given_back_and_reported(
+    monkeypatch, emitted
+):
+    """Mutation: only retrieving the exception (as before) leaves the claim for
+    the whole interval, with every miss riding a sync that was never sent, and
+    nothing counted or logged."""
+    release = asyncio.Event()
+
+    async def fails_late():
+        await release.wait()
+        raise ConnectionError("no local subscriber")
+
+    _script(monkeypatch, _missing)
+    fetcher = GitPolicyFetcher(Path("/unused"), "live", _scope().policy)
+
+    with pytest.raises(BranchHeadNotFoundError):
+        await _hold(fetcher, fails_late)
+    assert "live" in scopes_api._branch_refresh_requested
+
+    with capture_records() as logs:
+        release.set()
+        await _until(lambda: "publish_failed" in _refreshes(emitted))
+
+    assert "live" not in scopes_api._branch_refresh_requested
+    assert _refreshes(emitted) == ["publish_timeout", "publish_failed"]
+    assert [r for r in logs.emitted if r["level"].name == "WARNING"]
+
+
+@pytest.mark.asyncio
+async def test_a_publish_that_raises_timeout_error_itself_is_a_failed_publish(
+    monkeypatch, emitted
+):
+    """Mutation: `wait_for` (as before) takes it for the hold running out on
+    3.11+: the claim is kept and the request held for a sync never sent."""
+
+    async def times_out():
+        raise TimeoutError("the broadcast backend timed out")
+
+    _script(monkeypatch, _missing)
+    fetcher = GitPolicyFetcher(Path("/unused"), "live", _scope().policy)
+
+    with pytest.raises(BranchHeadNotFoundError) as raised:
+        await _hold(fetcher, times_out)
+
+    assert raised.value.waited_seconds == 0.0
+    assert _refreshes(emitted) == ["publish_failed"]
+    assert "live" not in scopes_api._branch_refresh_requested
+
+
+@pytest.mark.asyncio
+async def test_riders_of_a_failed_publish_are_released_when_it_restores_a_claim(
+    monkeypatch, emitted
+):
+    """The failed publish puts back the older claim it replaced, so the entry
+    is there, but older than the claim its riders hold for.
+
+    Mutation: releasing only on `current is None` holds the rider until its
+    deadline.
+    """
+    claims = scopes_api._branch_refresh_requested
+    loop = asyncio.get_running_loop()
+    # Older than the fixture's 60 s interval: the first miss requests a sync.
+    seeded = claims["live"] = loop.time() - 120.0
+    release = asyncio.Event()
+
+    async def fails_when_released():
+        await release.wait()
+        raise ConnectionError("no local subscriber")
+
+    _script(monkeypatch, _missing)
+    fetcher = GitPolicyFetcher(Path("/unused"), "live", _scope().policy)
+
+    first = _hold(fetcher, fails_when_released)
+    await _until(lambda: claims["live"] != seeded)
+    rider = _hold(fetcher, _not_asked)
+    await _until(lambda: scopes_api._clone_wait_inflight == 1)
+    release.set()
+
+    with pytest.raises(BranchHeadNotFoundError):
+        await first
+    with pytest.raises(BranchHeadNotFoundError) as raised:
+        await rider
+
+    assert claims["live"] == seeded
+    assert raised.value.waited_seconds < 0.6 * WAIT
+    assert _waits(emitted) == [{"outcome": "unrequested", "for": "branch"}]
+
+
+@pytest.mark.asyncio
+async def test_a_newer_claim_does_not_release_a_request_holding_for_an_older_one(
+    monkeypatch, emitted
+):
+    """An interval shorter than the wait: a later miss records a claim of its
+    own, and the sync the first request holds for did go out.
+
+    Mutation: releasing on `current != claim` ends the first request
+    `unrequested`.
+    """
+    monkeypatch.setattr(
+        opal_server_config, "SCOPES_POLICY_BRANCH_REFRESH_INTERVAL", WAIT / 3
+    )
+    claims = scopes_api._branch_refresh_requested
+    loop = asyncio.get_running_loop()
+    requested = []
+
+    async def publishes():
+        requested.append(loop.time())
+
+    _script(monkeypatch, _missing)
+    fetcher = GitPolicyFetcher(Path("/unused"), "live", _scope().policy)
+
+    first = _hold(fetcher, publishes)
+    await _until(lambda: requested)
+    claimed = claims["live"]
+    await _until(lambda: loop.time() - claimed >= WAIT / 3)
+    later = _hold(fetcher, publishes)
+
+    for held in (first, later):
+        with pytest.raises(BranchHeadNotFoundError):
+            await held
+
+    assert len(requested) == 2
+    assert _waits(emitted) == [{"outcome": "timeout", "for": "branch"}] * 2
+
+
+@pytest.mark.asyncio
+async def test_an_in_loop_publish_is_bounded_by_the_clone_waits_deadline(
+    monkeypatch, emitted
+):
+    """Mutation: passing a later deadline to the in-loop `_branch_wait_claim`
+    holds the request past the clone wait's budget."""
+    stuck = asyncio.Event()
+
+    async def never_returns():
+        await stuck.wait()
+
+    _script(monkeypatch, _populating, _missing)
+    fetcher = GitPolicyFetcher(Path("/unused"), "live", _scope().policy)
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+
+    with pytest.raises(BranchHeadNotFoundError):
+        await asyncio.wait_for(_hold(fetcher, never_returns), 5 * WAIT)
+
+    assert loop.time() - started < 2 * WAIT
+    assert _refreshes(emitted) == ["publish_timeout"]
+    [publish] = scopes_api._branch_refresh_publishes
+    stuck.set()
+    await publish
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fails", [False, True])
+async def test_a_request_cancelled_in_its_publish(monkeypatch, emitted, fails):
+    """The client goes away while the sync request is being published: the
+    publish still ends, and the claim stands unless it then fails.
+
+    Mutation: not watching the publish on cancellation leaves a late failure
+    unreported, with the claim kept.
+    """
+    release = asyncio.Event()
+
+    async def publishes():
+        await release.wait()
+        if fails:
+            raise ConnectionError("no local subscriber")
+
+    _script(monkeypatch, _missing)
+    fetcher = GitPolicyFetcher(Path("/unused"), "live", _scope().policy)
+    held = _hold(fetcher, publishes)
+    await _until(lambda: scopes_api._branch_refresh_publishes)
+
+    held.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await held
+    assert "live" in scopes_api._branch_refresh_requested
+    assert scopes_api._clone_wait_inflight == 0
+
+    release.set()
+    await _until(lambda: not scopes_api._branch_refresh_publishes)
+
+    assert ("live" in scopes_api._branch_refresh_requested) is not fails
+    assert _refreshes(emitted) == (["publish_failed"] if fails else [])
