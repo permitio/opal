@@ -1983,8 +1983,16 @@ class GitPolicyFetcher(PolicyFetcher):
                                 f"Fetch completed: {redact_url(self._source.url)}"
                             )
 
-                        # New commits might be present because of a previous fetch made by another scope
-                        await self._notify_on_changes(repo)
+                        # New commits might be present because of a previous fetch made by another scope.
+                        # Skipped when this sync rode another's fetch for a
+                        # branch the clone lacks (_should_fetch): nothing can
+                        # have changed for a branch the clone does not have,
+                        # and an ERROR for it on every server per coalesced
+                        # request is noise.
+                        if should_fetch or RepoInterface.has_remote_branch(
+                            repo, self._source.branch, self._remote
+                        ):
+                            await self._notify_on_changes(repo)
                         if should_fetch:
                             # Housekeeping for the pack that fetch just wrote:
                             # marked here, repacked at the end of the pass.

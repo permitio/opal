@@ -1050,6 +1050,9 @@ async def test_a_pass_that_does_not_fetch_leaves_the_entry_alone(tmp_path, monke
     class _Repo:
         remotes = {}
 
+        def lookup_reference(self, name):  # the branch is in the clone
+            return name
+
     monkeypatch.setattr(fetcher, "_discover_repository", lambda path: True)
     monkeypatch.setattr(fetcher, "_get_valid_repo", lambda: _Repo())
 

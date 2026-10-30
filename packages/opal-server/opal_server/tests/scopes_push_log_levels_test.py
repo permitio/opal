@@ -336,6 +336,38 @@ async def test_already_fetched_line_is_debug_and_missing_branch_line_stays_info(
 
 
 @pytest.mark.asyncio
+async def test_a_coalesced_sync_of_a_missing_branch_logs_no_error(
+    tmp_path, clear_fetcher_caches
+):
+    """The whole sync, not only _should_fetch: one that rides a later fetch for
+    a branch the clone lacks logs nothing at ERROR, since every server runs it
+    once per sync a bundle request asks for.
+
+    Mutation: notifying regardless of the skipped fetch logs "Did not find
+    target branch on remote" at ERROR.
+    """
+    remote = git.Repo.init(tmp_path / "remote", initial_branch="main")
+    _commit(remote, "policy/a.rego", "package a\n")
+    url = str(tmp_path / "remote")
+    await GitPolicyFetcher(
+        tmp_path / "opal", "warm", _source(url=url)
+    ).fetch_and_notify_on_changes()  # clones
+    missing = _source(url=url)
+    missing.branch = "no-such-branch"
+    fetcher = GitPolicyFetcher(tmp_path / "opal", SCOPE_ID, missing)
+    asked = datetime.datetime.now()
+    GitPolicyFetcher.repos_last_fetched[
+        fetcher._source_id
+    ] = asked + datetime.timedelta(seconds=1)
+
+    with capture_records() as logs:
+        await fetcher.fetch_and_notify_on_changes(req_time=asked)
+
+    assert starting_with(logs.emitted, "Target branch was not found")
+    assert not _opal_records(logs.emitted, "ERROR")
+
+
+@pytest.mark.asyncio
 async def test_hinted_hash_line_stays_info(tmp_path, clear_fetcher_caches):
     """A hinted commit absent from the clone triggers a fetch, at INFO."""
     remote = git.Repo.init(tmp_path / "remote", initial_branch="main")
