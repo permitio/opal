@@ -1240,17 +1240,20 @@ async def test_a_pod_without_the_clone_answers_503_once_the_hold_runs_out(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("prune", [True, False])
 async def test_a_branch_deleted_on_the_remote_leaves_the_clone(
-    tmp_path, clear_fetcher_caches
+    tmp_path, clear_fetcher_caches, monkeypatch, prune
 ):
-    """A fetch prunes the remote-tracking ref of a branch the remote deleted,
-    so the scope that names it misses (and a bundle request waits for the
-    branch) instead of being served the deleted branch's last head. The scopes'
-    own refs/heads/scopes/* refs are not pruned.
+    """With SCOPES_GIT_FETCH_PRUNE on, a fetch prunes the remote-tracking ref
+    of a branch the remote deleted, so the scope that names it misses (and a
+    bundle request waits for the branch) instead of being served the deleted
+    branch's last head. The scopes' own refs/heads/scopes/* refs are not
+    pruned.
 
     Mutation: fetching without prune keeps refs/remotes/origin/env2, and its
     stale head is served.
     """
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_PRUNE", prune)
     origin, url = _shared_bed(tmp_path)
     _push_branch(origin, "env2", "env2")
     warm = _git_scope("warm", url, "main")
@@ -1279,9 +1282,14 @@ async def test_a_branch_deleted_on_the_remote_leaves_the_clone(
     await service.sync_scope(scope_id="warm", force_fetch=True)
 
     after = refs()
-    assert "refs/remotes/origin/env2" not in after
     assert "refs/remotes/origin/main" in after
     assert scope_refs <= after, "a scope's own ref was pruned"
+    if not prune:
+        # The default: the stale ref stays, and is what a bundle is built from.
+        assert "refs/remotes/origin/env2" in after
+        GitPolicyFetcher(tmp_path, "moved", moved.policy).make_bundle()
+        return
+    assert "refs/remotes/origin/env2" not in after
     with pytest.raises(BranchHeadNotFoundError):
         GitPolicyFetcher(tmp_path, "moved", moved.policy).make_bundle()
 

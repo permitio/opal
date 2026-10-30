@@ -1929,15 +1929,17 @@ class GitPolicyFetcher(PolicyFetcher):
                             # the request already satisfies it.
                             fetch_started = datetime.datetime.now()
                             try:
-                                # Pruned, so a branch deleted on the remote
-                                # leaves the clone: otherwise its stale
-                                # remote-tracking ref is served as the head.
-                                # Only refs/remotes/<remote>/* are pruned; the
-                                # scopes' refs/heads/scopes/* stay.
+                                # Pruned when configured, so a branch deleted
+                                # on the remote leaves the clone: otherwise its
+                                # stale remote-tracking ref is served as the head.
                                 await run_in_git_executor(
                                     repo.remotes[self._remote].fetch,
                                     callbacks=self._auth_callbacks,
-                                    prune=FetchPrune.PRUNE,
+                                    prune=(
+                                        FetchPrune.PRUNE
+                                        if opal_server_config.SCOPES_GIT_FETCH_PRUNE
+                                        else FetchPrune.UNSPECIFIED
+                                    ),
                                     timeout=opal_server_config.SCOPES_GIT_FETCH_TIMEOUT,
                                     busy_key=self._source_id,
                                 )

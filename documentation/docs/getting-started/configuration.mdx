@@ -509,6 +509,12 @@ Default: `40`
 
 Maximum number of in-flight scope git operations (live plus lingering timed-out) allowed to hold a daemon thread at once, counted GLOBALLY across all sources. It is a last-resort ceiling on thread growth when remotes hang, not a per-source guard — that is handled separately, by skipping a source that already has an operation in flight. Once the ceiling is reached, new git ops are refused (logged, and retried next cycle) for EVERY scope, healthy ones included, until enough threads drain; with remotes that never return, that state can persist. Set it well above SCOPES_GIT_MAX_WORKERS and alert on the refusal log (0 = no cap; a negative value is clamped to 0 and also means no cap, at the cost of unbounded thread growth during an outage).
 
+#### OPAL_SCOPES_GIT_FETCH_PRUNE
+
+Default: `False`
+
+Whether a scope fetch prunes: a branch deleted on the remote then leaves the clone, so a scope naming it misses instead of being served the deleted branch's last head. Off by default: a pruned fetch compares every local and remote ref, which on a clone with tens of thousands of branches adds seconds per fetch under the lock every scope on that clone shares (about 2 s on 5.5 s at 61,000 refs). Only refs/remotes/<remote>/* are pruned; the scopes' refs/heads/scopes/* stay.
+
 #### OPAL_SCOPES_GIT_BACKOFF_BASE_SECONDS
 
 Default: `10.0`

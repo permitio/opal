@@ -236,6 +236,17 @@ class OpalServerConfig(Confi):
         "bounds how many such threads accumulate. Either way one unreachable repo "
         "never blocks boot or other scopes (0 = no timeout).",
     )
+    SCOPES_GIT_FETCH_PRUNE = confi.bool(
+        "SCOPES_GIT_FETCH_PRUNE",
+        False,
+        description="Whether a scope fetch prunes: a branch deleted on the remote "
+        "then leaves the clone, so a scope naming it misses instead of being "
+        "served the deleted branch's last head. Off by default: a pruned fetch "
+        "compares every local and remote ref, which on a clone with tens of "
+        "thousands of branches adds seconds per fetch under the lock every scope "
+        "on that clone shares (about 2 s on 5.5 s at 61,000 refs). Only "
+        "refs/remotes/<remote>/* are pruned; the scopes' refs/heads/scopes/* stay.",
+    )
     SCOPES_GIT_MAX_WORKERS = confi.int(
         "SCOPES_GIT_MAX_WORKERS",
         # Worst-case OS-thread count during an outage is this limit plus the
