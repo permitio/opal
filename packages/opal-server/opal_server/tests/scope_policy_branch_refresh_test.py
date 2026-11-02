@@ -1697,9 +1697,20 @@ def test_only_a_written_ref_says_the_clone_has_refs(tmp_path, layout, expected):
 
 
 @pytest.mark.asyncio
-async def test_a_repoint_to_a_head_with_no_policy_still_notifies(tmp_path, monkeypatch):
-    """Mutation: dropping the root topic leaves the clients on the old repo's
-    policy, deleted files included."""
+@pytest.mark.parametrize(
+    "notify_all, topics, directories",
+    [(True, ["policy:."], ["."]), (False, [], [])],
+    ids=["repoint", "first-sync"],
+)
+async def test_only_a_repoint_to_a_head_with_no_policy_notifies(
+    tmp_path, monkeypatch, notify_all, topics, directories
+):
+    """A repoint must drop the old repo's policy, deleted files included; an
+    ordinary first sync of such a head has nothing to tell.
+
+    Mutation: dropping the root topic leaves a repoint's clients on the old
+    policy; dropping the guard on notify_all publishes it on a first sync.
+    """
     source = _scope().policy
     clone = GitPolicyFetcher.repo_clone_path(tmp_path, source)
     clone.mkdir(parents=True)
@@ -1711,21 +1722,24 @@ async def test_a_repoint_to_a_head_with_no_policy_still_notifies(tmp_path, monke
         sent.append(notification)
 
     monkeypatch.setattr(NewCommitsCallbacks, "trigger_notification", trigger)
-    callbacks = NewCommitsCallbacks(tmp_path, "live", source, None, notify_all=True)
-    await callbacks.on_update(head, head)
+    callbacks = NewCommitsCallbacks(
+        tmp_path, "live", source, None, notify_all=notify_all
+    )
+    await callbacks.on_update(head if notify_all else None, head)
     [notification] = sent
-    assert notification.topics == ["policy:."]
-    assert notification.update.changed_directories == ["."]
+    assert notification.topics == topics
+    assert notification.update.changed_directories == directories
 
 
 def test_a_branch_change_on_one_repository_is_a_repoint(monkeypatch):
-    """The branches of a repository share a clone, so the source id stays the
-    same.
+    """With one shard the branches of a repository share a clone, so the source
+    id stays the same.
 
     Mutation: comparing only the source id neither forces the fetch nor tells
     the clients, and an already cached branch serves its old head.
     """
     monkeypatch.setattr(scopes_api, "verify_private_key_or_throw", lambda s: None)
+    monkeypatch.setattr(opal_server_config, "SCOPES_REPO_CLONES_SHARDS", 1)
     old = _git_scope("live", "https://git/a.git", "one")
     new = _git_scope("live", "https://git/a.git", "two")
     repo = FakeScopeRepository([old])
@@ -1994,7 +2008,11 @@ def test_a_put_that_loses_the_repoint_flag_says_so(monkeypatch, fails, source):
         )
 
     assert resp.status_code == 500
-    warned = [r for r in logs.emitted if r["message"].startswith("Repoint of scope")]
+    warned = [
+        r
+        for r in logs.emitted
+        if r["level"].name == "WARNING" and r["message"].startswith("Repoint of scope")
+    ]
     assert len(warned) == (0 if source == "same" else 1)
 
 
