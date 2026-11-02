@@ -1795,7 +1795,7 @@ async def test_riders_of_a_failed_publish_are_released_when_it_restores_a_claim(
     first = _hold(fetcher, fails_when_released)
     await _until(lambda: claims["live"] != seeded)
     rider = _hold(fetcher, _not_asked)
-    await _until(lambda: scopes_api._clone_wait_inflight == 1)
+    await _until(lambda: scopes_api._clone_wait_inflight == 2)
     release.set()
 
     with pytest.raises(BranchHeadNotFoundError):
