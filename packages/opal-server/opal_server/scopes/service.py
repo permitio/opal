@@ -166,12 +166,13 @@ class ScopesService:
     ) -> Optional[str]:
         """Sync one scope's policy source.
 
-        ``notify_all`` is set by a repoint (PUT /scopes with a changed source):
-        once the sync has the head, the scope's clients are told to fetch every
-        directory, even when the head equals what this clone last recorded for
-        the scope. Without it a move back to a repository the scope used before,
-        or a stale PUT followed by the corrective one, notifies nobody, and a
-        client that fetched in between keeps that policy until the next commit.
+        ``notify_all`` is set by a repoint (PUT /scopes that changes the source
+        or its branch): once the sync has the head, the scope's clients are told
+        to fetch every directory, even when the head equals what this clone last
+        recorded for the scope. Without it a move back to a repository the scope
+        used before, or a stale PUT followed by the corrective one, notifies
+        nobody, and a client that fetched in between keeps that policy until the
+        next commit.
 
         ``honor_backoff`` marks this call as pass-originated, or as the sync
         a bundle request asked for because the scope's branch was missing from

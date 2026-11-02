@@ -417,7 +417,10 @@ async def _make_bundle_waiting_for_clone(
     cancelled, error or unrequested (a branch wait whose sync was never
     requested, because its publish failed locally; see
     ``_branch_wait_claim``), and with what it waited for (``for``: clone or
-    branch, a missing or just-starting clone included).
+    branch, a missing or just-starting clone included). A first miss whose own
+    sync could not be requested (its publish failed, or too many are pending)
+    is not a wait: it holds a slot while it publishes, but is counted only in
+    ``policy_branch_refresh``.
     The 503 or 409 the caller shapes carries ``waited_seconds`` and
     ``client_disconnected``.
     """
@@ -750,8 +753,8 @@ def init_scope_router(
             if isinstance(scope_in.policy, GitPolicyScopeSource)
             else None
         )
-        # A clone can hold several repositories' scopes, and one repository's
-        # branches share a clone, so the source id does not see a branch change.
+        # The source id names a clone, and with the default single shard every
+        # branch of a repository shares one, so it does not see a branch change.
         repointed = old_source_id != new_source_id or (
             isinstance(scope_in.policy, GitPolicyScopeSource)
             and old_branch is not None
@@ -784,8 +787,8 @@ def init_scope_router(
             logger.info(f"Sync scope: {scope_in.scope_id}{force_fetch_str}")
 
             # All server replicas (leaders) should sync the scope. A repoint (the
-            # source changed, or there was no readable previous record to compare
-            # with) also tells their syncs to notify the scope's clients whatever
+            # source or branch changed, or there was no readable previous record)
+            # also tells their syncs to notify the scope's clients whatever
             # the clone's scope ref says: a clone of a repository the scope used
             # before still holds the ref it had then (a repoint leaves the old
             # clone on disk), and when the branch head equals it the sync would
