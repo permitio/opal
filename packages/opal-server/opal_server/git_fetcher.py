@@ -3163,11 +3163,22 @@ class GitPolicyFetcher(PolicyFetcher):
         except FileNotFoundError:
             return False
 
+    def branch_can_be_a_ref(self) -> bool:
+        """Whether the scope's branch name can name a ref at all.
+
+        One that cannot (``x~1``, say) is never brought by a fetch, so a
+        bundle request does not wait for it.
+        """
+        return reference_is_valid_name(
+            f"refs/remotes/{self._remote}/{self._source.branch}"
+        )
+
     def has_branch_ref(self) -> bool:
         """Whether the clone has the scope's remote-tracking ref: one ref
         lookup, which is what a held bundle request polls before building a
-        bundle. False when there is no clone (yet) either, and for a branch
-        name that cannot be a ref; make_bundle is what tells the reasons apart.
+        bundle. False when there is no clone (yet) either; make_bundle is what
+        tells the reasons apart. Only for a branch that can be a ref
+        (branch_can_be_a_ref): the lookup raises InvalidSpecError otherwise.
 
         A fresh handle, for the reason _get_current_branch_head gives.
         """
@@ -3179,8 +3190,6 @@ class GitPolicyFetcher(PolicyFetcher):
             return RepoInterface.has_remote_branch(
                 repo, self._source.branch, self._remote
             )
-        except pygit2.InvalidSpecError:
-            return False
         finally:
             repo.free()
 

@@ -1363,18 +1363,22 @@ def test_a_no_clone_hold_keeps_holding_through_a_half_made_clone(monkeypatch, em
 
 
 @pytest.mark.asyncio
-async def test_a_branch_name_that_cannot_be_a_ref_keeps_its_409(
-    tmp_path, emitted, clear_fetcher_caches
+@pytest.mark.parametrize("cloned, status", [(True, 409), (False, 503)])
+async def test_a_branch_name_that_cannot_be_a_ref_is_answered_at_once(
+    tmp_path, emitted, clear_fetcher_caches, cloned, status
 ):
-    """The poll's lookup raises for such a name, where a make_bundle answers a
-    miss.
+    """``x~1`` parses as a revision, so make_bundle answers a miss for it, but
+    no fetch can ever bring it: it cannot name a ref. The route answers what
+    it answered before the wait existed, at once, and asks no server for a
+    sync, which would fail on the name on every server.
 
-    Mutation: letting InvalidSpecError out of has_branch_ref ends the hold as
-    `error`, with the retryable 503.
+    Mutation: offering such a name the branch wait holds the request for the
+    whole wait and publishes a sync request.
     """
     _, url = _shared_bed(tmp_path)
     warm = _git_scope("warm", url, "main")
-    scopes = FakeScopeRepository([warm, _git_scope("moved", url, "x~1")])
+    moved_url = url if cloned else str(tmp_path / "never-cloned")
+    scopes = FakeScopeRepository([warm, _git_scope("moved", moved_url, "x~1")])
     pubsub = RecordingPubSub()
     service = ScopesService(base_dir=tmp_path, scopes=scopes, pubsub_endpoint=pubsub)
     await service.sync_scope(scope_id="warm")
@@ -1382,8 +1386,9 @@ async def test_a_branch_name_that_cannot_be_a_ref_keeps_its_409(
     async with _route_app(scopes, pubsub, service) as client:
         resp = await client.get("/scopes/moved/policy")
 
-    assert resp.status_code == 409, resp.text
-    assert _waits(emitted) == [{"outcome": "timeout", "for": "branch"}]
+    assert resp.status_code == status, resp.text
+    assert _waits(emitted) == []
+    assert pubsub.syncs() == []
 
 
 @pytest.mark.asyncio

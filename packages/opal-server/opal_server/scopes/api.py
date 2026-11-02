@@ -999,8 +999,12 @@ def init_scope_router(
                 base_hash,
                 scope_id,
                 request,
+                # No branch wait for a name no fetch can bring: the request
+                # gets its answer at once, and no server is asked to sync it.
                 request_refresh=(
-                    _request_refresh if pubsub_endpoint is not None else None
+                    _request_refresh
+                    if pubsub_endpoint is not None and fetcher.branch_can_be_a_ref()
+                    else None
                 ),
             )
         except CloneNotPopulatedError as exc:
