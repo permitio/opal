@@ -169,6 +169,8 @@ WAIT = 0.3
 def bed(tmp_path, monkeypatch):
     """Wait and poll tuned to test timescales; per-process state reset."""
     monkeypatch.setattr(opal_server_config, "BASE_DIR", str(tmp_path))
+    # The tests assume a repository's branches share a clone.
+    monkeypatch.setattr(opal_server_config, "SCOPES_REPO_CLONES_SHARDS", 1)
     monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", WAIT)
     monkeypatch.setattr(
         opal_server_config, "SCOPES_POLICY_BRANCH_REFRESH_INTERVAL", 60.0
@@ -1739,7 +1741,6 @@ def test_a_branch_change_on_one_repository_is_a_repoint(monkeypatch):
     the clients, and an already cached branch serves its old head.
     """
     monkeypatch.setattr(scopes_api, "verify_private_key_or_throw", lambda s: None)
-    monkeypatch.setattr(opal_server_config, "SCOPES_REPO_CLONES_SHARDS", 1)
     old = _git_scope("live", "https://git/a.git", "one")
     new = _git_scope("live", "https://git/a.git", "two")
     repo = FakeScopeRepository([old])
