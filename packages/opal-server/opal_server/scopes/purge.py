@@ -26,16 +26,31 @@ the purge driven by an actual scope delete/repoint.
 There is therefore NO reconciliation of any kind in this PR, and exactly ONE
 path RECLAIMS a clone dir — removes it and leaves it removed: the best-effort
 local floor ``ScopesService.delete_scope`` spawns on the worker serving the
-DELETE.
+DELETE. That local floor is master's behaviour (master removed the dir
+inline there, with no broadcast involved), kept so a dropped broadcast does not
+regress against the merge base.
 
 Two other ``rmtree`` sites exist and are not reclamation: ``git_fetcher``'s
 invalid-repo recovery and ``_clone``'s partial-dir wipe both delete-and-replace
 a dir they are about to re-create. Both run under ``lock_source`` and target
 ``self._repo_path``, derived from ``GitPolicyFetcher.source_id(source)`` — a
-sha256 digest of the URL, never wire input. An audit of "can caller-controlled
-input reach an rmtree?" has to account for all three. That is
-master's behaviour (master removed it inline there, with no broadcast involved),
-kept so a dropped broadcast does not regress against the merge base.
+sha256 digest of the URL, never wire input. A fourth runs only at process
+start, in the gunicorn master's preload before any worker exists:
+``git_fetcher.reclone_hung_scope_clones`` (off unless
+SCOPES_GIT_RECLONE_HUNG_ON_START) deletes clone dirs it LISTS from
+``git_sources``, so its targets come from the filesystem, not from
+``source_id(source)``; it deletes only real directories whose name matches
+``SOURCE_ID_RE`` and that have a hung-op marker, under the
+repack lock, and the preload's sync then re-creates them. The hung-op
+marker dirs beside the clones (``git_sources/<id>.hung``) are removed by
+``shutil.rmtree`` too, whatever the setting: by ``clear_hung_markers`` after a
+fetch or clone that succeeds within its timeout, by the sweep for markers
+whose clone is gone and after each hung clone it deletes, and on every start
+with the setting off. Their paths
+come either from ``hung_marker_dir(self._repo_path)`` or from a ``git_sources``
+listing whose name, less the ``.hung`` suffix, matches ``SOURCE_ID_RE``, so they
+never leave ``git_sources``. An audit of "can caller-controlled input reach an
+rmtree?" has to account for all four clone sites and these marker removals.
 
 What that leaves on disk, stated plainly because nothing else will reclaim it:
 
@@ -55,23 +70,14 @@ All three are PER-15612. The memory purge is unaffected by them: it is
 authorized by the leader's confirmation and is self-healing in both directions.
 """
 import asyncio
-import re
 from pathlib import Path
 from typing import Any, Optional
 
 from opal_common.logger import logger
 from opal_common.schemas.policy_source import GitPolicyScopeSource
 from opal_server.config import opal_server_config
-from opal_server.git_fetcher import GitPolicyFetcher, git_op_in_flight
+from opal_server.git_fetcher import SOURCE_ID_RE, GitPolicyFetcher, git_op_in_flight
 from pydantic import BaseModel, ValidationError
-
-# \Z (not $) so a trailing newline can't sneak past validation: in Python `$`
-# also matches just before a final "\n", so "<64hex>-0\n" would wrongly pass.
-# [0-9], not \d: for a `str` pattern \d is Unicode and also matches e.g. Arabic-
-# Indic digits. Containment is unaffected either way (the derived path stays
-# under base_dir and could not exist), but the id this validates is a sha256
-# hex digest + an ASCII shard index, so say that.
-_SOURCE_ID_RE = re.compile(r"\A[0-9a-f]{64}-[0-9]+\Z")
 
 
 def confined_clone_path(base_dir, source_id: str):
@@ -94,7 +100,7 @@ def confined_clone_path(base_dir, source_id: str):
     and an arbitrary ``repos`` key, and it is what makes the confinement
     property survive PER-15612 putting an rmtree back on this path.
     """
-    if not _SOURCE_ID_RE.match(source_id):
+    if not SOURCE_ID_RE.match(source_id):
         return None
     return str(GitPolicyFetcher.base_dir(Path(base_dir)) / source_id)
 

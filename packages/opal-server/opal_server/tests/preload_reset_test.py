@@ -28,7 +28,7 @@ def _logging_already_configured(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _stub_redis_layer(monkeypatch):
+def _stub_redis_layer(monkeypatch, preload_sandbox):
     """preload_scopes() evaluates ``ScopeRepository(RedisDB(...))`` before the
     stubbed ScopesService ever sees the arguments, so without this stub these
     unit tests construct a REAL redis client. That is wrong in itself, and on
@@ -45,7 +45,6 @@ def _stub_redis_layer(monkeypatch):
     where each file needs it.
     """
     monkeypatch.setattr(task_module, "RedisDB", lambda url: object())
-    monkeypatch.setattr(task_module, "ScopeRepository", lambda db: object())
     yield
 
 
