@@ -274,16 +274,21 @@ def test_a_branch_fetched_while_held_is_served(monkeypatch, emitted):
 
 
 def test_a_branch_that_never_arrives_gets_the_409_after_the_hold(monkeypatch, emitted):
+    """Mutation: logging the 409 without the exception's waited_seconds says
+    "after waiting 0.0s" for a request that was held."""
     pubsub = RecordingPubSub()
     calls = _script(monkeypatch, _missing)
 
-    resp = _client(pubsub).get("/scopes/live/policy")
+    with capture_records() as logs:
+        resp = _client(pubsub).get("/scopes/live/policy")
 
     assert resp.status_code == 409
     assert "retry-after" not in {k.lower() for k in resp.headers}
     assert len(calls) > 1, "the route never re-checked while holding"
     assert len(pubsub.syncs()) == 1
     assert _waits(emitted) == [{"outcome": "timeout", "for": "branch"}]
+    [line] = [m["message"] for m in logs.emitted if "non-retryable" in m["message"]]
+    assert _waited_figure(line) >= 0.9 * WAIT
 
 
 @pytest.mark.asyncio
@@ -455,7 +460,8 @@ def test_a_shed_request_neither_requests_a_sync_nor_uses_up_the_interval(
     calls = _script(monkeypatch, _missing, _ready)
     monkeypatch.setattr(scopes_api, "_clone_wait_inflight", 1)
     try:
-        resp = client.get("/scopes/live/policy")
+        with capture_records() as logs:
+            resp = client.get("/scopes/live/policy")
     finally:
         # The slot is held by "another request"; give it back either way so
         # the fixture's leak check points at a real leak.
@@ -465,6 +471,9 @@ def test_a_shed_request_neither_requests_a_sync_nor_uses_up_the_interval(
     assert len(calls) == 1
     assert not pubsub.syncs(), "a shed request requested a sync"
     assert _waits(emitted) == [{"outcome": "shed", "for": "branch"}]
+    # Mutation: a fixed "503" in the cap's line misreports the shed 409.
+    [line] = [m["message"] for m in logs.emitted if "-request cap" in m["message"]]
+    assert "branch wait" in line and "answering 409" in line, line
 
     _script(monkeypatch, _missing, _ready)
     assert client.get("/scopes/live/policy").status_code == 200
@@ -558,6 +567,25 @@ def test_a_re_recorded_claim_is_the_newest(monkeypatch):
     for n, scope_id in enumerate("abac"):
         scopes_api._record_branch_refresh(scope_id, float(n))
     assert list(scopes_api._branch_refresh_requested) == ["a", "c"]
+
+
+def test_the_failed_claims_are_bounded(monkeypatch, emitted):
+    """Claims whose publish failed after a newer claim replaced them.
+
+    Mutation: dropping the bound keeps every one of them for the life of the
+    worker.
+    """
+    monkeypatch.setattr(scopes_api, "_BRANCH_REFRESH_TRACKED_MAX", 3)
+    scopes_api._branch_refresh_requested["live"] = 99.0  # the newer claim
+    for n in range(5):
+        scopes_api._branch_refresh_failed(
+            "live", float(n), None, ConnectionError("no local subscriber")
+        )
+    assert list(scopes_api._branch_refresh_failed_claims) == [
+        ("live", 2.0),
+        ("live", 3.0),
+        ("live", 4.0),
+    ]
 
 
 # --- a repoint fetches and always notifies -------------------------------
@@ -1039,13 +1067,17 @@ async def test_a_coalesced_sync_finds_a_branch_another_scopes_fetch_brought(
     in the clone, so the skip is reached only for a branch the origin did not
     have after the request arrived. Here the sync after another scope's fetch
     finds its branch, at the origin's head, without fetching, and notifies its
-    clients. A fetch that started BEFORE the request does not count, nor does
-    one under way when the branch was pushed.
+    clients. It is the sync a bundle request asks for (``honor_backoff``),
+    which skips the notification only while the branch is still missing. A
+    fetch that started BEFORE the request does not count, nor does one under
+    way when the branch was pushed.
 
     Mutation: a fetch narrowed to the asking scope's branch fails the first
-    part; treating any earlier fetch as an answer fails the second; recording
-    a fetch's completion time instead of its start fails the third. Dropping
-    the coalescing is test_a_burst_for_a_missing_branch_costs_one_fetch's."""
+    part, and so does skipping that sync's notification whether or not the
+    branch is there; treating any earlier fetch as an answer fails the second;
+    recording a fetch's completion time instead of its start fails the third.
+    Dropping the coalescing is
+    test_a_burst_for_a_missing_branch_costs_one_fetch's."""
     origin, url = _shared_bed(tmp_path)
     scopes = FakeScopeRepository([_git_scope("warm", url, "main")])
     pubsub = RecordingPubSub()
@@ -1063,7 +1095,7 @@ async def test_a_coalesced_sync_finds_a_branch_another_scopes_fetch_brought(
     assert fetched_at > asked
     published = len(pubsub.published)
 
-    await service.sync_scope(scope_id="s2", req_time=asked)
+    await service.sync_scope(scope_id="s2", req_time=asked, honor_backoff=True)
 
     assert (
         GitPolicyFetcher.repos_last_fetched[source_id] == fetched_at
@@ -1352,14 +1384,40 @@ async def test_a_no_clone_hold_whose_clone_lands_without_the_branch_gets_the_409
     assert _waits(emitted) == [{"outcome": "timeout", "for": "branch"}]
 
 
-def test_a_no_clone_hold_keeps_holding_through_a_half_made_clone(monkeypatch, emitted):
-    """Mutation: leaving InvalidGitRepositoryError out of the poll's catch ends
-    the hold as `error`, with an early 503."""
+@pytest.mark.parametrize(
+    "making", [_half_made, _populating], ids=["half-made", "populating"]
+)
+def test_a_no_clone_hold_keeps_holding_through_a_clone_being_made(
+    monkeypatch, emitted, making
+):
+    """A clone that is not a repository yet, then one with no refs yet.
+
+    Mutation: leaving InvalidGitRepositoryError or CloneNotPopulatedError out
+    of the poll's catch ends the hold as `error`, with an early 503.
+    """
     pubsub = RecordingPubSub()
-    _script(monkeypatch, _no_clone, _half_made, _ready)
+    _script(monkeypatch, _no_clone, making, _ready)
 
     assert _client(pubsub).get("/scopes/live/policy").status_code == 200
     assert _waits(emitted) == [{"outcome": "served", "for": "branch"}]
+
+
+def test_a_clone_deleted_during_a_branch_hold_keeps_the_hold(monkeypatch, emitted):
+    """The clone goes while a request holds for its branch (a recovery deletes
+    it to clone again): the poll's one-ref lookup finds no repository, which is
+    a miss like any other.
+
+    Mutation: letting that lookup's GitError out ends the hold as `error`,
+    with an early 503.
+    """
+    monkeypatch.setattr(
+        GitPolicyFetcher, "make_bundle", lambda self, base_hash=None: _missing()
+    )
+
+    resp = _client(RecordingPubSub()).get("/scopes/live/policy")
+
+    assert resp.status_code == 409
+    assert _waits(emitted) == [{"outcome": "timeout", "for": "branch"}]
 
 
 @pytest.mark.asyncio
