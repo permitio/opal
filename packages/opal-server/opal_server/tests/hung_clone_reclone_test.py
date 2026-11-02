@@ -8,6 +8,8 @@ import fcntl
 import itertools
 import os
 import subprocess
+import sys
+import textwrap
 import threading
 import time
 from pathlib import Path
@@ -323,6 +325,111 @@ async def test_a_late_success_removes_only_its_own_marker(tmp_path):
     release.set()  # returns True: a success, but after its timeout
     await _until(lambda: len(list(d.iterdir())) == 1)
     assert other.exists()
+
+
+@pytest.mark.asyncio
+async def test_a_late_success_without_a_marker_of_its_own_keeps_the_others(
+    tmp_path, monkeypatch
+):
+    """With the setting off a timed-out op writes no marker, and its late
+    success proves no more than a marked op's: another process's marker
+    stays."""
+    d = tmp_path / "m.hung"
+    d.mkdir()
+    other = d / "other-1-0"
+    other.write_text("")
+    op_finished = asyncio.Event()
+    real_consume = git_fetcher_module._consume_future_result
+
+    def _consume(fut):  # the op future's done-callback, on the event loop
+        op_finished.set()
+        return real_consume(fut)
+
+    monkeypatch.setattr(git_fetcher_module, "_consume_future_result", _consume)
+    release = threading.Event()
+    with pytest.raises(TimeoutError):
+        await run_in_git_executor(release.wait, 5, timeout=0.05, marker_dir=d)
+    release.set()  # returns True: a success, but after its timeout
+    # The op's thread has finished, so any housekeeping thread it started
+    # exists and is joined here.
+    await asyncio.wait_for(op_finished.wait(), 5)
+    _join_marker_threads()
+    assert other.exists()
+
+
+@pytest.mark.asyncio
+async def test_a_stalled_marker_clear_never_delays_the_ops_result(
+    tmp_path, monkeypatch
+):
+    """The clear after a success within the timeout runs on the clones' volume,
+    which may be stalled: the op's result comes back all the same, and the
+    clear finishes once the volume does."""
+    d = tmp_path / "m.hung"
+    d.mkdir()
+    (d / "other-1-0").write_text("")
+    clear_started, resume_clear = threading.Event(), threading.Event()
+    real_rmtree = git_fetcher_module.shutil.rmtree
+
+    def _stalled_rmtree(path, *a, **k):
+        clear_started.set()
+        resume_clear.wait(5)
+        return real_rmtree(path, *a, **k)
+
+    monkeypatch.setattr(git_fetcher_module.shutil, "rmtree", _stalled_rmtree)
+    result = await asyncio.wait_for(
+        run_in_git_executor(lambda: "ok", timeout=5, marker_dir=d), timeout=2
+    )
+    assert result == "ok"
+    await _until(clear_started.is_set)
+    resume_clear.set()
+    _join_marker_threads()
+    assert not d.exists()
+
+
+def test_a_stalled_marker_write_never_holds_up_process_exit(tmp_path):
+    """A marker write stuck on a stalled volume must not keep a server process
+    that is done from exiting, or the restart this setting is for never
+    happens."""
+    script = textwrap.dedent(
+        """
+        import asyncio
+        import sys
+        import threading
+        from pathlib import Path
+
+        from opal_server.git_fetcher import run_in_git_executor
+
+        write_started = threading.Event()
+
+        def _stalled_touch(self, *a, **k):
+            write_started.set()
+            threading.Event().wait()
+
+        Path.touch = _stalled_touch
+
+        async def main():
+            try:
+                await run_in_git_executor(
+                    threading.Event().wait,
+                    timeout=0.05,
+                    marker_dir=Path(sys.argv[1]),
+                    mark_when_hung=True,
+                )
+            except TimeoutError:
+                pass
+            assert write_started.wait(10), "the marker write never started"
+
+        asyncio.run(main())
+        print("done", flush=True)
+        """
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", script, str(tmp_path / "m.hung")],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert proc.returncode == 0 and "done" in proc.stdout, proc.stderr
 
 
 @pytest.mark.asyncio
@@ -757,6 +864,16 @@ def test_with_the_setting_off_a_start_removes_every_marker(tmp_path):
     assert hung.exists()  # never deleted with the setting off
     assert not hung_marker_dir(hung).exists()
     assert not hung_marker_dir(_root(tmp_path) / _sid(2)).exists()
+
+
+def test_with_the_setting_off_a_start_keeps_dirs_not_named_like_a_source_id(
+    tmp_path,
+):
+    """Only <source id>.hung is a marker dir: purge.py's rmtree audit relies on
+    it."""
+    clone = _clone_dir(tmp_path, "not-a-source-id", hung=True)
+    assert reclone_hung_scope_clones(tmp_path, None) == 0
+    assert clone.exists() and _markers(clone)
 
 
 def test_markers_of_a_deleted_scope_are_removed(tmp_path, on):
