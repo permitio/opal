@@ -90,7 +90,7 @@ def test_gauge_after_configure_is_namespaced_on_the_wire(monkeypatch, statsd_res
     ), payloads
 
 
-def test_preload_configures_metrics_before_syncing(monkeypatch):
+def test_preload_configures_metrics_before_syncing(monkeypatch, preload_sandbox):
     """The master's preload path is the one that was missing it: it must
     configure the client BEFORE the first sync emits anything."""
     order = []
@@ -111,7 +111,6 @@ def test_preload_configures_metrics_before_syncing(monkeypatch):
 
     monkeypatch.setattr(task_module, "ScopesService", _FakeService)
     monkeypatch.setattr(task_module, "RedisDB", lambda url: object())
-    monkeypatch.setattr(task_module, "ScopeRepository", lambda db: object())
     monkeypatch.setattr(task_module, "drain_git_ops", lambda t: True)
     monkeypatch.setattr(task_module, "shutdown_git_executor", lambda: None)
     monkeypatch.setattr(

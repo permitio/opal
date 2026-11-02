@@ -1017,7 +1017,7 @@ async def test_scope_repository_all_skips_a_key_deleted_mid_scan():
 
 
 # --- The SECURITY confinement guard had no falsifiable test: gutting
-# _SOURCE_ID_RE so confined_clone_path never rejects anything left the whole
+# git_fetcher.SOURCE_ID_RE so confined_clone_path never rejects anything left the whole
 # suite green. These fail when it does. ---
 
 
@@ -1037,7 +1037,7 @@ async def test_scope_repository_all_skips_a_key_deleted_mid_scan():
     ],
 )
 def test_confined_clone_path_rejects_hostile_source_ids(tmp_path, hostile):
-    """Mutation: relaxing _SOURCE_ID_RE (e.g. to r".*") fails here."""
+    """Mutation: relaxing git_fetcher.SOURCE_ID_RE (e.g. to r".*") fails here."""
     from opal_server.scopes.purge import confined_clone_path
 
     assert confined_clone_path(tmp_path, hostile) is None, hostile
@@ -1065,7 +1065,7 @@ async def test_forged_source_id_cannot_free_an_arbitrary_cached_handle(
     because source_id is validated — with the validation relaxed, a traversal
     id derives straight onto a victim key.
 
-    Mutation: relaxing _SOURCE_ID_RE fails here.
+    Mutation: relaxing git_fetcher.SOURCE_ID_RE fails here.
     """
     monkeypatch.setattr(
         "opal_server.scopes.purge.opal_server_config.BASE_DIR", str(tmp_path)
