@@ -3163,6 +3163,15 @@ class GitPolicyFetcher(PolicyFetcher):
         except FileNotFoundError:
             return False
 
+    @property
+    def clone_source_id(self) -> str:
+        """The source id of this fetcher's source: the clone it reads."""
+        return self._source_id
+
+    @property
+    def branch(self) -> str:
+        return self._source.branch
+
     def branch_can_be_a_ref(self) -> bool:
         """Whether the scope's branch name can name a ref at all.
 

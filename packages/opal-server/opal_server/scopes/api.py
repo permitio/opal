@@ -90,15 +90,15 @@ _clone_wait_inflight = 0
 # identical line per request.
 _clone_wait_clamp_logged = False
 
-# When this worker last asked every server to sync a scope whose clone lacked
-# its branch (scope id -> loop time): at most once per
-# SCOPES_POLICY_BRANCH_REFRESH_INTERVAL, whose description states what a branch
-# that really does not exist costs. Event-loop only, like the in-flight count,
-# and bounded: the oldest entries go first. One that goes early allows an extra
-# request, and releases the requests held for it with their 409 at their next
-# poll, as a failed publish does; that takes this many scopes missing their
-# branch within one hold.
-_branch_refresh_requested: "OrderedDict[str, float]" = OrderedDict()
+# When this worker last asked every server for a sync of what a bundle request
+# found missing (its _claim_key -> loop time): a scope's branch, or a clone. At
+# most once per SCOPES_POLICY_BRANCH_REFRESH_INTERVAL, whose description states
+# what a branch that really does not exist costs. Event-loop only, like the
+# in-flight count, and bounded: the oldest entries go first. One that goes
+# early allows an extra request, and releases the requests held for it with
+# their 409 at their next poll, as a failed publish does; that takes this many
+# scopes missing their branch within one hold.
+_branch_refresh_requested: "OrderedDict[Tuple[str, ...], float]" = OrderedDict()
 _BRANCH_REFRESH_TRACKED_MAX = 10_000
 
 # Sync requests being published, some after the request that made them stopped
@@ -108,9 +108,11 @@ _branch_refresh_publishes: "Set[asyncio.Future[None]]" = set()
 # Publishes can outlive their requests; a stuck broadcast backend must not pile
 # one up per scope per interval for the life of the worker.
 _BRANCH_REFRESH_PUBLISHES_MAX = 1_000
-# Claims whose publish failed after a newer claim replaced them (scope, claim):
+# Claims whose publish failed after a newer claim replaced them (key, claim):
 # when that newer publish fails too, they are not put back.
-_branch_refresh_failed_claims: "OrderedDict[Tuple[str, float], None]" = OrderedDict()
+_branch_refresh_failed_claims: "OrderedDict[Tuple[Tuple[str, ...], float], None]" = (
+    OrderedDict()
+)
 
 _CLONE_WAIT_METRIC = "opal_server.scopes.policy_clone_wait"
 _BRANCH_REFRESH_METRIC = "opal_server.scopes.policy_branch_refresh"
@@ -186,13 +188,32 @@ def _bounded_branch_refresh_interval() -> float:
     return interval
 
 
+def _claim_key(
+    scope_id: str, fetcher: GitPolicyFetcher, miss: Exception
+) -> Tuple[str, ...]:
+    """What a miss's sync request is claimed for, so what the interval limits.
+
+    A clone without the scope's branch: the scope, the clone and the
+    branch, so a scope that a PUT has moved since its last request asks
+    again. No clone, or one just starting: the clone alone, which one
+    sync clones for every scope on it. The first element names which.
+    """
+    if isinstance(miss, BranchHeadNotFoundError):
+        return ("branch", scope_id, fetcher.clone_source_id, fetcher.branch)
+    return ("clone", fetcher.clone_source_id)
+
+
+# What a claim's log lines say is missing, by its key's first element.
+_MISSING = {"branch": "branch in its clone", "clone": "clone"}
+
+
 def _branch_hold(
-    scope_id: str, now: float, wait: float
+    key: Tuple[str, ...], now: float, wait: float
 ) -> Optional[Tuple[float, bool]]:
-    """The claim a miss of ``scope_id`` at ``now`` would hold for (the time its
-    sync was requested; the hold ends ``wait`` after it), and whether it must
+    """The claim a miss at ``now`` would hold for (the time the sync ``key``
+    names was requested; the hold ends ``wait`` after it), and whether it must
     request the sync itself, without the side effects: None for the immediate
-    409.
+    409 (503 with no clone).
 
     - No sync requested by this worker within the interval: claim ``now``
       (the caller requests the sync).
@@ -204,7 +225,7 @@ def _branch_hold(
     interval = _bounded_branch_refresh_interval()
     if interval <= 0:
         return None
-    requested = _branch_refresh_requested.get(scope_id)
+    requested = _branch_refresh_requested.get(key)
     if requested is None or now - requested >= interval:
         return now, True
     if now - requested < wait:
@@ -212,18 +233,23 @@ def _branch_hold(
     return None
 
 
-def _record_branch_refresh(scope_id: str, now: float) -> Optional[float]:
-    """Claim ``scope_id``'s sync at ``now``; returns the claim it replaced."""
-    previous = _branch_refresh_requested.get(scope_id)
-    _branch_refresh_requested[scope_id] = now
-    _branch_refresh_requested.move_to_end(scope_id)
+def _record_branch_refresh(key: Tuple[str, ...], now: float) -> Optional[float]:
+    """Claim ``key``'s sync at ``now``; returns the claim it replaced."""
+    previous = _branch_refresh_requested.get(key)
+    _branch_refresh_requested[key] = now
+    _branch_refresh_requested.move_to_end(key)
     while len(_branch_refresh_requested) > _BRANCH_REFRESH_TRACKED_MAX:
         _branch_refresh_requested.popitem(last=False)
     return previous
 
 
 def _branch_refresh_failed(
-    scope_id: str, claim: float, previous: Optional[float], exc: BaseException
+    key: Tuple[str, ...],
+    claim: float,
+    previous: Optional[float],
+    exc: BaseException,
+    *,
+    scope_id: str,
 ) -> None:
     """A sync request's publish raised: give its claim back, count and log it.
 
@@ -232,20 +258,21 @@ def _branch_refresh_failed(
     request's sync, and the requests riding an older one are not this
     publish's to release.
     """
-    if _branch_refresh_requested.get(scope_id) == claim:
-        if previous is None or (scope_id, previous) in _branch_refresh_failed_claims:
-            del _branch_refresh_requested[scope_id]
+    if _branch_refresh_requested.get(key) == claim:
+        if previous is None or (key, previous) in _branch_refresh_failed_claims:
+            del _branch_refresh_requested[key]
         else:
-            _branch_refresh_requested[scope_id] = previous
+            _branch_refresh_requested[key] = previous
     else:
-        _branch_refresh_failed_claims[(scope_id, claim)] = None
+        _branch_refresh_failed_claims[(key, claim)] = None
         while len(_branch_refresh_failed_claims) > _BRANCH_REFRESH_TRACKED_MAX:
             _branch_refresh_failed_claims.popitem(last=False)
     metrics.increment(_BRANCH_REFRESH_METRIC, tags={"outcome": "publish_failed"})
     logger.warning(
-        "Scope {scope_id} has no branch in its clone, and its sync could "
-        "not be requested: {exc}",
+        "Scope {scope_id} has no {missing}, and its sync could not be "
+        "requested: {exc}",
         scope_id=scope_id,
+        missing=_MISSING[key[0]],
         exc=redact_url_in_text(repr(exc)),
     )
 
@@ -259,28 +286,33 @@ def _publish_error(publish: "asyncio.Future[None]") -> Optional[BaseException]:
 
 
 def _abandoned_publish_done(
-    scope_id: str,
+    key: Tuple[str, ...],
     claim: float,
     previous: Optional[float],
     publish: "asyncio.Future[None]",
+    *,
+    scope_id: str,
 ) -> None:
     """A publish nobody is waiting for any more ended."""
     error = _publish_error(publish)
     if error is not None:
-        _branch_refresh_failed(scope_id, claim, previous, error)
+        _branch_refresh_failed(key, claim, previous, error, scope_id=scope_id)
 
 
 async def _branch_wait_claim(
-    scope_id: str,
+    key: Tuple[str, ...],
     request_refresh: Callable[[], Awaitable[None]],
     now: float,
     wait: float,
     deadline: float,
+    *,
+    scope_id: str,
 ) -> Optional[float]:
-    """The scope's ref is missing from this server's disk: request a sync of
-    the scope when this worker has not within the interval, and return the
-    claim the request holds for, ending ``wait`` after it (None: answer at
-    once, without a wait).
+    """The scope's ref, or its clone, is missing from this server's disk:
+    request a sync of the scope when this worker has not requested one for
+    ``key`` (see _claim_key) within the interval, and return the claim the
+    request holds for, ending ``wait`` after it (None: answer at once, without
+    a wait).
 
     The publish is bounded by the request's ``deadline``: a slow broadcast
     backend must not hold the request past its hold. On a timeout the claim
@@ -301,27 +333,29 @@ async def _branch_wait_claim(
     for the same publish, and a request cancelled during a publish that then
     succeeds counts nothing.
     """
-    hold = _branch_hold(scope_id, now, wait)
+    hold = _branch_hold(key, now, wait)
     if hold is None:
         return None
     claim, must_request = hold
     if not must_request:
         return claim  # rides the sync another request asked for
+    missing = _MISSING[key[0]]
     if len(_branch_refresh_publishes) >= _BRANCH_REFRESH_PUBLISHES_MAX:
         metrics.increment(_BRANCH_REFRESH_METRIC, tags={"outcome": "publish_backlog"})
         logger.warning(
-            "Scope {scope_id} has no branch in its clone, and its sync was not "
+            "Scope {scope_id} has no {missing}, and its sync was not "
             "requested: {count} earlier requests are still being published",
             scope_id=scope_id,
+            missing=missing,
             count=len(_branch_refresh_publishes),
         )
         return None
-    previous = _record_branch_refresh(scope_id, now)
+    previous = _record_branch_refresh(key, now)
     loop = asyncio.get_running_loop()
     publish = asyncio.ensure_future(request_refresh())
     _branch_refresh_publishes.add(publish)
     publish.add_done_callback(_branch_refresh_publishes.discard)
-    abandoned = partial(_abandoned_publish_done, scope_id, now, previous)
+    abandoned = partial(_abandoned_publish_done, key, now, previous, scope_id=scope_id)
     try:
         # asyncio.wait neither cancels the publish nor raises its exception,
         # so a TimeoutError of the publish's own is a failed publish.
@@ -335,20 +369,22 @@ async def _branch_wait_claim(
         publish.add_done_callback(abandoned)
         metrics.increment(_BRANCH_REFRESH_METRIC, tags={"outcome": "publish_timeout"})
         logger.warning(
-            "Scope {scope_id} has no branch in its clone, and its sync request "
-            "was still being published when the hold ran out",
+            "Scope {scope_id} has no {missing}, and its sync request was still "
+            "being published when the hold ran out",
             scope_id=scope_id,
+            missing=missing,
         )
         return claim
     error = _publish_error(publish)
     if error is not None:
-        _branch_refresh_failed(scope_id, now, previous, error)
+        _branch_refresh_failed(key, now, previous, error, scope_id=scope_id)
         return None
     metrics.increment(_BRANCH_REFRESH_METRIC, tags={"outcome": "requested"})
     logger.info(
-        "Scope {scope_id} has no branch in its clone yet; requested a sync and "
-        "holding the request for it",
+        "Scope {scope_id} has no {missing} yet; requested a sync and holding "
+        "the request for it",
         scope_id=scope_id,
+        missing=missing,
     )
     return claim
 
@@ -402,12 +438,13 @@ async def _make_bundle_waiting_for_clone(
     answers that way right after a scope moves to another repository, until
     its own fetch lands; a pod that has never cloned that repository has no
     clone of it. Such a hold polls one ref (``has_branch_ref``) and builds the
-    bundle only once the ref is there. The first miss of
-    a scope on this worker within SCOPES_POLICY_BRANCH_REFRESH_INTERVAL
-    requests a sync of the scope and is held for it; misses while that sync is
-    younger than the wait are held too, until the same deadline, without asking
-    again; after that, for the rest of the interval, a miss gets the 409 at
-    once. A hold that runs out gets the same 409. The in-flight cap is checked
+    bundle only once the ref is there. The first miss of a scope's branch (of
+    a clone, when there is none: see ``_claim_key``) on this worker within
+    SCOPES_POLICY_BRANCH_REFRESH_INTERVAL requests a sync of the scope and is
+    held for it; misses while that sync is younger than the wait are held
+    too, until the same deadline, without asking again; after that, for the
+    rest of the interval, a miss gets the 409 at once. A hold that runs out
+    gets the same 409. The in-flight cap is checked
     before any of it, so a request shed there neither requests a sync nor uses
     up the interval, and a request holds its slot while it publishes. A hold
     that runs out without a clone answers the 503 it would have got at once.
@@ -443,9 +480,10 @@ async def _make_bundle_waiting_for_clone(
         wait = _bounded_clone_wait()
         if wait <= 0 or request_refresh is None:
             raise
+        key = _claim_key(scope_id, fetcher, first_exc)
         # Decided before the cap: a miss that would not wait is not shed from
         # a wait (with the interval off, or after the sync had its chance).
-        if _branch_hold(scope_id, asyncio.get_running_loop().time(), wait) is None:
+        if _branch_hold(key, asyncio.get_running_loop().time(), wait) is None:
             raise
         pending = first_exc
         waiting_for = "branch"
@@ -487,7 +525,7 @@ async def _make_bundle_waiting_for_clone(
         if waiting_for == "branch":
             assert request_refresh is not None  # checked with the first attempt
             held_for = await _branch_wait_claim(
-                scope_id, request_refresh, started, wait, deadline
+                key, request_refresh, started, wait, deadline, scope_id=scope_id
             )
             if held_for is None:
                 # The immediate 409 or 503, though its publish can have taken time.
@@ -549,7 +587,7 @@ async def _make_bundle_waiting_for_clone(
                     # (its publish failed) or evicted: holding on would wait
                     # for a fetch nobody asked for. A newer claim is a sync
                     # requested since, which keeps it held.
-                    current = _branch_refresh_requested.get(scope_id)
+                    current = _branch_refresh_requested.get(key)
                     if current is None or current < claim:
                         outcome = "unrequested"
                         _note_wait(pending, loop.time() - started)
@@ -567,11 +605,17 @@ async def _make_bundle_waiting_for_clone(
                     # the first miss, like a miss on the first attempt. A miss
                     # that will not be waited for ends the clone wait it was:
                     # counted with `for: clone`, its hold carried to the 409.
+                    key = _claim_key(scope_id, fetcher, exc)
                     held_for = (
                         None
                         if request_refresh is None
                         else await _branch_wait_claim(
-                            scope_id, request_refresh, loop.time(), wait, deadline
+                            key,
+                            request_refresh,
+                            loop.time(),
+                            wait,
+                            deadline,
+                            scope_id=scope_id,
                         )
                     )
                     if held_for is None:

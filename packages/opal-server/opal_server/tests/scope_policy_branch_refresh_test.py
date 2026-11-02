@@ -126,7 +126,10 @@ def _scope(scope_id="live", url="https://git/live.git", branch="main"):
 
 
 def _app(pubsub, *scopes):
-    repo = FakeScopeRepository(list(scopes) or [_scope()])
+    return _app_with_repository(pubsub, FakeScopeRepository(list(scopes) or [_scope()]))
+
+
+def _app_with_repository(pubsub, repo):
     service = ScopesService(
         base_dir=Path("/unused"), scopes=repo, pubsub_endpoint=pubsub
     )
@@ -212,6 +215,13 @@ def _refreshes(emitted):
         for metric, tags in emitted["increment"]
         if metric == _REFRESH_METRIC
     ]
+
+
+def _key(scope=None):
+    """The claim a miss of ``scope``'s branch records: _scope() by default."""
+    scope = scope or _scope()
+    fetcher = GitPolicyFetcher(Path("/unused"), scope.scope_id, scope.policy)
+    return scopes_api._claim_key(scope.scope_id, fetcher, BranchHeadNotFoundError())
 
 
 def _script(monkeypatch, *outcomes):
@@ -366,6 +376,67 @@ def test_the_interval_is_per_scope(monkeypatch):
     _script(monkeypatch, _missing, _ready)
     assert client.get("/scopes/two/policy").status_code == 200
     assert [d["scope_id"] for d in pubsub.syncs()] == ["one", "two"]
+
+
+@pytest.mark.parametrize(
+    "url, branch",
+    [("https://git/live.git", "right"), ("https://git/other.git", "stale")],
+    ids=["branch", "repository"],
+)
+def test_a_scope_moved_within_the_interval_requests_a_sync_for_its_new_branch(
+    monkeypatch, url, branch
+):
+    """A stale PUT points the scope at a branch this pod's clone lacks: a miss
+    requests a sync and is held, then answered 409. Within the interval the
+    corrective PUT moves the scope again, and this pod missed its broadcast, so
+    its clone lacks the new branch as well.
+
+    Mutation: keying the claim by the scope alone answers the new branch's
+    miss with an immediate 409 and requests nothing, for the rest of the
+    interval.
+    """
+    pubsub = RecordingPubSub()
+    scopes = FakeScopeRepository([_scope(branch="stale")])
+    client = TestClient(_app_with_repository(pubsub, scopes))
+    _script(monkeypatch, _missing)
+    assert client.get("/scopes/live/policy").status_code == 409
+
+    scopes._scopes["live"] = _scope(url=url, branch=branch)
+    _script(monkeypatch, _missing, _ready)
+
+    assert client.get("/scopes/live/policy").status_code == 200
+    assert len(pubsub.syncs()) == 2
+
+
+@pytest.mark.asyncio
+async def test_scopes_without_a_clone_share_one_sync_request(monkeypatch, emitted):
+    """A pod with no clone of a repository: every scope on that clone misses
+    at once (its preload's clone failed, say). One sync of any of them clones
+    it for all, so each worker requests one per clone, and every scope's
+    request is held on it. A scope on another repository requests its own.
+
+    Mutation: keying a missing clone's claim by the scope publishes one sync
+    request per scope.
+    """
+    shared = [_scope(f"s{n}", "https://git/shared.git", f"env{n}") for n in range(5)]
+    other = _scope("elsewhere", "https://git/other.git", "main")
+    pubsub = RecordingPubSub()
+    _script(monkeypatch, _no_clone)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(
+            app=_app_with_repository(pubsub, FakeScopeRepository([*shared, other]))
+        ),
+        base_url="http://bed",
+    ) as client:
+        responses = await asyncio.gather(
+            *(client.get(f"/scopes/{s.scope_id}/policy") for s in [*shared, other])
+        )
+
+    assert {r.status_code for r in responses} == {503}
+    synced = {d["scope_id"] for d in pubsub.syncs()}
+    assert len(pubsub.syncs()) == 2 and "elsewhere" in synced, pubsub.syncs()
+    assert _waits(emitted) == [{"outcome": "timeout", "for": "branch"}] * 6
 
 
 @pytest.mark.parametrize("interval", [0.0, -1.0, float("nan"), float("inf")])
@@ -576,15 +647,16 @@ def test_the_failed_claims_are_bounded(monkeypatch, emitted):
     worker.
     """
     monkeypatch.setattr(scopes_api, "_BRANCH_REFRESH_TRACKED_MAX", 3)
-    scopes_api._branch_refresh_requested["live"] = 99.0  # the newer claim
+    key = _key()
+    scopes_api._branch_refresh_requested[key] = 99.0  # the newer claim
     for n in range(5):
         scopes_api._branch_refresh_failed(
-            "live", float(n), None, ConnectionError("no local subscriber")
+            key, float(n), None, ConnectionError("no local subscriber"), scope_id="live"
         )
     assert list(scopes_api._branch_refresh_failed_claims) == [
-        ("live", 2.0),
-        ("live", 3.0),
-        ("live", 4.0),
+        (key, 2.0),
+        (key, 3.0),
+        (key, 4.0),
     ]
 
 
@@ -1537,7 +1609,7 @@ async def test_a_publish_that_does_not_return_is_bounded_by_the_hold(
     # Still a wait, reported as one.
     assert _waits(emitted) == [{"outcome": "timeout", "for": "branch"}]
     assert raised.value.waited_seconds >= 0.9 * WAIT
-    assert "live" in scopes_api._branch_refresh_requested
+    assert _key() in scopes_api._branch_refresh_requested
     [publish] = scopes_api._branch_refresh_publishes  # still referenced
     stuck.set()
     await publish
@@ -1564,12 +1636,14 @@ async def test_a_failed_publish_gives_back_only_its_own_claim(monkeypatch, emitt
 
     # The claim it replaced, older than the interval, comes back.
     now = loop.time()
-    claims["live"] = now - WAIT
+    claims[_key()] = now - WAIT
     assert (
-        await scopes_api._branch_wait_claim("live", fails, now, WAIT, now + WAIT)
+        await scopes_api._branch_wait_claim(
+            _key(), fails, now, WAIT, now + WAIT, scope_id="live"
+        )
         is None
     )
-    assert claims["live"] == now - WAIT
+    assert claims[_key()] == now - WAIT
 
     # A newer claim recorded while it was publishing stays.
     release = asyncio.Event()
@@ -1580,13 +1654,15 @@ async def test_a_failed_publish_gives_back_only_its_own_claim(monkeypatch, emitt
 
     now = loop.time()
     pending = asyncio.ensure_future(
-        scopes_api._branch_wait_claim("live", fails_late, now, WAIT, now + WAIT)
+        scopes_api._branch_wait_claim(
+            _key(), fails_late, now, WAIT, now + WAIT, scope_id="live"
+        )
     )
-    await _until(lambda: claims.get("live") == now)  # its claim is recorded
-    claims["live"] = now + 1.0  # a newer request's
+    await _until(lambda: claims.get(_key()) == now)  # its claim is recorded
+    claims[_key()] = now + 1.0  # a newer request's
     release.set()
     assert await pending is None
-    assert claims["live"] == now + 1.0
+    assert claims[_key()] == now + 1.0
     assert _refreshes(emitted) == ["publish_failed", "publish_failed"]
 
 
@@ -1599,7 +1675,7 @@ async def test_a_branch_that_lands_as_the_claim_goes_is_served(monkeypatch, emit
     """
     claims = scopes_api._branch_refresh_requested
     # A rider: the sync was requested by another request just now.
-    claims["live"] = asyncio.get_running_loop().time()
+    claims[_key()] = asyncio.get_running_loop().time()
     real_sleep = asyncio.sleep
     polls = []
 
@@ -1609,7 +1685,7 @@ async def test_a_branch_that_lands_as_the_claim_goes_is_served(monkeypatch, emit
         await real_sleep(delay)
         polls.append(delay)
         if len(polls) == 2:
-            del claims["live"]
+            del claims[_key()]
 
     monkeypatch.setattr(asyncio, "sleep", withdrawn_as_the_second_poll_wakes)
     _script(monkeypatch, _missing, _missing, _ready)
@@ -1656,13 +1732,13 @@ async def test_a_publish_that_fails_after_its_hold_is_given_back_and_reported(
 
     with pytest.raises(BranchHeadNotFoundError):
         await _hold(fetcher, fails_late)
-    assert "live" in scopes_api._branch_refresh_requested
+    assert _key() in scopes_api._branch_refresh_requested
 
     with capture_records() as logs:
         release.set()
         await _until(lambda: "publish_failed" in _refreshes(emitted))
 
-    assert "live" not in scopes_api._branch_refresh_requested
+    assert _key() not in scopes_api._branch_refresh_requested
     assert _refreshes(emitted) == ["publish_timeout", "publish_failed"]
     assert [r for r in logs.emitted if r["level"].name == "WARNING"]
 
@@ -1704,10 +1780,12 @@ async def test_a_stuck_broadcast_backend_does_not_pile_up_publishes(
 
     now = asyncio.get_running_loop().time()
     assert (
-        await scopes_api._branch_wait_claim("live", _unexpected, now, WAIT, now + WAIT)
+        await scopes_api._branch_wait_claim(
+            _key(), _unexpected, now, WAIT, now + WAIT, scope_id="live"
+        )
         is None
     )
-    assert "live" not in scopes_api._branch_refresh_requested
+    assert _key() not in scopes_api._branch_refresh_requested
     assert _refreshes(emitted) == ["publish_backlog"]
     release.set()
     await first
@@ -1725,13 +1803,13 @@ async def test_a_failed_publish_does_not_put_back_a_claim_whose_publish_failed(
     """
     claims = scopes_api._branch_refresh_requested
     scopes_api._branch_refresh_failed(
-        "live", 1.0, None, ConnectionError("no local subscriber")
+        _key(), 1.0, None, ConnectionError("no local subscriber"), scope_id="live"
     )  # nothing current: a's claim is simply gone, and marked failed
-    claims["live"] = 2.0  # b's, which replaced a's
+    claims[_key()] = 2.0  # b's, which replaced a's
     scopes_api._branch_refresh_failed(
-        "live", 2.0, 1.0, ConnectionError("no local subscriber")
+        _key(), 2.0, 1.0, ConnectionError("no local subscriber"), scope_id="live"
     )
-    assert "live" not in claims
+    assert _key() not in claims
 
 
 @pytest.mark.parametrize(
@@ -1844,7 +1922,7 @@ async def test_a_publish_that_raises_timeout_error_itself_is_a_failed_publish(
 
     assert raised.value.waited_seconds < 1
     assert _refreshes(emitted) == ["publish_failed"]
-    assert "live" not in scopes_api._branch_refresh_requested
+    assert _key() not in scopes_api._branch_refresh_requested
 
 
 @pytest.mark.asyncio
@@ -1860,7 +1938,7 @@ async def test_riders_of_a_failed_publish_are_released_when_it_restores_a_claim(
     claims = scopes_api._branch_refresh_requested
     loop = asyncio.get_running_loop()
     # Older than the fixture's 60 s interval: the first miss requests a sync.
-    seeded = claims["live"] = loop.time() - 120.0
+    seeded = claims[_key()] = loop.time() - 120.0
     release = asyncio.Event()
 
     async def fails_when_released():
@@ -1871,7 +1949,7 @@ async def test_riders_of_a_failed_publish_are_released_when_it_restores_a_claim(
     fetcher = GitPolicyFetcher(Path("/unused"), "live", _scope().policy)
 
     first = _hold(fetcher, fails_when_released)
-    await _until(lambda: claims["live"] != seeded)
+    await _until(lambda: claims[_key()] != seeded)
     rider = _hold(fetcher, _not_asked)
     await _until(lambda: scopes_api._clone_wait_inflight == 2)
     release.set()
@@ -1881,7 +1959,7 @@ async def test_riders_of_a_failed_publish_are_released_when_it_restores_a_claim(
     with pytest.raises(BranchHeadNotFoundError) as raised:
         await rider
 
-    assert claims["live"] == seeded
+    assert claims[_key()] == seeded
     assert raised.value.waited_seconds < 0.6 * WAIT
     assert _waits(emitted) == [{"outcome": "unrequested", "for": "branch"}]
 
@@ -1911,7 +1989,7 @@ async def test_a_newer_claim_does_not_release_a_request_holding_for_an_older_one
 
     first = _hold(fetcher, publishes)
     await _until(lambda: requested)
-    claimed = claims["live"]
+    claimed = claims[_key()]
     await _until(lambda: loop.time() - claimed >= WAIT / 3)
     later = _hold(fetcher, publishes)
 
@@ -1973,13 +2051,13 @@ async def test_a_request_cancelled_in_its_publish(monkeypatch, emitted, fails):
     held.cancel()
     with pytest.raises(asyncio.CancelledError):
         await held
-    assert "live" in scopes_api._branch_refresh_requested
+    assert _key() in scopes_api._branch_refresh_requested
     assert scopes_api._clone_wait_inflight == 0
 
     release.set()
     await _until(lambda: not scopes_api._branch_refresh_publishes)
 
-    assert ("live" in scopes_api._branch_refresh_requested) is not fails
+    assert (_key() in scopes_api._branch_refresh_requested) is not fails
     assert _refreshes(emitted) == (["publish_failed"] if fails else [])
 
 
@@ -2098,7 +2176,7 @@ async def test_a_publish_that_ends_cancelled_gives_its_claim_back(monkeypatch, e
     with pytest.raises(BranchHeadNotFoundError):
         await _hold(fetcher, cancelled)
 
-    assert "live" not in scopes_api._branch_refresh_requested
+    assert _key() not in scopes_api._branch_refresh_requested
     assert _refreshes(emitted) == ["publish_failed"]
 
 
@@ -2122,7 +2200,7 @@ async def test_an_abandoned_publish_that_ends_cancelled_gives_its_claim_back(
     publish.cancel()
     await _until(lambda: "publish_failed" in _refreshes(emitted))
 
-    assert "live" not in scopes_api._branch_refresh_requested
+    assert _key() not in scopes_api._branch_refresh_requested
     assert _refreshes(emitted) == ["publish_timeout", "publish_failed"]
 
 
@@ -2190,16 +2268,16 @@ async def test_a_failed_publish_restores_the_claim_a_request_is_still_riding(
 
     first = _hold(fetcher, publishes)
     await _until(lambda: _refreshes(emitted) == ["requested"])
-    claimed = claims["live"]
+    claimed = claims[_key()]
     await _until(lambda: loop.time() - claimed >= WAIT / 3)
 
     later = _hold(fetcher, fails_when_released)
-    await _until(lambda: claims["live"] != claimed)
+    await _until(lambda: claims[_key()] != claimed)
     if abandoned:
         later.cancel()
     release.set()
     await _until(lambda: "publish_failed" in _refreshes(emitted))
-    assert claims["live"] == claimed
+    assert claims[_key()] == claimed
 
     with pytest.raises(BranchHeadNotFoundError):
         await first
