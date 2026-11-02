@@ -105,7 +105,7 @@ def init_data_updates_router(
             short_token = token[:5] + "..." + token[-5:]
             logger.info(
                 "Source configuration is available at '{url}', redirecting with token={token} (abbrv.)",
-                url=url,
+                url=redact_url(url),
                 token=short_token,
             )
             redirect_url = set_url_query_param(url, "token", token)

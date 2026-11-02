@@ -1,11 +1,12 @@
 """Log sites in opal-server's data router must redact auth.
 
-Covers auth carried in a client's update report. The route tests check a
-text sink and a ``serialize=True`` sink: loguru keeps a log call's keyword
-arguments in ``record["extra"]``, which the JSON sink prints verbatim. The
-sinks are not wrapped in ``CredentialScrubbingStream``, and each route test
-runs with the patcher ``configure_logs`` installs both off (the sinks see
-exactly what the call site emits) and on.
+Covers auth carried in a client's update report and in the external data
+config URL. The route tests check a text sink and a ``serialize=True`` sink:
+loguru keeps a log call's keyword arguments in ``record["extra"]``, which the
+JSON sink prints verbatim. The sinks are not wrapped in
+``CredentialScrubbingStream``, and each route test runs with the patcher
+``configure_logs`` installs both off (the sinks see exactly what the call site
+emits) and on.
 """
 
 import json
@@ -20,6 +21,7 @@ from opal_common.logger import _scrub_record_message
 from opal_common.schemas.data import DataUpdateReport, ServerDataSourceConfig
 from opal_common.tests.log_capture import starting_with
 from opal_common.tests.redaction_fixtures import CapturedLogs, without_log_patcher
+from opal_common.urls import set_url_query_param
 from opal_server.config import opal_server_config
 from opal_server.data import api as data_api
 
@@ -28,6 +30,7 @@ FAKE_PASSWORD = "fakepass-FAKE-456"
 FAKE_KEY = "FAKE-KEY-123"
 FAKE_HEADER = "Bearer FAKE-KEY-789"
 FAKE_DATA = "FAKE-DATA-PAYLOAD"
+CLIENT_JWT = "fake.client.jwt-abcdefghij"
 
 REPORT_URL = (
     f"https://{FAKE_USER}:{FAKE_PASSWORD}@data.example.com/v1"
@@ -258,3 +261,40 @@ def test_report_for_log_drops_config_and_data_keeps_the_rest():
     assert rendered["policy_hash"] == "fake-policy-hash"
     assert rendered["user_data"] == {"tenant": "t-1"}
     assert report == snapshot
+
+
+# --- /data/config redirect log -----------------------------------------------
+
+
+@PATCHER_STATES
+def test_data_config_redirect_log_masks_external_source_url(capfd, scrub):
+    """With the patcher on, it also masks this line's ``str`` extra, so only
+    the patcher-off arm depends on the call site's ``redact_url``."""
+    external_url = (
+        f"https://{FAKE_USER}:{FAKE_PASSWORD}@config.example.com/sources"
+        f"?api_key={FAKE_KEY}"
+    )
+    client = _client(ServerDataSourceConfig(external_source_url=external_url))
+
+    with _captured_logs(scrub) as (logs, sink_ids):
+        response = client.get(
+            opal_server_config.DATA_CONFIG_ROUTE,
+            headers={"Authorization": f"Bearer {CLIENT_JWT}"},
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 307
+    assert response.headers["location"] == set_url_query_param(
+        external_url, "token", CLIENT_JWT
+    )
+    phrase = "Source configuration is available at"
+    assert len(_lines(logs.text, phrase)) == 1, logs.text
+    redirected = _records(logs.serialized, phrase)
+    assert len(redirected) == 1, logs.serialized
+    assert (
+        redirected[0]["extra"]["url"]
+        == "https://***@config.example.com/sources?api_key=***"
+    )
+    for value in [FAKE_USER, FAKE_PASSWORD, FAKE_KEY, CLIENT_JWT]:
+        assert value not in logs.combined, logs.combined
+    _assert_sinks_healthy(capfd, sink_ids)
