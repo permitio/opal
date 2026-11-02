@@ -338,7 +338,7 @@ async def test_already_fetched_line_is_debug_and_missing_branch_line_stays_info(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("from_a_bundle_request", [True, False])
 async def test_a_coalesced_sync_of_a_missing_branch(
-    tmp_path, clear_fetcher_caches, from_a_bundle_request
+    tmp_path, clear_fetcher_caches, monkeypatch, from_a_bundle_request
 ):
     """The whole sync, not only _should_fetch. One a bundle request asked for
     (it honours the backoff) rides a later fetch and logs nothing at ERROR,
@@ -348,6 +348,8 @@ async def test_a_coalesced_sync_of_a_missing_branch(
     Mutation: notifying regardless logs the ERROR in the first case; skipping
     for every sync loses it in the second.
     """
+    # It warms one branch and syncs another on the same clone.
+    monkeypatch.setattr(opal_server_config, "SCOPES_REPO_CLONES_SHARDS", 1)
     remote = git.Repo.init(tmp_path / "remote", initial_branch="main")
     _commit(remote, "policy/a.rego", "package a\n")
     url = str(tmp_path / "remote")

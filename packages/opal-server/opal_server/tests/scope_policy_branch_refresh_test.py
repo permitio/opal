@@ -174,6 +174,9 @@ def bed(tmp_path, monkeypatch):
     monkeypatch.setattr(opal_server_config, "BASE_DIR", str(tmp_path))
     # The tests assume a repository's branches share a clone.
     monkeypatch.setattr(opal_server_config, "SCOPES_REPO_CLONES_SHARDS", 1)
+    # Their defaults, whatever the environment says: the tests that need another cap set it.
+    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT", 64)
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_BACKOFF_BASE_SECONDS", 10.0)
     monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", WAIT)
     monkeypatch.setattr(
         opal_server_config, "SCOPES_POLICY_BRANCH_REFRESH_INTERVAL", 60.0
