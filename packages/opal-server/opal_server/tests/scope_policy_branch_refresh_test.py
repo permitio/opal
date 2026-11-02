@@ -1602,6 +1602,45 @@ async def test_a_publish_that_fails_after_its_hold_is_given_back_and_reported(
 
 
 @pytest.mark.asyncio
+async def test_a_publish_that_took_time_and_failed_reports_that_time(monkeypatch):
+    """The answer's "after waiting" is what the request was held for.
+
+    Mutation: raising without `_note_wait` reports 0.0s.
+    """
+
+    async def fails_late():
+        await asyncio.sleep(0.05)
+        raise ConnectionError("no local subscriber")
+
+    _script(monkeypatch, _missing)
+    fetcher = GitPolicyFetcher(Path("/unused"), "live", _scope().policy)
+
+    with pytest.raises(BranchHeadNotFoundError) as raised:
+        await _hold(fetcher, fails_late)
+
+    assert raised.value.waited_seconds >= 0.05
+
+
+@pytest.mark.asyncio
+async def test_a_request_shed_after_its_publish_reports_the_publish_time(monkeypatch):
+    """Mutation: passing a fixed 0.0 to `_note_wait` at the second cap check."""
+    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT", 1)
+
+    async def the_cap_fills():
+        await asyncio.sleep(0.05)
+        scopes_api._clone_wait_inflight = 1
+
+    _script(monkeypatch, _missing)
+    fetcher = GitPolicyFetcher(Path("/unused"), "live", _scope().policy)
+
+    with pytest.raises(BranchHeadNotFoundError) as raised:
+        await _hold(fetcher, the_cap_fills)
+
+    scopes_api._clone_wait_inflight = 0
+    assert raised.value.waited_seconds >= 0.05
+
+
+@pytest.mark.asyncio
 async def test_a_publish_that_raises_timeout_error_itself_is_a_failed_publish(
     monkeypatch, emitted
 ):
@@ -1617,7 +1656,7 @@ async def test_a_publish_that_raises_timeout_error_itself_is_a_failed_publish(
     with pytest.raises(BranchHeadNotFoundError) as raised:
         await _hold(fetcher, times_out)
 
-    assert raised.value.waited_seconds == 0.0
+    assert raised.value.waited_seconds < 1
     assert _refreshes(emitted) == ["publish_failed"]
     assert "live" not in scopes_api._branch_refresh_requested
 
@@ -1796,15 +1835,18 @@ async def test_a_default_scope_with_a_wrong_branch_is_an_error_that_names_it(
         ("sync", "same"),
         ("put", "new"),
         ("sync", "new"),
+        ("put", "unreadable"),
+        ("sync", "unreadable"),
     ],
 )
 def test_a_put_that_loses_the_repoint_flag_says_so(monkeypatch, fails, source):
     """The retry cannot tell: it sees old == new. The request that failed can.
-    A create loses nothing a client would notice: its retry finds no scope ref
-    and notifies.
+    A create logs it too: a deleted scope's ref can outlive it in a shared clone,
+    so its retry is not sure to notify. So does a PUT that could not read the
+    previous record, which it treats as a repoint.
 
-    Mutation: dropping the `except` logs nothing; dropping `not created` logs
-    it for a create.
+    Mutation: dropping the `except` logs nothing; skipping a create, or a PUT
+    whose previous record could not be read, logs nothing for that case.
     """
     monkeypatch.setattr(scopes_api, "verify_private_key_or_throw", lambda s: None)
 
@@ -1820,6 +1862,11 @@ def test_a_put_that_loses_the_repoint_flag_says_so(monkeypatch, fails, source):
             await super().put(scope)
             if fails == "put":
                 raise ConnectionError("the store answered with an error")
+
+        async def get(self, scope_id):
+            if source == "unreadable":
+                raise ConnectionError("the store answered with an error")
+            return await super().get(scope_id)
 
     old = _scope(url="https://git/a.git")
     new = _scope(url="https://git/a.git" if source == "same" else "https://git/b.git")
@@ -1840,7 +1887,7 @@ def test_a_put_that_loses_the_repoint_flag_says_so(monkeypatch, fails, source):
 
     assert resp.status_code == 500
     warned = [r for r in logs.emitted if r["message"].startswith("Repoint of scope")]
-    assert len(warned) == (1 if source == "moved" else 0)
+    assert len(warned) == (0 if source == "same" else 1)
 
 
 @pytest.mark.asyncio

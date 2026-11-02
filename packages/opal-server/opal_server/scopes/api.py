@@ -458,7 +458,9 @@ async def _make_bundle_waiting_for_clone(
             scope_id, request_refresh, started, wait, deadline
         )
         if held_for is None:
-            raise pending  # the immediate 409 or 503: not a wait
+            # The immediate 409 or 503: not a wait, but its publish can have taken time.
+            _note_wait(pending, loop.time() - started)
+            raise pending
         claim = held_for
         deadline = min(deadline, claim + wait)
         # Again: a request that published yielded in the publish, and other
@@ -475,7 +477,7 @@ async def _make_bundle_waiting_for_clone(
             metrics.increment(
                 _CLONE_WAIT_METRIC, tags={"outcome": "shed", "for": waiting_for}
             )
-            _note_wait(pending, 0.0)
+            _note_wait(pending, loop.time() - started)
             raise pending
     outcome = "error"
 
@@ -709,7 +711,6 @@ def init_scope_router(
 
         old_source_id = None
         old_clone_path = None
-        created = False
         try:
             old_scope = await scopes.get(scope_in.scope_id)
             if isinstance(old_scope.policy, GitPolicyScopeSource):
@@ -721,7 +722,7 @@ def init_scope_router(
                     )
                 )
         except ScopeNotFoundError:
-            created = True  # brand-new scope — nothing to repoint away from
+            pass  # brand-new scope — nothing to repoint away from
         except Exception as e:
             # An unreadable old record must not block the overwrite that
             # fixes it. Its source_id is unknowable anyway, so no purge can be
@@ -794,8 +795,10 @@ def init_scope_router(
                 },
             )
         except Exception:
-            # Not for a create: its retry finds no scope ref, and notifies.
-            if repointed and not created:
+            # For a create too: an earlier scope with this id can have left its ref
+            # in a clone that outlived its delete, and then the retry's sync finds
+            # that ref equal to the branch head and notifies nobody.
+            if repointed:
                 logger.warning(
                     "Repoint of scope {scope_id} failed before its sync was "
                     "requested. If the record was stored, a retry will not force "
