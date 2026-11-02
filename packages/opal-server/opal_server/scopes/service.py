@@ -14,6 +14,7 @@ from opal_common.monitoring import metrics
 from opal_common.schemas.policy import PolicyUpdateMessageNotification
 from opal_common.schemas.policy_source import GitPolicyScopeSource
 from opal_common.topics.publisher import ScopedServerSideTopicPublisher
+from opal_common.topics.utils import policy_topics
 from opal_server.config import opal_server_config
 from opal_server.git_fetcher import (
     GitConcurrencyLimitExceeded,
@@ -105,6 +106,12 @@ class NewCommitsCallbacks(PolicyFetcherCallbacks):
                 notification = await create_update_all_directories_in_repo(
                     repo.commit(head), repo.commit(head), predicate=predicate
                 )
+                if self._notify_all and not notification.topics:
+                    # A repoint to a head with no policy files: no directory to
+                    # name, but the clients must still drop the old repo's.
+                    root = Path(".")
+                    notification.topics = policy_topics([root])
+                    notification.update.changed_directories = [str(root)]
             else:
                 # "Found new commits" is DEBUG; this binds the scope to the
                 # "no tracked files were affected" WARN, whose text has only the

@@ -177,6 +177,7 @@ def bed(tmp_path, monkeypatch):
     monkeypatch.setattr(scopes_api, "_clone_wait_inflight", 0)
     monkeypatch.setattr(scopes_api, "_branch_refresh_requested", OrderedDict())
     monkeypatch.setattr(scopes_api, "_branch_refresh_publishes", set())
+    monkeypatch.setattr(scopes_api, "_branch_refresh_failed_claims", OrderedDict())
     yield
     assert scopes_api._clone_wait_inflight == 0, "a wait slot leaked"
     assert not scopes_api._branch_refresh_publishes, "a publish was left running"
@@ -838,11 +839,11 @@ async def test_riders_of_a_failed_publish_are_released(monkeypatch, emitted):
 
 
 @pytest.mark.asyncio
-async def test_the_cap_is_checked_again_after_a_publish(monkeypatch, emitted):
-    """Two scopes' first misses both pass the cap check, then yield in their
-    publishes; only one may take the last slot.
+async def test_a_slow_publish_holds_its_slot_while_it_publishes(monkeypatch, emitted):
+    """Two scopes' first misses, each with a slow publish: the second finds the
+    first's slot taken, before either publish ends.
 
-    Mutation: dropping the second cap check lets both in, past the cap.
+    Mutation: taking the slot after the publish lets both in, past the cap.
     """
     monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT", 1)
     peak = {"n": 0}
@@ -1622,22 +1623,129 @@ async def test_a_publish_that_took_time_and_failed_reports_that_time(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_a_request_shed_after_its_publish_reports_the_publish_time(monkeypatch):
-    """Mutation: passing a fixed 0.0 to `_note_wait` at the second cap check."""
-    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT", 1)
+async def test_a_stuck_broadcast_backend_does_not_pile_up_publishes(
+    monkeypatch, emitted
+):
+    """Mutation: dropping the bound starts one more publish per scope per
+    interval, for the life of the worker."""
+    monkeypatch.setattr(scopes_api, "_BRANCH_REFRESH_PUBLISHES_MAX", 1)
+    release = asyncio.Event()
+    first = asyncio.ensure_future(release.wait())
+    scopes_api._branch_refresh_publishes.add(first)
+    first.add_done_callback(scopes_api._branch_refresh_publishes.discard)
 
-    async def the_cap_fills():
-        await asyncio.sleep(0.05)
-        scopes_api._clone_wait_inflight = 1
+    async def _unexpected():
+        raise AssertionError("a publish started past the bound")
 
-    _script(monkeypatch, _missing)
-    fetcher = GitPolicyFetcher(Path("/unused"), "live", _scope().policy)
+    now = asyncio.get_running_loop().time()
+    assert (
+        await scopes_api._branch_wait_claim("live", _unexpected, now, WAIT, now + WAIT)
+        is None
+    )
+    assert "live" not in scopes_api._branch_refresh_requested
+    assert _refreshes(emitted) == ["publish_backlog"]
+    release.set()
+    await first
+    await asyncio.sleep(0)  # its done callback
 
-    with pytest.raises(BranchHeadNotFoundError) as raised:
-        await _hold(fetcher, the_cap_fills)
 
-    scopes_api._clone_wait_inflight = 0
-    assert raised.value.waited_seconds >= 0.05
+@pytest.mark.asyncio
+async def test_a_failed_publish_does_not_put_back_a_claim_whose_publish_failed(
+    monkeypatch, emitted
+):
+    """A's publish fails while B's newer claim is current, then B's fails: A's
+    riders must not hold for a sync nobody published.
+
+    Mutation: restoring ``previous`` whatever became of it brings A's claim back.
+    """
+    claims = scopes_api._branch_refresh_requested
+    scopes_api._branch_refresh_failed(
+        "live", 1.0, None, ConnectionError("no local subscriber")
+    )  # nothing current: a's claim is simply gone, and marked failed
+    claims["live"] = 2.0  # b's, which replaced a's
+    scopes_api._branch_refresh_failed(
+        "live", 2.0, 1.0, ConnectionError("no local subscriber")
+    )
+    assert "live" not in claims
+
+
+@pytest.mark.parametrize(
+    "layout, expected",
+    [
+        ({"origin/main": "sha\n"}, True),
+        ({"origin/feature/x": "sha\n"}, True),
+        ({"origin/feature/": None}, False),
+        ({"origin/main.lock": ""}, False),
+        ({"origin/feature/x.lock": ""}, False),
+        ({}, False),
+    ],
+    ids=["ref", "nested", "empty-dir", "lock", "nested-lock", "none"],
+)
+def test_only_a_written_ref_says_the_clone_has_refs(tmp_path, layout, expected):
+    """Mutation: answering on the directory's first entry turns a clone still
+    being populated into a permanent 409."""
+    (tmp_path / "refs" / "remotes").mkdir(parents=True)
+    for name, content in layout.items():
+        path = tmp_path / "refs" / "remotes" / name
+        if content is None:
+            path.mkdir(parents=True)
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content)
+    fetcher = GitPolicyFetcher(tmp_path / "unused", "live", _scope().policy)
+    assert fetcher._has_remote_tracking_refs(tmp_path) is expected
+
+
+@pytest.mark.asyncio
+async def test_a_repoint_to_a_head_with_no_policy_still_notifies(tmp_path, monkeypatch):
+    """Mutation: dropping the root topic leaves the clients on the old repo's
+    policy, deleted files included."""
+    source = _scope().policy
+    clone = GitPolicyFetcher.repo_clone_path(tmp_path, source)
+    clone.mkdir(parents=True)
+    repo = git.Repo.init(clone, initial_branch="main")
+    head = _commit(repo, "README.md", "no policy here\n").hexsha
+    sent = []
+
+    async def trigger(self, notification):
+        sent.append(notification)
+
+    monkeypatch.setattr(NewCommitsCallbacks, "trigger_notification", trigger)
+    callbacks = NewCommitsCallbacks(tmp_path, "live", source, None, notify_all=True)
+    await callbacks.on_update(head, head)
+    [notification] = sent
+    assert notification.topics == ["policy:."]
+    assert notification.update.changed_directories == ["."]
+
+
+def test_a_branch_change_on_one_repository_is_a_repoint(monkeypatch):
+    """The branches of a repository share a clone, so the source id stays the
+    same.
+
+    Mutation: comparing only the source id neither forces the fetch nor tells
+    the clients, and an already cached branch serves its old head.
+    """
+    monkeypatch.setattr(scopes_api, "verify_private_key_or_throw", lambda s: None)
+    old = _git_scope("live", "https://git/a.git", "one")
+    new = _git_scope("live", "https://git/a.git", "two")
+    repo = FakeScopeRepository([old])
+    pubsub = RecordingPubSub()
+    service = ScopesService(
+        base_dir=Path("/unused"), scopes=repo, pubsub_endpoint=pubsub
+    )
+    app = FastAPI()
+    app.include_router(
+        init_scope_router(repo, FakeAuthenticator(), pubsub, service), prefix="/scopes"
+    )
+    resp = TestClient(app).put("/scopes", json=new.model_dump())
+    assert resp.status_code == 201
+    synced = [data for _, data in pubsub.published if data.get("scope_id") == "live"]
+    assert synced[-1]["repointed"] is True
+    assert synced[-1]["force_fetch"] is True
+    purges = [
+        t for t, _ in pubsub.published if t == [opal_server_config.SCOPES_PURGE_CHANNEL]
+    ]
+    assert not purges  # the clone stays: only the branch changed
 
 
 @pytest.mark.asyncio
@@ -2019,4 +2127,7 @@ async def test_a_failed_publish_restores_the_claim_a_request_is_still_riding(
         await later
 
     assert _refreshes(emitted) == ["requested", "publish_failed"]
-    assert _waits(emitted) == [{"outcome": "timeout", "for": "branch"}]
+    # A request cancelled in its publish held a slot, so it counts as a wait.
+    timed_out = {"outcome": "timeout", "for": "branch"}
+    cancelled = {"outcome": "cancelled", "for": "branch"}
+    assert _waits(emitted) == ([cancelled, timed_out] if abandoned else [timed_out])

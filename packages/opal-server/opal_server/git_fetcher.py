@@ -2731,16 +2731,22 @@ class GitPolicyFetcher(PolicyFetcher):
         without listing every ref: a clone of a repository with tens of
         thousands of branches has as many ref files.
 
-        A libgit2 clone writes its refs loose, so the first entry of the
-        remote's ref directory answers; packed-refs is read only when that
-        directory is empty, and only until the first match.
+        A libgit2 clone writes its refs loose, so the first loose ref under the
+        remote's ref directory answers; a branch directory left empty or a
+        ``.lock`` file is not one. packed-refs is read only when there is none,
+        and only until the first match.
         """
-        try:
-            with os.scandir(git_dir / "refs" / "remotes" / self._remote) as entries:
-                if next(entries, None) is not None:
-                    return True
-        except (FileNotFoundError, NotADirectoryError):
-            pass
+        directories = [git_dir / "refs" / "remotes" / self._remote]
+        while directories:
+            try:
+                with os.scandir(directories.pop()) as entries:
+                    for entry in entries:
+                        if entry.is_dir(follow_symlinks=False):
+                            directories.append(Path(entry.path))
+                        elif not entry.name.endswith(".lock"):
+                            return True
+            except (FileNotFoundError, NotADirectoryError):
+                pass
         needle = f" refs/remotes/{self._remote}/"
         try:
             with open(git_dir / "packed-refs", encoding="utf-8", errors="replace") as f:

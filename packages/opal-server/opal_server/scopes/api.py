@@ -105,6 +105,12 @@ _BRANCH_REFRESH_TRACKED_MAX = 10_000
 # waiting (its hold ran out, or it was cancelled). Referenced here until they
 # end: the event loop keeps only weak references to tasks.
 _branch_refresh_publishes: "Set[asyncio.Future[None]]" = set()
+# Publishes can outlive their requests; a stuck broadcast backend must not pile
+# one up per scope per interval for the life of the worker.
+_BRANCH_REFRESH_PUBLISHES_MAX = 1_000
+# Claims whose publish failed after a newer claim replaced them (scope, claim):
+# when that newer publish fails too, they are not put back.
+_branch_refresh_failed_claims: "OrderedDict[Tuple[str, float], None]" = OrderedDict()
 
 _CLONE_WAIT_METRIC = "opal_server.scopes.policy_clone_wait"
 _BRANCH_REFRESH_METRIC = "opal_server.scopes.policy_branch_refresh"
@@ -221,15 +227,20 @@ def _branch_refresh_failed(
 ) -> None:
     """A sync request's publish raised: give its claim back, count and log it.
 
-    Only this request's own claim, and the one it replaced is restored:
-    a newer claim is another request's sync, and the requests riding an
-    older one are not this publish's to release.
+    Only this request's own claim, and the one it replaced is restored,
+    unless that one's publish failed too: a newer claim is another
+    request's sync, and the requests riding an older one are not this
+    publish's to release.
     """
     if _branch_refresh_requested.get(scope_id) == claim:
-        if previous is None:
+        if previous is None or (scope_id, previous) in _branch_refresh_failed_claims:
             del _branch_refresh_requested[scope_id]
         else:
             _branch_refresh_requested[scope_id] = previous
+    else:
+        _branch_refresh_failed_claims[(scope_id, claim)] = None
+        while len(_branch_refresh_failed_claims) > _BRANCH_REFRESH_TRACKED_MAX:
+            _branch_refresh_failed_claims.popitem(last=False)
     metrics.increment(_BRANCH_REFRESH_METRIC, tags={"outcome": "publish_failed"})
     logger.warning(
         "Scope {scope_id} has no branch in its clone, and its sync could "
@@ -296,6 +307,15 @@ async def _branch_wait_claim(
     claim, must_request = hold
     if not must_request:
         return claim  # rides the sync another request asked for
+    if len(_branch_refresh_publishes) >= _BRANCH_REFRESH_PUBLISHES_MAX:
+        metrics.increment(_BRANCH_REFRESH_METRIC, tags={"outcome": "publish_backlog"})
+        logger.warning(
+            "Scope {scope_id} has no branch in its clone, and its sync was not "
+            "requested: {count} earlier requests are still being published",
+            scope_id=scope_id,
+            count=len(_branch_refresh_publishes),
+        )
+        return None
     previous = _record_branch_refresh(scope_id, now)
     loop = asyncio.get_running_loop()
     publish = asyncio.ensure_future(request_refresh())
@@ -452,41 +472,29 @@ async def _make_bundle_waiting_for_clone(
     deadline = started + wait
     # The time of the sync request a branch wait holds for.
     claim = started
-    if waiting_for == "branch":
-        assert request_refresh is not None  # checked with the first attempt
-        held_for = await _branch_wait_claim(
-            scope_id, request_refresh, started, wait, deadline
-        )
-        if held_for is None:
-            # The immediate 409 or 503: not a wait, but its publish can have taken time.
-            _note_wait(pending, loop.time() - started)
-            raise pending
-        claim = held_for
-        deadline = min(deadline, claim + wait)
-        # Again: a request that published yielded in the publish, and other
-        # first misses may have taken slots meanwhile. The sync is requested
-        # by now, so later misses can still ride it.
-        if 0 < cap <= _clone_wait_inflight:
-            logger.info(
-                "Scope {scope_id} branch wait is at its {cap}-request cap; "
-                "answering {status} without waiting",
-                scope_id=scope_id,
-                cap=cap,
-                status=status_now,
-            )
-            metrics.increment(
-                _CLONE_WAIT_METRIC, tags={"outcome": "shed", "for": waiting_for}
-            )
-            _note_wait(pending, loop.time() - started)
-            raise pending
-    outcome = "error"
+    # None: not a wait after all, so not counted as one.
+    outcome: Optional[str] = "error"
 
+    # Taken before the publish below, with no await since the cap check: a slow
+    # publish holds its request as long as any poll does, so it must count.
     _clone_wait_inflight += 1
     try:
         # Inside the try, not before it: this call ends in a metrics sink, and
         # a sink that raises between the increment and the try would leak the
         # slot for the life of the process — permanently lowering the cap.
         _publish_clone_wait_inflight()
+        if waiting_for == "branch":
+            assert request_refresh is not None  # checked with the first attempt
+            held_for = await _branch_wait_claim(
+                scope_id, request_refresh, started, wait, deadline
+            )
+            if held_for is None:
+                # The immediate 409 or 503, though its publish can have taken time.
+                outcome = None
+                _note_wait(pending, loop.time() - started)
+                raise pending
+            claim = held_for
+            deadline = min(deadline, claim + wait)
         while True:
             remaining = deadline - loop.time()
             # `not (remaining > 0)` rather than `remaining <= 0`: NaN compares
@@ -621,9 +629,10 @@ async def _make_bundle_waiting_for_clone(
     finally:
         _clone_wait_inflight -= 1
         _publish_clone_wait_inflight()
-        metrics.increment(
-            _CLONE_WAIT_METRIC, tags={"outcome": outcome, "for": waiting_for}
-        )
+        if outcome is not None:
+            metrics.increment(
+                _CLONE_WAIT_METRIC, tags={"outcome": outcome, "for": waiting_for}
+            )
         if outcome in ("served", "timeout"):
             metrics.gauge(
                 _CLONE_WAIT_SECONDS_METRIC,
@@ -711,9 +720,11 @@ def init_scope_router(
 
         old_source_id = None
         old_clone_path = None
+        old_branch = None
         try:
             old_scope = await scopes.get(scope_in.scope_id)
             if isinstance(old_scope.policy, GitPolicyScopeSource):
+                old_branch = old_scope.policy.branch
                 old_source_id = GitPolicyFetcher.source_id(old_scope.policy)
                 old_clone_path = str(
                     GitPolicyFetcher.repo_clone_path(
@@ -741,7 +752,13 @@ def init_scope_router(
             if isinstance(scope_in.policy, GitPolicyScopeSource)
             else None
         )
-        repointed = old_source_id != new_source_id
+        # A clone can hold several repositories' scopes, and one repository's
+        # branches share a clone, so the source id does not see a branch change.
+        repointed = old_source_id != new_source_id or (
+            isinstance(scope_in.policy, GitPolicyScopeSource)
+            and old_branch is not None
+            and old_branch != scope_in.policy.branch
+        )
         try:
             try:
                 await scopes.put(scope_in)
