@@ -1,0 +1,65 @@
+name: opal-openfga-example
+
+services:
+  # When scaling the opal-server to multiple nodes and/or multiple workers, we use
+  # a *broadcast* channel to sync between all the instances of opal-server.
+  broadcast_channel:
+    image: postgres:alpine
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+
+  openfga_data_nginx:
+    image: nginx:alpine
+    volumes:
+      - "./docker_files/openfga_data:/usr/share/nginx/html:ro"
+
+  openfga:
+    image: openfga/openfga:latest
+    command: run
+    ports:
+      # HTTP API
+      - "8080:8080"
+      # gRPC API
+      - "8081:8081"
+      # Playground UI
+      - "3000:3000"
+
+  opal_server:
+    image: permitio/opal-server:latest
+    environment:
+      - OPAL_BROADCAST_URI=postgres://postgres:postgres@broadcast_channel:5432/postgres
+      - UVICORN_NUM_WORKERS=4
+      # The git repo hosting our OpenFGA authorization model (.fga or .json)
+      - OPAL_POLICY_REPO_URL=https://github.com/permitio/opal-example-policy-repo.git
+      - OPAL_POLICY_REPO_POLLING_INTERVAL=30
+      # Configures initial relationship tuple data sources for OPAL clients
+      - OPAL_DATA_CONFIG_SOURCES={"config":{"entries":[{"url":"http://openfga_data_nginx/data.json","topics":["policy_data"],"dst_path":""}]}}
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+      # Configure OPAL server to track OpenFGA policy model files (.fga / .json)
+      - OPAL_FILTER_FILE_EXTENSIONS=.fga,.json
+      - OPAL_POLICY_REPO_POLICY_EXTENSIONS=.fga,.json
+    ports:
+      - "7002:7002"
+    depends_on:
+      - broadcast_channel
+      - openfga_data_nginx
+
+  opal_client:
+    image: permitio/opal-client-standalone:latest
+    environment:
+      - OPAL_SERVER_URL=http://opal_server:7002
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+      - OPAL_INLINE_OPA_ENABLED=false
+      - OPAL_POLICY_STORE_TYPE=OPENFGA
+      - OPAL_POLICY_STORE_URL=http://openfga:8080
+      - OPAL_POLICY_STORE_OPENFGA_STORE_NAME=opal-demo
+    ports:
+      - "7766:7000"
+    depends_on:
+      - opal_server
+      - openfga
+    command: sh -c "exec ./wait-for.sh opal_server:7002 --timeout=20 -- ./start.sh"
+    links:
+      - openfga_data_nginx

@@ -9,7 +9,11 @@ from typing import Callable, Coroutine, List, Optional
 import aiohttp
 from opal_client.config import EngineLogFormat, opal_client_config
 from opal_client.engine.logger import log_engine_output_opa, log_engine_output_simple
-from opal_client.engine.options import CedarServerOptions, OpaServerOptions
+from opal_client.engine.options import (
+    CedarServerOptions,
+    OpaServerOptions,
+    OpenFGAServerOptions,
+)
 from opal_client.logger import logger
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -17,7 +21,9 @@ AsyncCallback = Callable[[], Coroutine]
 
 # cedar-agent takes its auth token as the argument after ``-a``/``--authentication``.
 _CREDENTIAL_VALUE_FLAGS = frozenset({"-a", "--authentication"})
-_CREDENTIAL_FLAG_NAME_RE = re.compile(r"token|secret|password|passphrase", re.I)
+_CREDENTIAL_FLAG_NAME_RE = re.compile(
+    r"token|secret|password|passphrase|preshared-keys|datastore-uri", re.I
+)
 
 
 def redact_engine_arguments(arguments: List[str]) -> List[str]:
@@ -474,3 +480,72 @@ class CedarRunner(PolicyEngineRunner):
         await log_engine_output_simple(line)
 
         return False
+
+
+class OpenFGARunner(PolicyEngineRunner):
+    def __init__(
+        self,
+        options: Optional[OpenFGAServerOptions] = None,
+        piped_logs_format: EngineLogFormat = EngineLogFormat.NONE,
+    ):
+        super().__init__(piped_logs_format)
+        self._options = options or OpenFGAServerOptions()
+
+    def get_executable_path(self) -> str:
+        if opal_client_config.INLINE_OPENFGA_EXEC_PATH:
+            return opal_client_config.INLINE_OPENFGA_EXEC_PATH
+        else:
+            logger.warning(
+                "OpenFGA executable path not set, looking for 'openfga' binary in system PATH. "
+                "It is recommended to set the INLINE_OPENFGA_EXEC_PATH configuration."
+            )
+            path = shutil.which("openfga")
+            if path is None:
+                raise FileNotFoundError("OpenFGA executable not found in PATH")
+            return path
+
+    def get_arguments(self) -> list[str]:
+        return ["run", *self._options.get_args()]
+
+    async def health_check(self) -> bool:
+        """Performs a health check on the OpenFGA server by calling its
+        /healthz endpoint."""
+        try:
+            health_url = f"{opal_client_config.POLICY_STORE_URL.rstrip('/')}/healthz"
+            timeout_seconds = opal_client_config.POLICY_STORE_CONN_RETRY.wait_time
+            timeout = aiohttp.ClientTimeout(total=timeout_seconds)
+            async with aiohttp.ClientSession(
+                trust_env=True, timeout=timeout
+            ) as session:
+                response = await session.get(health_url)
+                return response.status in [200, 204]
+        except Exception as e:
+            logger.debug(f"OpenFGA health check failed: {e}")
+            return False
+
+    @staticmethod
+    def setup_openfga_runner(
+        options: Optional[OpenFGAServerOptions] = None,
+        piped_logs_format: EngineLogFormat = EngineLogFormat.NONE,
+        initial_start_callbacks: Optional[List[AsyncCallback]] = None,
+        rehydration_callbacks: Optional[List[AsyncCallback]] = None,
+    ):
+        openfga_runner = OpenFGARunner(
+            options=options, piped_logs_format=piped_logs_format
+        )
+
+        if initial_start_callbacks:
+            openfga_runner.register_process_initial_start_callbacks(
+                initial_start_callbacks
+            )
+
+        if rehydration_callbacks:
+            openfga_runner.register_process_restart_callbacks(rehydration_callbacks)
+
+        return openfga_runner
+
+    async def handle_log_line(self, line: bytes) -> bool:
+        await log_engine_output_simple(line)
+
+        return False
+
