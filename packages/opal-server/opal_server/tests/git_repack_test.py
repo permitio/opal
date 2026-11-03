@@ -38,7 +38,8 @@ from opal_common.logger import logger
 from opal_common.monitoring import metrics
 from opal_common.schemas.policy_source import GitPolicyScopeSource, NoAuthData
 from opal_common.schemas.scopes import Scope
-from opal_server import git_fetcher
+from opal_common.tests.log_capture import capture_records
+from opal_server import git_cli, git_fetcher
 from opal_server.config import OpalServerConfig, opal_server_config
 from opal_server.git_fetcher import (
     GitConcurrencyLimitExceeded,
@@ -687,13 +688,28 @@ def test_one_lock_for_every_clone_in_the_directory(tmp_path):
 
 
 def test_repack_leaves_nothing_but_the_clones_in_their_directory(tmp_path, monkeypatch):
-    """No lock file: nothing an orphan sweep of the clones directory could
-    delete, and so let a second repack in."""
+    """No repack lock file: nothing an orphan sweep of the clones directory
+    could delete, and so let a second repack in. Only the clone's own lock
+    file (git_cli.clone_lock_path), which the repack shares with the clone's
+    git command-line ops."""
     clones_dir = tmp_path / "git_sources"
     _pack_dir(clones_dir / "clone").mkdir(parents=True)
     _install_git_shim(tmp_path, monkeypatch, "exit 0\n")
     assert _repack_clone(clones_dir / "clone", timeout=60) is True
-    assert os.listdir(clones_dir) == ["clone"]
+    assert sorted(os.listdir(clones_dir)) == [".clone.lock", "clone"]
+
+
+def test_repack_leaves_no_descriptor_open(tmp_path, monkeypatch):
+    """Not the locks', and not the watchdog pipe's: an open write end of that
+    pipe would keep a later orphaned repack's watchdog from ever firing."""
+    clone_path = _fake_clone(tmp_path)
+    _install_git_shim(tmp_path, monkeypatch, "exit 0\n")
+    assert _repack_clone(clone_path, timeout=60) is True  # what is set up for good
+    fds = sorted(os.listdir("/dev/fd"))
+
+    assert _repack_clone(clone_path, timeout=60) is True
+
+    assert sorted(os.listdir("/dev/fd")) == fds
 
 
 def test_repack_is_skipped_while_another_repack_holds_the_lock(tmp_path, monkeypatch):
@@ -717,13 +733,15 @@ def test_repack_is_skipped_while_another_repack_holds_the_lock(tmp_path, monkeyp
     assert _lock_is_free(lock)
 
 
-def test_the_lock_outlives_the_process_that_started_git(tmp_path, monkeypatch):
-    """A leader SIGKILLed mid-repack (gunicorn's WORKER TIMEOUT) leaves git
-    running in its own session.
+def test_a_leader_killed_mid_repack_takes_its_git_with_it(tmp_path, monkeypatch):
+    """A leader SIGKILLed mid-repack (gunicorn's WORKER TIMEOUT, an OOM kill)
+    leaves no git behind holding the locks.
 
-    Git holds the lock through the fd it was handed, and so does every
-    child that inherited it (a stand-in for pack-objects here), so the
-    next leader's repack is skipped until they have all exited, and then
+    git runs in a session of its own, which no signal to the leader
+    reaches, but under the watchdog of the git command-line fetch (see
+    _repack_argv), which kills git's whole group, every child that holds
+    the locks included (a stand-in for pack-objects here), once the
+    leader's end of its pipe is gone. The next leader's repack then
     runs.
     """
     clone_path = _fake_clone(tmp_path)
@@ -764,17 +782,12 @@ def test_the_lock_outlives_the_process_that_started_git(tmp_path, monkeypatch):
     [git_pid] = [int(p) for p in (state / "runs").read_text().split()]
     child_pid = int((state / "child.pid").read_text())
     try:
-        assert _pid_alive(git_pid), "git died with the process that started it"
-        assert not _lock_is_free(
-            lock
-        ), "the lock died with the process that started git"
-
-        assert _repack_clone(clone_path, timeout=60) is False
-        assert len((state / "runs").read_text().split()) == 1
+        assert _wait_gone(child_pid) and _wait_gone(git_pid)
+        # The rest of the group (sh, the watchdog, the child's sleep) holds
+        # the lock too, and dies with it a moment later.
+        assert _wait_for(lambda: _lock_is_free(lock))
     finally:
         (state / "release").touch()
-    assert _wait_gone(child_pid) and _wait_gone(git_pid)
-    assert _lock_is_free(lock)
     assert _repack_clone(clone_path, timeout=60) is True
     assert len((state / "runs").read_text().split()) == 2
 
@@ -2560,24 +2573,26 @@ def test_pack_a_fetch_lands_while_git_runs_is_not_an_incomplete_repack(
 
 
 def test_repack_argv_raises_its_own_oom_score_where_linux_has_one(monkeypatch):
-    """On Linux git starts through sh, which raises its oom_score_adj and execs
-    git (same pid); elsewhere git runs directly."""
+    """Git starts through sh, with the git command-line fetch's watchdog; on
+    Linux sh first raises its oom_score_adj, which git inherits."""
     real_exists = os.path.exists
     monkeypatch.setattr(
         git_fetcher.os.path,
         "exists",
-        lambda p: True
-        if p in (git_fetcher._OOM_SCORE_ADJ_PATH, git_fetcher._SH)
-        else real_exists(p),
+        lambda p: True if p == git_fetcher._OOM_SCORE_ADJ_PATH else real_exists(p),
     )
     argv = git_fetcher._repack_argv("/usr/bin/git", "/clones/x")
     assert argv[:2] == ["/bin/sh", "-c"]
-    assert "echo 1000 > /proc/self/oom_score_adj" in argv[2]
-    assert argv[2].endswith('exec "$@"')
+    assert argv[2].startswith("{ echo 1000 > /proc/self/oom_score_adj; }")
+    assert git_cli.WATCHDOG_SCRIPT in argv[2]
+    assert argv[2].endswith('exit "$s"')
     assert argv[3:6] == ["sh", "/usr/bin/git", "-C"]
 
     monkeypatch.setattr(git_fetcher.os.path, "exists", lambda p: False)
-    assert git_fetcher._repack_argv("/usr/bin/git", "/clones/x")[0] == "/usr/bin/git"
+    argv = git_fetcher._repack_argv("/usr/bin/git", "/clones/x")
+    assert argv[:2] == ["/bin/sh", "-c"]
+    assert "oom_score_adj" not in argv[2]
+    assert argv[2].startswith(git_cli.WATCHDOG_SCRIPT)
 
 
 @pytest.mark.skipif(not os.path.exists("/proc/self/oom_score_adj"), reason="Linux only")
@@ -2913,6 +2928,37 @@ async def test_repack_blocked_by_another_process_or_the_zombie_cap_keeps_its_mar
 
 
 @pytest.mark.asyncio
+async def test_repack_of_a_clone_a_git_op_holds_is_a_clone_busy_skip(tmp_path, emitted):
+    """A git command-line op of another process holds the clone's own lock: the
+    repack is skipped as a busy clone, not as a repack running elsewhere, and
+    neither fails nor cools down; the mark stays for when the lock is free."""
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.fetched(_LIMIT - 1)
+    scope.push()
+    await scope.sync()
+    emitted["increment"].clear()
+
+    held = git_cli.take_clone_lock(scope.clone_path)
+    assert held is not None
+    try:
+        with capture_records() as records:
+            await GitPolicyFetcher.run_due_repacks({scope.source_id})
+    finally:
+        git_cli.drop_clone_lock(held)
+    assert scope.source_id in git_fetcher._repacks_due
+    assert _skips(emitted) == [{"reason": "clone_busy"}]
+    assert _repack_outcomes(emitted) == []
+    assert [
+        r["level"].name
+        for r in records.emitted
+        if "a git op holds the clone's lock" in r["message"]
+    ] == ["DEBUG"]
+
+    await GitPolicyFetcher.run_due_repacks({scope.source_id})
+    assert _count_pack_files(scope.clone_path) == 1
+
+
+@pytest.mark.asyncio
 async def test_mark_made_before_a_failure_elsewhere_waits_out_the_marker(
     tmp_path, monkeypatch
 ):
@@ -2976,7 +3022,7 @@ async def test_delete_floor_keeps_the_clone_while_a_repack_holds_the_lock(
     await svc._purge_local_clone_best_effort(repo.source_id, repo.clone_path, "s1")
     assert repo.clone_path.exists()
     assert any(
-        "still holds the repack lock" in r["message"]
+        "still holds its lock" in r["message"]
         for r in records
         if r["level"].name == "WARNING"
     )

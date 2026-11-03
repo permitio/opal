@@ -1,5 +1,4 @@
 import asyncio
-import codecs
 import datetime
 import errno
 import fcntl
@@ -22,10 +21,10 @@ from concurrent.futures import thread as cf_thread
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from typing import AbstractSet, Awaitable, Callable, Dict, NamedTuple, Optional, cast
 
-import aiofiles.os
 import pygit2
 from ddtrace import tracer
 from git import Repo
@@ -40,8 +39,16 @@ from opal_common.schemas.policy_source import (
     GitPolicyScopeSource,
     SSHAuthData,
 )
-from opal_common.synchronization.named_lock import NamedLock
+from opal_server import git_cli
 from opal_server.config import opal_server_config
+from opal_server.git_cli import (
+    GitCliBusyError,
+    GitCliError,
+    GitCliLocalError,
+    GitCliRefusedSourceError,
+    cli_clone,
+    cli_fetch,
+)
 from pygit2 import (
     KeypairFromMemory,
     RemoteCallbacks,
@@ -373,16 +380,17 @@ def drain_git_ops(timeout: float) -> bool:
     lingering. Lets a clone/fetch that finished at the end of the sync
     pass clear its marker before reset_caches runs; ops still lingering
     (unreachable remote) are left running and protected by
-    reset_caches's in-flight guard. timeout<=0 = don't wait.
+    reset_caches's in-flight guard. timeout<=0 = don't wait. A git
+    command-line op still being stopped counts as in flight.
     """
     deadline = time.monotonic() + max(0.0, timeout)
     while True:
         with _git_busy_lock:
-            if not _git_busy:
+            if not _git_busy and not git_cli.background_ops():
                 return True
         if time.monotonic() >= deadline:
             with _git_busy_lock:
-                return not _git_busy
+                return not _git_busy and not git_cli.background_ops()
         time.sleep(0.05)
 
 
@@ -695,6 +703,12 @@ def _repo_of(source_id: str) -> str:
     return source_id.rsplit("-", 1)[0]
 
 
+def sweep_scope_clone_leftovers(base_dir: Path) -> None:
+    """git_cli.sweep_clone_leftovers for the scope clones under BASE_DIR: for
+    the pre-fork preload, with the git command-line fetch on or off."""
+    git_cli.sweep_clone_leftovers(GitPolicyFetcher.base_dir(base_dir))
+
+
 def reclone_hung_scope_clones(
     base_dir: Path, live_source_ids: Optional[AbstractSet[str]]
 ) -> int:
@@ -941,66 +955,10 @@ async def run_in_git_executor(
     actually returns, so a marker that survives the process (a container
     restart) says the op never finished. See reclone_hung_scope_clones.
     """
-    global _zombie_cap_logged
-    # Clamped like every sibling knob in this subsystem: unclamped, a negative
-    # value is truthy AND `count >= cap` holds with nothing in flight, so the
-    # very first git op would be refused and no scope would ever sync. Negative
-    # reads as "no cap" (0), matching the intent of anyone typing -1 to disable.
-    max_zombies = max(0, opal_server_config.SCOPES_GIT_MAX_ZOMBIES)
-    if max_zombies and git_busy_count() >= max_zombies:
-        if not _zombie_cap_logged:
-            _zombie_cap_logged = True
-            logger.error(
-                "Refusing new scope git op: {count} in-flight at/over "
-                "SCOPES_GIT_MAX_ZOMBIES={cap}; remotes appear stuck.",
-                count=git_busy_count(),
-                cap=max_zombies,
-            )
-        # Counted on EVERY refusal, unlike the log above which latches once per
-        # episode: the log answers "did we hit the cap", the counter answers
-        # "how hard and for how long" — the part an operator needs mid-outage.
-        metrics.increment(
-            "opal_server.scopes.git_ops_refused", tags={"pid": str(os.getpid())}
-        )
-        raise GitConcurrencyLimitExceeded(
-            f"in-flight git ops ({git_busy_count()}) reached "
-            f"SCOPES_GIT_MAX_ZOMBIES ({max_zombies})"
-        )
+    _refuse_at_zombie_cap()
 
     loop = asyncio.get_running_loop()
-
-    # The op's state as its own thread, the event loop (at the timeout) and
-    # the marker thread see it. The lock only guards these flags, never file
-    # I/O, so no thread ever waits on another's disk access.
-    hung_lock = threading.Lock()
-    hung = {"returned": False, "timed_out": False, "marked": False}
-    hung_marker = (
-        marker_dir / _hung_marker_name()
-        if marker_dir is not None and mark_when_hung
-        else None
-    )
-
-    def _mark_hung():
-        with hung_lock:
-            if hung["returned"]:
-                return
-        try:
-            # A first clone can hang before git_sources exists.
-            hung_marker.parent.mkdir(parents=True, exist_ok=True)
-            hung_marker.touch()
-        except OSError as e:
-            logger.warning(
-                "Could not write hung-op marker {path}: {err}",
-                path=hung_marker,
-                err=repr(e),
-            )
-            return
-        with hung_lock:
-            returned = hung["returned"]
-            hung["marked"] = not returned
-        if returned:
-            # The op returned while the marker was being written.
-            _remove_hung_marker(hung_marker)
+    hung = _HungOpMarker(marker_dir, mark_when_hung)
 
     def _runner():
         succeeded = False
@@ -1011,25 +969,7 @@ async def run_in_git_executor(
         finally:
             if busy_key is not None:
                 _mark_git_op_done(busy_key)
-            if marker_dir is not None:
-                with hung_lock:
-                    hung["returned"] = True
-                    timed_out, marked = hung["timed_out"], hung["marked"]
-                if marked:
-                    # Only this op's own marker: another process's op on the
-                    # same clone may still be hung.
-                    _remove_hung_marker(hung_marker)
-                elif succeeded and not timed_out and os.path.isdir(marker_dir):
-                    # Finished within its timeout: the clone works, so no
-                    # earlier hang calls for a fresh clone. Only a stat on the
-                    # common path; the rare removal runs on a thread of its
-                    # own, so it never adds to this op's time.
-                    _start_marker_thread(
-                        clear_hung_markers,
-                        marker_dir,
-                        what="clear the stale hung-op markers in",
-                        path=marker_dir,
-                    )
+            hung.returned(succeeded)
 
     sem = _get_live_ops_semaphore()
     await sem.acquire()
@@ -1072,20 +1012,176 @@ async def run_in_git_executor(
             # Zombie: free the capacity slot; the private daemon thread lingers
             # until the OS gives up, tracked only by busy_key.
             _release_once()
-            with hung_lock:
-                hung["timed_out"] = True
-            if hung_marker is not None:
-                # On a thread of its own, never awaited: the marker sits on the
-                # clones' volume, whose slowness may be what made the op hang,
-                # and neither the caller nor the live-op slot may wait for it.
-                # Lost, the hang goes unrecorded: a restart won't re-clone.
-                _start_marker_thread(
-                    _mark_hung, what="record the hang of this op in", path=hung_marker
-                )
+            hung.timed_out()
             raise TimeoutError(f"git operation exceeded {timeout}s")
         return fut.result()
     finally:
         _release_once()
+
+
+def _refuse_at_zombie_cap() -> None:
+    """Raise GitConcurrencyLimitExceeded once the in-flight git ops (live and
+    timed-out) reach SCOPES_GIT_MAX_ZOMBIES."""
+    global _zombie_cap_logged
+    # Clamped like every sibling knob in this subsystem: unclamped, a negative
+    # value is truthy AND `count >= cap` holds with nothing in flight, so the
+    # very first git op would be refused and no scope would ever sync. Negative
+    # reads as "no cap" (0), matching the intent of anyone typing -1 to disable.
+    max_zombies = max(0, opal_server_config.SCOPES_GIT_MAX_ZOMBIES)
+    if max_zombies and git_busy_count() >= max_zombies:
+        if not _zombie_cap_logged:
+            _zombie_cap_logged = True
+            logger.error(
+                "Refusing new scope git op: {count} in-flight at/over "
+                "SCOPES_GIT_MAX_ZOMBIES={cap}; remotes appear stuck.",
+                count=git_busy_count(),
+                cap=max_zombies,
+            )
+        # Counted on EVERY refusal, unlike the log above which latches once per
+        # episode: the log answers "did we hit the cap", the counter answers
+        # "how hard and for how long" — the part an operator needs mid-outage.
+        metrics.increment(
+            "opal_server.scopes.git_ops_refused", tags={"pid": str(os.getpid())}
+        )
+        raise GitConcurrencyLimitExceeded(
+            f"in-flight git ops ({git_busy_count()}) reached "
+            f"SCOPES_GIT_MAX_ZOMBIES ({max_zombies})"
+        )
+
+
+class _HungOpMarker:
+    """One git op's hung-op marker (see run_in_git_executor).
+
+    ``timed_out`` is called on the event loop when the op passes its
+    timeout, ``returned`` once the op has actually returned, from any
+    thread. The lock guards only the flags, never file I/O, so no thread
+    ever waits on another's disk access.
+    """
+
+    def __init__(self, marker_dir: Optional[Path], mark_when_hung: bool) -> None:
+        self._dir = marker_dir
+        self._marker = (
+            marker_dir / _hung_marker_name()
+            if marker_dir is not None and mark_when_hung
+            else None
+        )
+        self._lock = threading.Lock()
+        self._returned = False
+        self._timed_out = False
+        self._marked = False
+
+    def timed_out(self) -> None:
+        with self._lock:
+            self._timed_out = True
+        if self._marker is not None:
+            # On a thread of its own, never awaited: the marker sits on the
+            # clones' volume, whose slowness may be what made the op hang,
+            # and neither the caller nor the live-op slot may wait for it.
+            # Lost, the hang goes unrecorded: a restart won't re-clone.
+            _start_marker_thread(
+                self._mark, what="record the hang of this op in", path=self._marker
+            )
+
+    def _mark(self) -> None:
+        marker = cast(Path, self._marker)
+        with self._lock:
+            if self._returned:
+                return
+        try:
+            # A first clone can hang before git_sources exists.
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.touch()
+        except OSError as e:
+            logger.warning(
+                "Could not write hung-op marker {path}: {err}",
+                path=marker,
+                err=repr(e),
+            )
+            return
+        with self._lock:
+            returned = self._returned
+            self._marked = not returned
+        if returned:
+            # The op returned while the marker was being written.
+            _remove_hung_marker(marker)
+
+    def returned(self, succeeded: bool) -> None:
+        if self._dir is None:
+            return
+        with self._lock:
+            self._returned = True
+            timed_out, marked = self._timed_out, self._marked
+        if marked:
+            # Only this op's own marker: another process's op on the same
+            # clone may still be hung.
+            _remove_hung_marker(cast(Path, self._marker))
+        elif succeeded and not timed_out and os.path.isdir(self._dir):
+            # Finished within its timeout: the clone works, so no earlier hang
+            # calls for a fresh clone. Only a stat on the common path; the rare
+            # removal runs on a thread of its own, so it never adds to this
+            # op's time.
+            _start_marker_thread(
+                clear_hung_markers,
+                self._dir,
+                what="clear the stale hung-op markers in",
+                path=self._dir,
+            )
+
+
+def git_cli_enabled() -> bool:
+    return bool(opal_server_config.SCOPES_GIT_FETCH_WITH_CLI)
+
+
+async def run_git_cli_op(
+    op: Callable[..., Awaitable[None]],
+    *,
+    timeout: float,
+    busy_key: str,
+    marker_dir: Optional[Path] = None,
+    mark_when_hung: bool = False,
+) -> None:
+    """Run a git command-line op (``git_cli.cli_fetch`` or ``cli_clone``, given
+    every argument but ``on_gone``) under the bookkeeping
+    ``run_in_git_executor`` gives a libgit2 one.
+
+    The op stops git itself at ``timeout``, which must be the timeout it
+    was given. From its start until its ``on_gone`` (its process group
+    gone and its clone cleaned up, which for a stop or a git that outlives
+    SIGKILL can be after the op returned) it counts as in flight
+    (``busy_key``, SCOPES_GIT_MAX_ZOMBIES); it holds a
+    SCOPES_GIT_MAX_WORKERS slot until it returns. It writes a hung-op
+    marker at ``timeout`` when ``mark_when_hung`` says so and removes it
+    at its on_gone; an op that succeeds within its timeout removes every
+    marker in ``marker_dir``. An op the end of the event loop cut short
+    (on_gone told None: SIGKILLed, its clean-up left to the next op on the
+    clone) leaves flight but keeps its marker, as a libgit2 op still
+    running when its process ended does.
+
+    Raises what the op raises, and GitConcurrencyLimitExceeded at the cap.
+    """
+    _refuse_at_zombie_cap()
+    hung = _HungOpMarker(marker_dir, mark_when_hung)
+    loop = asyncio.get_running_loop()
+    sem = _get_live_ops_semaphore()
+    await sem.acquire()
+    try:
+        _mark_git_op_started(busy_key)
+        timer = (
+            loop.call_later(timeout, hung.timed_out)
+            if timeout and math.isfinite(timeout) and timeout > 0
+            else None
+        )
+
+        def _gone(how: Optional[bool]) -> None:
+            if timer is not None:
+                timer.cancel()
+            _mark_git_op_done(busy_key)
+            if how is not None:
+                hung.returned(how)
+
+        await op(on_gone=_gone)
+    finally:
+        sem.release()
 
 
 # --- scope clone repack -------------------------------------------------------
@@ -1314,11 +1410,13 @@ def _remove_repack_leftovers(pack_dir: Path, why: str) -> None:
     installs beside it before the ``.idx`` (``_pack_companions``). Git
     installs a new pack ``.pack`` first and ``.idx`` last, so a repack
     stopped in between leaves a full-size pack that no reader and no later
-    repack will ever see. No other writer shows one: libgit2 commits a
-    fetched pack's ``.idx`` before its ``.pack`` (its in-flight
-    ``pack_git2_*`` names match nothing here), and the lock keeps out any
-    other repack. A pack whose ``.idx`` turns out to be there after all
-    (see ``_index_may_exist``) stays too, with its companions.
+    repack will ever see. A git fetch (SCOPES_GIT_FETCH_WITH_CLI) installs
+    its pack in the same order, but holds the clone's lock, which the
+    repack holds too, so none is under way here; libgit2 commits a fetched
+    pack's ``.idx`` before its ``.pack`` (its in-flight ``pack_git2_*``
+    names match nothing here), and the repack lock keeps out any other
+    repack. A pack whose ``.idx`` turns out to be there after all (see
+    ``_index_may_exist``) stays too, with its companions.
 
     An ``.idx`` without its ``.pack`` is usually that libgit2 install,
     caught in the milliseconds between its two renames, and stays. One
@@ -1417,7 +1515,8 @@ async def remove_clone_dir_exclusive(path: str) -> bool:
     the repack. Waits for a running repack, polling the lock on the
     event loop (no executor thread held), for at most as long as one can
     hold it (the repack timeout plus its stop and sweep), and returns
-    False without removing anything if it is still held then.
+    False without removing anything if it is still held then, or while a
+    git command-line op of another process holds the clone's own lock.
 
     Raises what rmtree raises, and FileNotFoundError when the clones'
     directory is gone.
@@ -1435,15 +1534,33 @@ async def remove_clone_dir_exclusive(path: str) -> bool:
     # only once the rmtree is done, whatever happens to the caller.
     # Shielded: cancelled while still queued for an executor thread, the
     # work item would be dropped and the lock fd never closed.
-    await asyncio.shield(run_sync(_rmtree_then_drop_lock, path, fd))
-    return True
+    return await asyncio.shield(run_sync(_rmtree_then_drop_lock, path, fd))
 
 
-def _rmtree_then_drop_lock(path: str, fd: int) -> None:
+def _rmtree_then_drop_lock(path: str, fd: int) -> bool:
+    try:
+        return _rmtree_unless_locked(path)
+    finally:
+        _drop_repack_lock(fd)
+
+
+def _rmtree_unless_locked(path: str) -> bool:
+    """``shutil.rmtree(path)`` of a scope clone under the clone's own lock
+    (git_cli.take_clone_lock): whether it ran. False, having removed nothing,
+    while a git op holds that lock (a git command-line op of another process,
+    one whose worker died included, or a repack). Blocking.
+
+    Raises what rmtree raises, FileNotFoundError when the clone is gone
+    included (the clones' directory with it, for the lock file).
+    """
+    fd = git_cli.take_clone_lock(Path(path))
+    if fd is None:
+        return False
     try:
         shutil.rmtree(path)
     finally:
-        _drop_repack_lock(fd)
+        git_cli.drop_clone_lock(fd)
+    return True
 
 
 # How long a repack can hold the repack lock past its timeout: the SIGTERM
@@ -1453,7 +1570,7 @@ _REMOVE_CLONE_POLL_SECONDS = 0.25
 
 
 def _signal_repack_group(proc: subprocess.Popen[bytes], sig: int) -> None:
-    # The group id is git's pid (start_new_session made it a session leader).
+    # The group id is sh's pid (start_new_session made it a session leader).
     # Signalled only while that pid is unreaped (returncode None): a reaped
     # leader's pid, and so its group id, could have been reused.
     if proc.returncode is not None:
@@ -1522,9 +1639,12 @@ def _repack_clone(
     Runs under the repack lock (an flock on the clones' directory, see
     ``_repack_lock_dir``), and returns False, having run nothing, while
     another repack holds it: in this process or any other, a previous
-    leader's orphaned git included. Returns True once the clone is
-    repacked. What repacks that died left in the pack dir (git temp files,
-    packs without their index) is removed first.
+    leader's orphaned git included. It holds the clone's own lock
+    (git_cli.take_clone_lock) as well, and raises GitCliBusyError, having
+    run nothing, while a git command-line fetch or clone holds that.
+    Returns True once the clone is repacked. What repacks that died left
+    in the pack dir (git temp files, packs without their index) is removed
+    first.
 
     ``timeout`` is hard. When it expires git gets SIGTERM, then SIGKILL
     after ``term_grace`` seconds, the temp files it left are removed, and
@@ -1535,6 +1655,7 @@ def _repack_clone(
     unbounded.
 
     Raises:
+        GitCliBusyError: a git op holds the clone's lock; nothing ran.
         TimeoutError: the repack ran past ``timeout``.
         GitRepackError: git exited non-zero; carries the tail of its stderr.
         GitRepackIncompleteError: git exited 0 but more than one pack is left.
@@ -1557,22 +1678,44 @@ def _repack_clone(
     if lock_fd is None:
         return False
     try:
-        # Stamped before git starts and removed only once the repack is done,
-        # so a repack that never reports back counts as failed: on Kubernetes
-        # with cgroup v2 an OOM kill takes the whole container, git and every
-        # opal-server process with it, and nothing would be left to record
-        # the failure. The restarted server then waits out the cooldown
-        # instead of repacking the same clone straight into the same OOM.
-        _record_repack_failure(repo_path)
-        _run_repack(
-            git=git,
-            env=env,
-            repo_path=repo_path,
-            timeout=timeout,
-            term_grace=term_grace,
-            lock_fd=lock_fd,
-        )
-        _clear_repack_failure(repo_path)
+        # The clone's own lock too, which git command-line fetches and clones
+        # hold (git_cli): no fetch writes into the pack dir while the repack
+        # sweeps it, and none starts while git repack runs. Held by another
+        # op, the clone is left to it.
+        clone_fd = git_cli.take_clone_lock(Path(repo_path))
+        if clone_fd is None:
+            raise GitCliBusyError(
+                128, f"fatal: a git op holds the lock of {os.fspath(repo_path)}"
+            )
+        watching: Optional[int] = None
+        try:
+            # Stamped before git starts and removed only once the repack is
+            # done, so a repack that never reports back counts as failed: on
+            # Kubernetes with cgroup v2 an OOM kill takes the whole container,
+            # git and every opal-server process with it, and nothing would be
+            # left to record the failure. The restarted server then waits out
+            # the cooldown instead of repacking the same clone straight into
+            # the same OOM.
+            _record_repack_failure(repo_path)
+            # The watchdog's pipe (see _repack_argv): this process holds its
+            # write end until git is done, so a worker that dies (SIGKILL, an
+            # OOM kill) takes its repack with it, rather than leave git
+            # holding both locks with no timeout.
+            watched, watching = os.pipe()
+            _run_repack(
+                git=git,
+                env=env,
+                repo_path=repo_path,
+                timeout=timeout,
+                term_grace=term_grace,
+                lock_fds=(lock_fd, clone_fd),
+                stdin=watched,
+            )
+            _clear_repack_failure(repo_path)
+        finally:
+            if watching is not None:
+                os.close(watching)
+            git_cli.drop_clone_lock(clone_fd)
     finally:
         _drop_repack_lock(lock_fd)
     return True
@@ -1585,9 +1728,15 @@ def _run_repack(
     repo_path: str | os.PathLike[str],
     timeout: float,
     term_grace: float,
-    lock_fd: int,
+    lock_fds: tuple,
+    stdin: int,
 ) -> None:
-    """``_repack_clone``'s body, run while this process holds the lock."""
+    """``_repack_clone``'s body, run while this process holds the repack lock
+    and the clone's, whose fds (``lock_fds``) git inherits.
+
+    ``stdin``, the
+    read end of the watchdog's pipe (see _repack_argv), is closed here.
+    """
     pack_dir = _clone_pack_dir(repo_path)
     _remove_repack_leftovers(pack_dir, "left by a repack that died")
 
@@ -1601,9 +1750,9 @@ def _run_repack(
     # (Same pattern as opal-client's engine runner.) Unlike preexec_fn it is
     # safe to use from a thread. The cost: a Ctrl-C or a signal sent to
     # OPAL's own group no longer reaches git; the handler below covers
-    # anything that unwinds through here. (A worker SIGKILLed mid-repack
-    # leaves git to run to completion either way: gunicorn signals the
-    # worker's pid, not its group. git keeps the repack lock meanwhile.)
+    # anything that unwinds through here, and sh's watchdog a worker
+    # SIGKILLed mid-repack (gunicorn signals the worker's pid, not its
+    # group).
     # -k: objects of the old packs that no ref reaches go into the new pack
     # instead of being deleted with it, so a repack never removes an object
     # (see GitRepackIncompleteError for the fetch that needs it).
@@ -1612,15 +1761,18 @@ def _run_repack(
     # per clone of a 61k-branch one), rewritten on every repack.
     # The success check below counts only the packs that are here now.
     before = _indexed_packs(_pack_dir_names(pack_dir) or frozenset())
-    proc = subprocess.Popen(
-        _repack_argv(git, repo_path),
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-        env=env,
-        start_new_session=True,
-        pass_fds=(lock_fd,),
-    )
+    try:
+        proc = subprocess.Popen(
+            _repack_argv(git, repo_path),
+            stdin=stdin,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            env=env,
+            start_new_session=True,
+            pass_fds=lock_fds,
+        )
+    finally:
+        os.close(stdin)  # sh's own copy is the one it needs
     try:
         _, stderr = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -1652,13 +1804,15 @@ def _run_repack(
 
 
 def _repack_argv(git: str, repo_path: str | os.PathLike[str]) -> list[str]:
-    """The command ``_run_repack`` runs.
+    """The command ``_run_repack`` runs: git under ``sh``, which starts the
+    watchdog the git command-line fetch uses (git_cli.WATCHDOG_SCRIPT: the
+    group ends itself when the process that started it dies, its stdin a pipe
+    from that process), and exits with git's status.
 
     ``pack.packSizeLimit=0``: an operator's global git config must not
     split the merged pack, which would read as an incomplete repack every
-    time. On Linux git starts through ``sh``, which raises its own
-    oom_score_adj and then execs git (same pid, so the process group and
-    every signal are unchanged); pack-objects inherits the score.
+    time. On Linux sh first raises its own oom_score_adj, which git and
+    pack-objects inherit.
     """
     argv = [
         git,
@@ -1675,11 +1829,15 @@ def _repack_argv(git: str, repo_path: str | os.PathLike[str]) -> list[str]:
         "-n",
         "-q",
     ]
-    if not (os.path.exists(_OOM_SCORE_ADJ_PATH) and os.path.exists(_SH)):
-        return argv
-    script = (
+    oom = (
         f"{{ echo {_REPACK_OOM_SCORE_ADJ} > {_OOM_SCORE_ADJ_PATH}; }} 2>/dev/null; "
-        'exec "$@"'
+        if os.path.exists(_OOM_SCORE_ADJ_PATH)
+        else ""
+    )
+    script = (
+        oom
+        + git_cli.WATCHDOG_SCRIPT
+        + '"$@"; s=$?; kill -KILL "$w" 2>/dev/null; exit "$s"'
     )
     return [_SH, "-c", script, "sh", *argv]
 
@@ -1769,6 +1927,12 @@ class _SyncPass:
     # (source id, branch) of every "Did not find target branch" this pass
     # logged, so that the scopes sharing a missing branch log it once.
     missing_branches_logged: set[tuple[str, str]] = field(default_factory=set)
+    # Sources a sync of this pass already fetched or cloned, or tried to,
+    # whatever came of it: the pass's other syncs of them neither fetch nor
+    # clone them again. A clone's scopes whose branch it lacks would each
+    # fetch it once more (with the backoff off, a refresh-all pass's, every
+    # one to its timeout), and with no clone on disk each would clone it.
+    tried_sources: set[str] = field(default_factory=set)
     # Set when sync_pass() exits. A task the pass started can outlive it with
     # the pass still in its context; an ended pass counts as none.
     ended: bool = False
@@ -2225,6 +2389,66 @@ class GitPolicyFetcher(PolicyFetcher):
         )
         _emit_sources_in_backoff()
 
+    def _skip_busy(self, err: GitCliBusyError) -> None:
+        """Another process's git op holds this clone (git_cli): skip the git
+        op, as for an op of this process still in flight.
+
+        Not a failure.
+        """
+        metrics.increment(
+            "opal_server.scopes.git_op_skipped", tags={"reason": "clone_busy"}
+        )
+        logger.warning(
+            "Not syncing {url} with the remote for scope {scope}: {err}",
+            url=redact_url(self._source.url),
+            scope=self._scope_id,
+            err=err.stderr_tail,
+        )
+
+    def _count_local_failure(self, op: str, err: GitCliLocalError) -> None:
+        """A git command-line op failed on this machine (git missing, a clone
+        directory that cannot be set up, an unreadable known_hosts): counted
+        and logged, but no backoff, which is for a remote that fails.
+
+        A source
+        whose URL or credentials git cannot be given (GitCliRefusedSourceError)
+        is backed off: only a change of the source fixes it, and a PUT, which
+        is one, syncs regardless.
+        """
+        metrics.increment(
+            "opal_server.scopes.git_op_failures", tags={"op": op, "reason": "local"}
+        )
+        logger.error(
+            "Could not {op} {url} for scope {scope} (a problem on this server, "
+            "not the remote's): {err}",
+            op=op,
+            url=redact_url(self._source.url),
+            scope=self._scope_id,
+            err=repr(err),
+        )
+        if isinstance(err, GitCliRefusedSourceError):
+            self._record_source_failure(err)
+
+    def _tried_earlier_in_pass(self, op: str) -> bool:
+        """Whether a sync of the sync pass this sync runs in already fetched or
+        cloned this source, or tried to: the pass tries each clone once."""
+        sync_pass = _running_sync_pass()
+        if sync_pass is None or self._source_id not in sync_pass.tried_sources:
+            return False
+        logger.debug(
+            "Not trying to {op} {url} for scope {scope}: a sync earlier in this "
+            "sync pass already did",
+            op=op,
+            url=redact_url(self._source.url),
+            scope=self._scope_id,
+        )
+        return True
+
+    def _tried_in_this_pass(self) -> None:
+        sync_pass = _running_sync_pass()
+        if sync_pass is not None:
+            sync_pass.tried_sources.add(self._source_id)
+
     def _clear_source_backoff(self) -> None:
         """A git op against this source succeeded — drop its failure
         history."""
@@ -2358,7 +2582,9 @@ class GitPolicyFetcher(PolicyFetcher):
                             req_time=req_time,
                             pass_started=pass_started,
                         )
-                        if should_fetch:
+                        fetched = False
+                        if should_fetch and not self._tried_earlier_in_pass("fetch"):
+                            self._tried_in_this_pass()
                             logger.debug(
                                 f"Fetching remote (force_fetch={force_fetch}): {self._remote} ({redact_url(self._source.url)})"
                             )
@@ -2371,22 +2597,13 @@ class GitPolicyFetcher(PolicyFetcher):
                             # the request already satisfies it.
                             fetch_started = datetime.datetime.now()
                             try:
-                                # Pruned when configured, so a branch deleted
-                                # on the remote leaves the clone: otherwise its
-                                # stale remote-tracking ref is served as the head.
-                                await run_in_git_executor(
-                                    repo.remotes[self._remote].fetch,
-                                    callbacks=self._auth_callbacks,
-                                    prune=(
-                                        FetchPrune.PRUNE
-                                        if opal_server_config.SCOPES_GIT_FETCH_PRUNE
-                                        else FetchPrune.UNSPECIFIED
-                                    ),
-                                    timeout=opal_server_config.SCOPES_GIT_FETCH_TIMEOUT,
-                                    busy_key=self._source_id,
-                                    marker_dir=hung_marker_dir(self._repo_path),
-                                    mark_when_hung=reclone_hung_enabled(),
-                                )
+                                await self._fetch(repo)
+                            except GitCliBusyError as exc:
+                                # Not this sync's to fetch; the change check
+                                # below still reads what the clone holds.
+                                self._skip_busy(exc)
+                            except GitCliLocalError as exc:
+                                self._count_local_failure("fetch", exc)
                             except TimeoutError as exc:
                                 # Expected when a repo is unreachable: log cleanly
                                 # (no traceback) and skip, matching the clone path.
@@ -2403,7 +2620,7 @@ class GitPolicyFetcher(PolicyFetcher):
                                     err=repr(exc),
                                 )
                                 return
-                            except pygit2.GitError as exc:
+                            except (pygit2.GitError, GitCliError) as exc:
                                 # The fast-fail half of the same problem, on a
                                 # source that already has a local copy: revoked
                                 # credentials or a deleted remote fail here in
@@ -2421,13 +2638,15 @@ class GitPolicyFetcher(PolicyFetcher):
                                 # per-scope handler logs it with a traceback
                                 # today, and that is left exactly as it was.
                                 raise
-                            GitPolicyFetcher.repos_last_fetched[
-                                self._source_id
-                            ] = fetch_started
-                            self._clear_source_backoff()
-                            logger.debug(
-                                f"Fetch completed: {redact_url(self._source.url)}"
-                            )
+                            else:
+                                fetched = True
+                                GitPolicyFetcher.repos_last_fetched[
+                                    self._source_id
+                                ] = fetch_started
+                                self._clear_source_backoff()
+                                logger.debug(
+                                    f"Fetch completed: {redact_url(self._source.url)}"
+                                )
 
                         # New commits might be present because of a previous fetch made by another scope.
                         # Skipped when the sync a bundle request asked for rode
@@ -2446,15 +2665,17 @@ class GitPolicyFetcher(PolicyFetcher):
                             )
                         ):
                             await self._notify_on_changes(repo)
-                        if should_fetch:
+                        if fetched:
                             # Housekeeping for the pack that fetch just wrote:
                             # marked here, repacked at the end of the pass.
                             # Only here: a sync that did not fetch added no
-                            # pack, a failed fetch returned or raised above,
-                            # and a fresh clone has nothing to merge.
+                            # pack, a failed fetch added none either, and a
+                            # fresh clone has nothing to merge.
                             await self._mark_repack_due()
                         return
                     else:
+                        if self._tried_earlier_in_pass("clone"):
+                            return
                         # repo dir exists but invalid -> drop the cached handle
                         # FIRST (it is the thing judging the dir invalid; kept,
                         # it would re-invalidate the fresh clone on every sync
@@ -2464,17 +2685,24 @@ class GitPolicyFetcher(PolicyFetcher):
                         )
                         GitPolicyFetcher.forget_repo(str(self._repo_path))
                         try:
-                            await run_sync(shutil.rmtree, str(self._repo_path))
+                            removed = await run_sync(
+                                _rmtree_unless_locked, str(self._repo_path)
+                            )
                         except FileNotFoundError:
-                            pass  # already gone — the intended end state
+                            removed = True  # already gone — the intended end state
                         except OSError as e:
                             # A partial dir left by an abandoned (timed-out)
                             # clone may still be written to; a failed delete
                             # self-heals via the clone below (or next cycle).
+                            removed = True
                             logger.warning(
                                 f"Failed to remove clone dir "
                                 f"{self._repo_path}: {e!r}"
                             )
+                        if not removed:
+                            self._tried_in_this_pass()
+                            self._skip_locked_delete()
+                            return
                 else:
                     logger.info("Repo not found at {path}", path=self._repo_path)
 
@@ -2760,10 +2988,11 @@ class GitPolicyFetcher(PolicyFetcher):
         missing, while this source waits out a failed repack (in any
         process), or when the clone holds fewer packs than the limit
         (re-cloned since, say). A clone at the limit while another repack
-        is running in this pod, a previous leader's included, or while the
-        git executor refuses new work, is skipped, never waited for, and
-        keeps its mark for the next pass or refresh; the repack-running
-        skip is counted as git_op_skipped with reason repack_running.
+        is running in this pod, a previous leader's included, while a git
+        command-line op holds the clone's lock, or while the git executor
+        refuses new work, is skipped, never waited for, and keeps its mark
+        for the next pass or refresh; the first two skips are counted as
+        git_op_skipped with reason repack_running and clone_busy.
         """
         global _repack_git_missing
         limit = _repack_pack_limit()
@@ -2827,6 +3056,20 @@ class GitPolicyFetcher(PolicyFetcher):
                 "Not repacking scope clone {path} this time: {err}", path=path, err=e
             )
             GitPolicyFetcher._keep_due(due, lock)
+            return
+        except GitCliBusyError:
+            # A git command-line op of another process (or one whose process
+            # died, whose git still runs) holds the clone: as for a repack
+            # running elsewhere, a skip that keeps the mark.
+            metrics.increment(
+                "opal_server.scopes.git_op_skipped", tags={"reason": "clone_busy"}
+            )
+            GitPolicyFetcher._keep_due(due, lock)
+            logger.debug(
+                "Not repacking scope clone {path} now: a git op holds the clone's "
+                "lock",
+                path=path,
+            )
             return
         except GitNotFoundError as e:
             if not _repack_git_missing:
@@ -2958,17 +3201,110 @@ class GitPolicyFetcher(PolicyFetcher):
         git_path: Path = path / ".git"
         return discover_repository(str(path)) and git_path.exists()
 
+    async def _fetch(self, repo: Repository) -> None:
+        """Fetch the clone's remote, with git (SCOPES_GIT_FETCH_WITH_CLI) or
+        libgit2.
+
+        Pruned when configured, so a branch deleted on the remote leaves
+        the clone: otherwise its stale remote-tracking ref is served as the
+        head.
+        """
+        timeout = opal_server_config.SCOPES_GIT_FETCH_TIMEOUT
+        if git_cli_enabled():
+            await run_git_cli_op(
+                partial(
+                    cli_fetch,
+                    self._repo_path,
+                    self._remote,
+                    self._source,
+                    prune=bool(opal_server_config.SCOPES_GIT_FETCH_PRUNE),
+                    timeout=timeout,
+                ),
+                timeout=timeout,
+                busy_key=self._source_id,
+                marker_dir=hung_marker_dir(self._repo_path),
+                mark_when_hung=reclone_hung_enabled(),
+            )
+            return
+        await run_in_git_executor(
+            repo.remotes[self._remote].fetch,
+            callbacks=self._auth_callbacks,
+            prune=(
+                FetchPrune.PRUNE
+                if opal_server_config.SCOPES_GIT_FETCH_PRUNE
+                else FetchPrune.UNSPECIFIED
+            ),
+            timeout=timeout,
+            busy_key=self._source_id,
+            marker_dir=hung_marker_dir(self._repo_path),
+            mark_when_hung=reclone_hung_enabled(),
+        )
+
+    async def _clone_repository(self) -> Repository:
+        """Clone the source to the clone path, with git
+        (SCOPES_GIT_FETCH_WITH_CLI) or libgit2; a handle on the clone."""
+        timeout = opal_server_config.SCOPES_GIT_FETCH_TIMEOUT
+        if git_cli_enabled():
+            await run_git_cli_op(
+                partial(
+                    cli_clone,
+                    self._source.url,
+                    self._repo_path,
+                    self._source,
+                    remote=self._remote,
+                    timeout=timeout,
+                ),
+                timeout=timeout,
+                busy_key=self._source_id,
+                marker_dir=hung_marker_dir(self._repo_path),
+                mark_when_hung=reclone_hung_enabled(),
+            )
+            try:
+                return await run_sync(Repository, str(self._repo_path))
+            except pygit2.GitError as e:
+                raise GitCliLocalError(
+                    128, f"fatal: cannot open the new clone: {e}"
+                ) from None
+        return await run_in_git_executor(
+            clone_repository,
+            self._source.url,
+            str(self._repo_path),
+            callbacks=self._auth_callbacks,
+            timeout=timeout,
+            busy_key=self._source_id,
+            marker_dir=hung_marker_dir(self._repo_path),
+            mark_when_hung=reclone_hung_enabled(),
+        )
+
+    def _skip_locked_delete(self) -> None:
+        metrics.increment(
+            "opal_server.scopes.git_op_skipped", tags={"reason": "clone_busy"}
+        )
+        logger.warning(
+            "Not deleting {path} for scope {scope}: a git op of another process "
+            "holds its lock",
+            path=self._repo_path,
+            scope=self._scope_id,
+        )
+
     async def _clone(self):
+        if self._tried_earlier_in_pass("clone"):
+            return
+        self._tried_in_this_pass()
         if self._repo_path.exists():
             # A failed/interrupted clone leaves a partial dir;
             # clone_repository refuses a non-empty destination, which would
             # wedge every retry for this source.
             try:
-                await run_sync(shutil.rmtree, str(self._repo_path))
+                removed = await run_sync(_rmtree_unless_locked, str(self._repo_path))
             except FileNotFoundError:
-                pass  # already gone — the intended end state
+                removed = True  # already gone — the intended end state
             except OSError as e:
+                removed = True
                 logger.warning(f"Failed to remove clone dir {self._repo_path}: {e!r}")
+            if not removed:
+                self._skip_locked_delete()
+                return
         logger.info(
             "Cloning repo at '{url}' to '{path}'",
             url=redact_url(self._source.url),
@@ -2979,17 +3315,12 @@ class GitPolicyFetcher(PolicyFetcher):
         # timestamp req_time comparisons need.
         clone_started = datetime.datetime.now()
         try:
-            repo: Repository = await run_in_git_executor(
-                clone_repository,
-                self._source.url,
-                str(self._repo_path),
-                callbacks=self._auth_callbacks,
-                timeout=opal_server_config.SCOPES_GIT_FETCH_TIMEOUT,
-                busy_key=self._source_id,
-                marker_dir=hung_marker_dir(self._repo_path),
-                mark_when_hung=reclone_hung_enabled(),
-            )
-        except (pygit2.GitError, TimeoutError) as exc:
+            repo = await self._clone_repository()
+        except GitCliBusyError as exc:
+            self._skip_busy(exc)
+        except GitCliLocalError as exc:
+            self._count_local_failure("clone", exc)
+        except (pygit2.GitError, GitCliError, TimeoutError) as exc:
             metrics.increment(
                 "opal_server.scopes.git_op_failures",
                 tags={
@@ -3155,8 +3486,12 @@ class GitPolicyFetcher(PolicyFetcher):
 
         await self.callbacks.on_update(old_revision, new_revision)
 
-        # Bring forward local branch (a bit like "pull"), so we won't detect changes again
-        local_branch.set_target(new_revision)
+        # Bring forward local branch (a bit like "pull"), so we won't detect
+        # changes again. Only when it moved: every pass checks every scope,
+        # and a ref write costs several times more in a clone whose refs are
+        # packed, as a git clone's are.
+        if str(local_branch.target) != new_revision:
+            local_branch.set_target(new_revision)
 
     def _report_missing_branch(self) -> None:
         """Log that the remote lacks this scope's branch: in a sync pass once

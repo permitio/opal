@@ -17,8 +17,9 @@ waiting for that lock, and no scope of any other clone ran. Phase 2 now gives
 each clone one slot, in which a few of its scopes run at once, and runs the
 clones side by side, so a slow clone holds one slot.
 
-The tests use real clones of local origins. Fetches and clones are counted on
-pygit2's own calls, which still run.
+The tests use real clones of local origins, with libgit2 and with the git
+command line (SCOPES_GIT_FETCH_WITH_CLI). Fetches and clones are counted on
+pygit2's own calls, or git_cli's, which still run.
 """
 
 import asyncio
@@ -37,6 +38,7 @@ from opal_common.schemas.scopes import Scope
 from opal_common.tests.log_capture import capture_records
 from opal_server import git_fetcher
 from opal_server.config import opal_server_config
+from opal_server.git_cli import GitCliError
 from opal_server.git_fetcher import GitPolicyFetcher
 from opal_server.scopes.scope_repository import ScopeNotFoundError
 from opal_server.scopes.service import _SCOPES_IN_FLIGHT_PER_CLONE, ScopesService
@@ -87,11 +89,15 @@ class _PubSub:
 
 
 class _GitOps:
-    """The URLs pygit2 fetched and cloned, in order."""
+    """The URLs fetched and cloned, by pygit2 or git_cli, in order.
+
+    ``fail``: messages of the next fetches to fail, one each.
+    """
 
     def __init__(self):
         self.fetches = []
         self.clones = []
+        self.fail = []
 
 
 class _NumberedSlots:
@@ -120,6 +126,13 @@ class _NumberedSlots:
         self.release()
 
 
+@pytest.fixture(autouse=True, params=["libgit2", "cli"])
+def _backend(request, monkeypatch):
+    monkeypatch.setattr(
+        opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", request.param == "cli"
+    )
+
+
 @pytest.fixture(autouse=True)
 def _clean_fetcher_state(monkeypatch):
     # One clone per URL whatever the environment says, and no repack at the
@@ -140,17 +153,34 @@ def git_ops(monkeypatch):
     ops = _GitOps()
     real_fetch = pygit2.remotes.Remote.fetch
     real_clone = git_fetcher.clone_repository
+    real_cli_fetch = git_fetcher.cli_fetch
+    real_cli_clone = git_fetcher.cli_clone
 
     def fetch(remote, *args, **kwargs):
         ops.fetches.append(remote.url)
+        if ops.fail:
+            raise pygit2.GitError(ops.fail.pop())
         return real_fetch(remote, *args, **kwargs)
 
     def clone(url, *args, **kwargs):
         ops.clones.append(url)
         return real_clone(url, *args, **kwargs)
 
+    async def cli_fetch(repo_path, remote, source, **kwargs):
+        ops.fetches.append(source.url)
+        if ops.fail:
+            kwargs["on_gone"](False)
+            raise GitCliError(128, f"fatal: {ops.fail.pop()}")
+        return await real_cli_fetch(repo_path, remote, source, **kwargs)
+
+    async def cli_clone(url, *args, **kwargs):
+        ops.clones.append(url)
+        return await real_cli_clone(url, *args, **kwargs)
+
     monkeypatch.setattr(pygit2.remotes.Remote, "fetch", fetch)
     monkeypatch.setattr(git_fetcher, "clone_repository", clone)
+    monkeypatch.setattr(git_fetcher, "cli_fetch", cli_fetch)
+    monkeypatch.setattr(git_fetcher, "cli_clone", cli_clone)
     return ops
 
 
@@ -295,28 +325,27 @@ async def test_a_branch_pushed_between_passes_is_served_by_the_next_pass(
 
 
 @pytest.mark.asyncio
-async def test_a_failed_phase_1_fetch_leaves_phase_2_free_to_fetch_a_missing_branch(
-    tmp_path, git_ops, monkeypatch
+async def test_a_failed_phase_1_fetch_is_tried_again_by_the_next_pass_not_by_phase_2(
+    tmp_path, git_ops
 ):
-    """A failed fetch does not count as one for the pass rule."""
+    """A pass tries each clone once, whatever its op ends in: a fetch that
+    failed in phase 1 is not tried again by the clone's phase-2 scopes (each
+    would fail, and log it, once more), and the next pass tries it again."""
     origin = _origin(tmp_path / "origin")
     scopes = [_scope("s-main", origin), _scope("s-new", origin, "new")]
     pubsub = _PubSub()
     svc = _service(tmp_path, scopes, pubsub)
     await svc.sync_scope(scope_id="s-main")
     origin.create_head("new")
-    counting_fetch = pygit2.remotes.Remote.fetch
-    failures = ["remote hung up"]
+    git_ops.fail.append("remote hung up")
 
-    def fetch(remote, *args, **kwargs):
-        if failures:
-            git_ops.fetches.append(remote.url)
-            raise pygit2.GitError(failures.pop())
-        return counting_fetch(remote, *args, **kwargs)
+    # The refresh-all pass: no backoff, so only the pass keeps the source
+    # from being tried again.
+    await svc.sync_scopes(honor_backoff=False)
 
-    monkeypatch.setattr(pygit2.remotes.Remote, "fetch", fetch)
+    assert len(git_ops.fetches) == 1
+    assert "s-new" not in pubsub.notified_scopes()
 
-    # The refresh-all pass: no backoff, so phase 2 may try the source again.
     await svc.sync_scopes(honor_backoff=False)
 
     assert len(git_ops.fetches) == 2

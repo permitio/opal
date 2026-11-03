@@ -4,7 +4,6 @@ import os
 import signal
 import sys
 import traceback
-from functools import partial
 from pathlib import Path
 from typing import List, Optional
 
@@ -30,6 +29,7 @@ from opal_server.config import opal_server_config
 from opal_server.data.api import init_data_updates_router
 from opal_server.data.data_update_publisher import DataUpdatePublisher
 from opal_server.debug_stats import register_internal_stats_route
+from opal_server.git_cli import remove_dead_key_dirs, validate_git_cli_settings
 from opal_server.loadlimiting import init_loadlimit_router
 from opal_server.metrics_setup import configure_server_metrics
 from opal_server.policy.bundles.api import router as bundles_router
@@ -119,6 +119,11 @@ class OpalServer:
                 topic. upon being triggered, will detect updates to the policy (new commits) and
                 will update the opal client via pubsub.
         """
+        validate_git_cli_settings()
+        if opal_server_config.SCOPES_GIT_FETCH_WITH_CLI:
+            # SSH key files of a worker that died (SIGKILL, an OOM kill) before
+            # it could remove them; the pre-fork preload sweeps them too.
+            remove_dead_key_dirs()
         # load defaults
         init_publisher: bool = load_conf_if_none(
             init_publisher, opal_server_config.PUBLISHER_ENABLED
