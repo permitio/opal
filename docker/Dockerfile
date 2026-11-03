@@ -2,10 +2,14 @@
 # The syntax line must stay first. COPY --exclude below needs dockerfile frontend 1.19 or later
 # (1.17 and 1.18 reject the flag). The digest pins the frontend that builds every image; when
 # you change the tag, update the digest with it (docker buildx imagetools inspect <tag>).
+# Python 3.12 in every image (all four FROM lines, and the site-packages paths below). 3.10 reached
+# end of life on 2026-10-01 and gets no more security fixes; CPython fixes such as CVE-2026-115557
+# ship for 3.11 and later only, and dnspython 2.9 (CVE-2026-114605) needs 3.11. opal-server's
+# python_requires (<3.13, for pygit2<1.15's wheels) rules out 3.13. The packages still support 3.10.
 # BUILD STAGE ---------------------------------------
 # split this stage to save time and reduce image size
 # ---------------------------------------------------
-FROM python:3.10-bookworm AS build-stage
+FROM python:3.12-bookworm AS build-stage
 # from now on, work in the /app directory
 WORKDIR /app/
 # Layer dependency install (for caching)
@@ -22,11 +26,11 @@ RUN pip install --no-cache-dir --upgrade pip 'setuptools>=84.1.0,<85' && pip ins
 
 # COMMON IMAGE --------------------------------------
 # ---------------------------------------------------
-FROM python:3.10-slim-bookworm AS common
+FROM python:3.12-slim-bookworm AS common
 
 # copy libraries from build stage (This won't copy redundant libraries we used in build-stage)
 # also remove the default python site-packages that has older versions of packages that won't be overridden
-RUN rm -r /usr/local/lib/python3.10/site-packages
+RUN rm -r /usr/local/lib/python3.12/site-packages
 COPY --from=build-stage /usr/local /usr/local
 
 # Add non-root user (with home dir at /opal)
@@ -306,7 +310,7 @@ USER opal
 # ===================== ALPINE VARIANTS =====================
 # BUILD STAGE (ALPINE) --------------------------------------
 # -----------------------------------------------------------
-FROM python:3.10-alpine AS build-stage-alpine
+FROM python:3.12-alpine AS build-stage-alpine
 ARG LIBGIT2_VERSION=1.7.2
 WORKDIR /app/
 RUN apk add --no-cache \
@@ -344,8 +348,8 @@ RUN pip install --no-cache-dir --upgrade pip 'setuptools>=84.1.0,<85' && pip ins
 
 # COMMON IMAGE (ALPINE) -------------------------------------
 # -----------------------------------------------------------
-FROM python:3.10-alpine AS common-alpine
-RUN rm -r /usr/local/lib/python3.10/site-packages || true
+FROM python:3.12-alpine AS common-alpine
+RUN rm -r /usr/local/lib/python3.12/site-packages || true
 COPY --from=build-stage-alpine /usr/local /usr/local
 # apk upgrade picks up Alpine security updates the base image predates (zlib, for one)
 RUN apk upgrade --no-cache
