@@ -59,6 +59,12 @@ from opal_server.scopes.service import NewCommitsCallbacks, ScopesService
 _SIG = pygit2.Signature("opal-test", "opal-test@example.com")
 
 
+def _init_remote(path: Path) -> pygit2.Repository:
+    """A bare remote whose HEAD is refs/heads/master, the branch _commit
+    writes, whatever init.defaultBranch the user's git config sets."""
+    return pygit2.init_repository(str(path), bare=True, initial_head="master")
+
+
 def _commit(repo: pygit2.Repository, content: str, parent=None) -> pygit2.Oid:
     blob = repo.create_blob(content.encode())
     builder = repo.TreeBuilder()
@@ -71,7 +77,7 @@ def _commit(repo: pygit2.Repository, content: str, parent=None) -> pygit2.Oid:
 
 def _clone_with_fetch_packs(tmp_path: Path, fetches: int):
     """A libgit2 clone holding one pack per fetch, plus every commit id."""
-    remote = pygit2.init_repository(str(tmp_path / "remote.git"), bare=True)
+    remote = _init_remote(tmp_path / "remote.git")
     tip = _commit(remote, "package policy\n")
     commits = [tip]
     clone_path = tmp_path / "clone"
@@ -1130,7 +1136,7 @@ class _ScopeRepo:
 
     def __init__(self, tmp_path: Path, name: str):
         remote_path = tmp_path / f"{name}.git"
-        self.remote = pygit2.init_repository(str(remote_path), bare=True)
+        self.remote = _init_remote(remote_path)
         self._revision = 0
         self.tip: pygit2.Oid | None = None
         self.push()
