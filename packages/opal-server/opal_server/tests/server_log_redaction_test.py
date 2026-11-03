@@ -192,6 +192,22 @@ def test_scrub_patcher_masks_str_extras_only():
     assert FAKE_PASSWORD not in record["message"]
 
 
+def test_patcher_off_arm_replaces_an_installed_scrub_patcher():
+    """The patcher-off arm turns off a scrub patcher that is already global.
+
+    In a full run, earlier test files leave ``configure_logs``'s patcher
+    installed. If the off arm kept it, the off arm would mask ``str``
+    extras too, and the redirect test would pass without the call site's
+    ``redact_url``.
+    """
+    with _scrub_patcher():
+        with _captured_logs(scrub=False) as (logs, _sink_ids):
+            logger.info("probe", url=REPORT_URL)
+
+    (record,) = _records(logs.serialized, "probe")
+    assert record["extra"]["url"] == REPORT_URL
+
+
 def test_sink_health_check_detects_a_failing_sink(capfd):
     def failing_sink(message: str) -> None:
         raise RuntimeError("sink failed")
