@@ -8,7 +8,6 @@ records what it was given, then hangs or fails as the test needs.
 
 import base64
 import os
-import stat
 import subprocess
 import time
 from pathlib import Path
@@ -49,6 +48,16 @@ def _origin(tmp_path: Path) -> Path:
     ):
         _git("-C", str(origin), *args)
     return origin
+
+
+def _loose_objects(clone: Path) -> set:
+    objects = clone / ".git" / "objects"
+    return {
+        p.relative_to(objects)
+        for d in objects.iterdir()
+        if len(d.name) == 2
+        for p in d.iterdir()
+    }
 
 
 def _head(repo: Path, ref: str) -> str:
@@ -133,6 +142,7 @@ def test_the_fetch_argv_speaks_v2_without_tags_or_auto_gc():
         "gc.auto=0",
         "maintenance.auto=false",
         "fetch.writeCommitGraph=false",
+        "fetch.unpackLimit=1",
     ):
         assert argv[argv.index(setting) - 1] == "-c"
     assert argv[-1] == "origin"
@@ -159,6 +169,7 @@ async def test_a_cli_fetch_brings_new_commits_into_the_clone(
     _git("-C", str(origin), "commit", "-q", "--allow-empty", "-m", "c2")
     new_head = _head(origin, "main")
     assert _head(clone, "refs/remotes/origin/main") != new_head
+    loose_before = _loose_objects(clone)
 
     await fetcher.fetch_and_notify_on_changes(force_fetch=True)
 
@@ -166,6 +177,9 @@ async def test_a_cli_fetch_brings_new_commits_into_the_clone(
     fetch_head = (clone / ".git" / "FETCH_HEAD").read_text()
     assert new_head in fetch_head
     assert not git_op_in_flight(fetcher._source_id)
+    # One pack per fetch, as with libgit2: the fetch adds no loose objects
+    # the repack (which counts packs) would never see.
+    assert _loose_objects(clone) == loose_before
 
 
 @pytest.mark.asyncio
@@ -265,6 +279,45 @@ async def test_a_stalled_cli_fetch_frees_its_source_for_the_next_sync(
     assert fetcher._source_id not in GitPolicyFetcher.source_backoff
 
 
+_IGNORE_TERM = """\
+trap '' TERM
+echo $$ > "$(dirname "$0")/git.pid"
+while :; do sleep 1; done
+"""
+
+
+def test_a_git_that_ignores_sigterm_is_sigkilled(tmp_path, monkeypatch):
+    bin_dir = _fake_git(tmp_path, monkeypatch, _IGNORE_TERM)
+    start = time.monotonic()
+    with pytest.raises(TimeoutError):
+        _cli_fetch(
+            tmp_path,
+            "origin",
+            _source(),
+            fetch_timeout=0.5,
+            prune=False,
+            term_grace=0.5,
+        )
+    assert time.monotonic() - start < 5
+    assert _gone(int((bin_dir / "git.pid").read_text()))
+
+
+def test_a_git_that_outlives_its_sigkill_is_waited_for(tmp_path, monkeypatch):
+    """Uninterruptible I/O: _stop_git reports git still running.
+
+    _cli_fetch then waits for it rather than return, so the caller's
+    executor timeout fires and the busy key stays held, as with a hung
+    pygit2 fetch; a second fetch must not start on a clone git is still
+    writing.
+    """
+    _fake_git(tmp_path, monkeypatch, "sleep 2\n")
+    monkeypatch.setattr(git_fetcher, "_stop_git", lambda *a, **k: False)
+    start = time.monotonic()
+    with pytest.raises(TimeoutError):
+        _cli_fetch(tmp_path, "origin", _source(), fetch_timeout=0.3, prune=False)
+    assert time.monotonic() - start >= 1.9
+
+
 # --- a failed fetch ------------------------------------------------------------
 
 
@@ -285,10 +338,122 @@ def test_a_failed_cli_fetch_is_a_git_error_with_credentials_masked(
     assert "s3cret" not in err.value.stderr_tail and "s3cret" not in str(err.value)
 
 
-def test_no_git_on_path_is_git_not_found(tmp_path, monkeypatch):
+def test_no_git_on_path_is_a_failed_fetch(tmp_path, monkeypatch):
+    """A missing git is a GitError, so the source is counted and backed off
+    instead of every sync raising FileNotFoundError."""
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))
-    with pytest.raises(git_fetcher.GitNotFoundError):
+    with pytest.raises(GitCliFetchError, match="git not found on PATH") as err:
         _cli_fetch(tmp_path, "origin", _source(), fetch_timeout=5, prune=False)
+    assert isinstance(err.value, pygit2.GitError)
+
+
+def test_no_temp_dir_for_the_key_is_a_failed_fetch(tmp_path, monkeypatch):
+    _fake_git(tmp_path, monkeypatch, "exit 0\n")
+
+    def _full(*a, **k):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(git_fetcher.tempfile, "mkdtemp", _full)
+    auth = SSHAuthData(username="git", private_key="K")
+    with pytest.raises(GitCliFetchError, match="No space left"):
+        _cli_fetch(tmp_path, "origin", _source(auth=auth), fetch_timeout=5, prune=False)
+
+
+def test_sources_without_a_key_make_no_temp_dir(tmp_path, monkeypatch):
+    _fake_git(tmp_path, monkeypatch, "exit 0\n")
+
+    def _never(*a, **k):
+        raise AssertionError("mkdtemp for a source without an SSH key")
+
+    monkeypatch.setattr(git_fetcher.tempfile, "mkdtemp", _never)
+    _cli_fetch(tmp_path, "origin", _source(), fetch_timeout=5, prune=False)
+    _cli_fetch(
+        tmp_path,
+        "origin",
+        _source(url="https://github.com/x/y.git", auth=GitHubTokenAuthData(token="t")),
+        fetch_timeout=5,
+        prune=False,
+    )
+
+
+def _old(path: Path, seconds: float) -> None:
+    t = time.time() - seconds
+    os.utime(path, (t, t))
+
+
+@pytest.mark.parametrize("age, removed", [(10_000, True), (5, False)])
+def test_a_stale_lock_a_killed_git_left_is_removed_once_old_enough(
+    tmp_path, monkeypatch, age, removed
+):
+    """Git removes its locks on SIGTERM, not when SIGKILLed while holding one;
+    every later fetch then fails on it.
+
+    One older than the longest a CLI fetch lives belongs to no live
+    fetch and is removed; a young one may be another worker's and stays.
+    """
+    clone = tmp_path / "clone"
+    lock = clone / ".git" / "refs" / "remotes" / "origin" / "main.lock"
+    lock.parent.mkdir(parents=True)
+    lock.write_text("")
+    _old(lock, age)
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_TIMEOUT", 150)
+    _fake_git(
+        tmp_path,
+        monkeypatch,
+        f"echo \"error: Unable to create '{lock}': File exists.\" >&2\nexit 1\n",
+    )
+    with pytest.raises(GitCliFetchError):
+        _cli_fetch(clone, "origin", _source(), fetch_timeout=5, prune=False)
+    assert lock.exists() is not removed
+
+
+def test_a_lock_outside_the_clone_is_never_removed(tmp_path, monkeypatch):
+    clone = tmp_path / "clone"
+    (clone / ".git").mkdir(parents=True)
+    elsewhere = tmp_path / "other.lock"
+    elsewhere.write_text("")
+    _old(elsewhere, 10_000)
+    _fake_git(
+        tmp_path,
+        monkeypatch,
+        f"echo \"error: Unable to create '{elsewhere}': File exists.\" >&2\nexit 1\n",
+    )
+    with pytest.raises(GitCliFetchError):
+        _cli_fetch(clone, "origin", _source(), fetch_timeout=5, prune=False)
+    assert elsewhere.exists()
+
+
+# --- the repack sweep and a concurrent CLI fetch -----------------------------
+
+
+@pytest.mark.parametrize(
+    "backend, young_kept", [(FETCH_BACKEND_CLI, True), (FETCH_BACKEND_PYGIT2, False)]
+)
+def test_the_repack_sweep_spares_a_cli_fetchs_in_flight_files(
+    tmp_path, monkeypatch, backend, young_kept
+):
+    """The repack lock does not cover fetches, and git's index-pack writes
+    tmp_pack_* and installs its .pack before its .idx.
+
+    With the CLI backend the sweep leaves such files until no live fetch
+    can own them.
+    """
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_BACKEND", backend)
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_TIMEOUT", 150)
+    pack_dir = tmp_path / "pack"
+    pack_dir.mkdir()
+    young = ["tmp_pack_live", "pack-" + "a" * 40 + ".pack"]
+    old = ["tmp_pack_dead", "pack-" + "b" * 40 + ".pack"]
+    for name in young + old:
+        (pack_dir / name).write_bytes(b"x")
+    for name in old:
+        _old(pack_dir / name, 10_000)
+
+    git_fetcher._remove_repack_leftovers(pack_dir, "in a test")
+
+    left = {p.name for p in pack_dir.iterdir()}
+    assert not (set(old) & left)
+    assert (set(young) <= left) is young_kept
 
 
 # --- credentials ---------------------------------------------------------------
@@ -378,13 +543,12 @@ def test_the_key_dir_is_removed_even_when_the_fetch_fails(tmp_path, monkeypatch)
 def test_only_the_allowlisted_environment_reaches_git(tmp_path, monkeypatch):
     bin_dir = _fake_git(tmp_path, monkeypatch, _RECORD)
     monkeypatch.setenv("OPAL_SOME_SECRET", "do-not-pass")
+    monkeypatch.setenv("SSL_CERT_FILE", "/etc/private-ca.pem")
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.example:3128")
     _cli_fetch(tmp_path, "origin", _source(), fetch_timeout=5, prune=False)
-    env = (bin_dir / "record.env").read_text()
-    assert "do-not-pass" not in env
-    assert "LC_ALL=C" in env.splitlines()
-
-
-def test_stat_helper_reads_mode_bits():
-    # Guards the record script's fallback: the key file's mode is only
-    # meaningful if stat reports permission bits, not the full st_mode.
-    assert stat.S_IMODE(0o100600) == 0o600
+    env = (bin_dir / "record.env").read_text().splitlines()
+    assert not any("do-not-pass" in line for line in env)
+    assert "LC_ALL=C" in env
+    # TLS trust and proxies, which libgit2 reads in-process, reach git too.
+    assert "SSL_CERT_FILE=/etc/private-ca.pem" in env
+    assert "HTTPS_PROXY=http://proxy.example:3128" in env

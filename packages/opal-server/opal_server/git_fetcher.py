@@ -1340,9 +1340,30 @@ def _remove_repack_leftovers(pack_dir: Path, why: str) -> None:
     names = _pack_dir_names(pack_dir)
     if names is None:
         return
-    doomed = {n for n in names if n.startswith(_GIT_TEMP_PACK_PREFIXES)}
+    # With the CLI fetch backend a `git fetch` can be writing here too: the
+    # repack lock does not cover fetches, and git's index-pack writes
+    # tmp_pack_* and installs its .pack before its .idx, both of which this
+    # sweep would otherwise take for a dead repack's. Such a file is left
+    # until it is older than the longest a CLI fetch lives (its timeout, then
+    # SIGTERM, SIGKILL and the wait after it): a fetch that wrote it has been
+    # killed by then. A dead repack's leftovers wait as long for the next
+    # sweep. The pygit2 backend's fetches write names this never matches.
+    min_age = _cli_fetch_max_seconds() if fetch_backend() == FETCH_BACKEND_CLI else 0.0
+
+    def _old_enough(name: str) -> bool:
+        if min_age <= 0:
+            return True
+        try:
+            age = time.time() - os.stat(pack_dir / name).st_mtime
+        except FileNotFoundError:
+            return False
+        return age >= min_age
+
+    doomed = {
+        n for n in names if n.startswith(_GIT_TEMP_PACK_PREFIXES) and _old_enough(n)
+    }
     for pack in _unindexed_packs(names):
-        if not _index_may_exist(pack_dir, pack):
+        if not _index_may_exist(pack_dir, pack) and _old_enough(pack):
             doomed.add(pack)
             doomed |= _pack_companions(pack) & names
     for index in _orphan_indexes(pack_dir, names):
@@ -1467,11 +1488,16 @@ def _signal_repack_group(proc: subprocess.Popen[bytes], sig: int) -> None:
 
 
 def _stop_git(
-    proc: subprocess.Popen[bytes], grace: float, *, what: str = "git repack"
+    proc: subprocess.Popen[bytes],
+    grace: float,
+    *,
+    what: str = "git repack",
+    leftovers: str = "; leaving its files for the next repack to sweep",
 ) -> bool:
     """SIGTERM git's process group, then SIGKILL it if still running after
     ``grace`` seconds (``grace`` <= 0 kills at once). ``what`` names the
-    command in the log lines.
+    command in the log lines, and ``leftovers`` ends the one logged when git
+    outlives the SIGKILL wait.
 
     Waits with communicate(), not wait(): it drains stderr (a child
     blocked writing to a full pipe could not exit) and returns only once
@@ -1498,22 +1524,36 @@ def _stop_git(
     except subprocess.TimeoutExpired:
         logger.error(
             "{what} (pid {pid}) still running {secs}s after SIGKILL "
-            "(stuck in uninterruptible I/O?){then}",
+            "(stuck in uninterruptible I/O?){leftovers}",
             what=what,
             pid=proc.pid,
             secs=_REPACK_KILL_WAIT_SECONDS,
-            then=(
-                "; leaving its files for the next repack to sweep"
-                if what == "git repack"
-                else ""
-            ),
+            leftovers=leftovers,
         )
         return False
     return True
 
 
-# The repack's name for _stop_git, which the repack code and its tests use.
-_stop_repack = _stop_git
+def _git_subprocess_env(allowlist: tuple[str, ...]) -> Dict[str, str]:
+    """The environment a git subprocess gets: only ``allowlist`` from ours,
+    and never a credential prompt (with its own session it has no tty)."""
+    env = {k: os.environ[k] for k in allowlist if k in os.environ}
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    return env
+
+
+def _resolve_git(env: Dict[str, str]) -> str:
+    """The git binary on ``env``'s PATH.
+
+    Resolved here rather than by exec: when no PATH entry has git, exec
+    reports the FIRST non-ENOENT error, and the official image's PATH lists
+    /root/.local/bin, which the opal user cannot search, so a missing git
+    would surface as PermissionError. Callers rely on GitNotFoundError.
+    """
+    git = shutil.which("git", path=env.get("PATH"))
+    if git is None:
+        raise GitNotFoundError(errno.ENOENT, "git not found on PATH", "git")
+    return git
 
 
 def _repack_clone(
@@ -1557,17 +1597,8 @@ def _repack_clone(
         OSError: the repack lock could not be taken (its directory is gone).
     """
     timeout = _repack_timeout_or_default(timeout)
-    env = {k: os.environ[k] for k in _REPACK_ENV_ALLOWLIST if k in os.environ}
-    # repack never contacts a remote, but it must never be able to block on
-    # a credential prompt either (and with its own session it has no tty).
-    env["GIT_TERMINAL_PROMPT"] = "0"
-    # Resolved here rather than by exec: when no PATH entry has git, exec
-    # reports the FIRST non-ENOENT error, and the official image's PATH lists
-    # /root/.local/bin, which the opal user cannot search, so a missing git
-    # would surface as PermissionError. Callers rely on GitNotFoundError.
-    git = shutil.which("git", path=env.get("PATH"))
-    if git is None:
-        raise GitNotFoundError(errno.ENOENT, "git not found on PATH", "git")
+    env = _git_subprocess_env(_REPACK_ENV_ALLOWLIST)
+    git = _resolve_git(env)
     lock_fd = _take_repack_lock(_repack_lock_dir(repo_path))
     if lock_fd is None:
         return False
@@ -1642,7 +1673,7 @@ def _run_repack(
         # A git that outlived its SIGKILL may still be renaming files in the
         # pack dir: a sweep now could delete a .pack whose .idx lands after
         # it. The next repack sweeps, once the lock says git is gone.
-        if _stop_repack(proc, term_grace):
+        if _stop_git(proc, term_grace):
             _clean_up()
         raise TimeoutError(
             f"git repack of {os.fspath(repo_path)} exceeded {timeout}s"
@@ -1650,7 +1681,7 @@ def _run_repack(
     except BaseException:
         # Anything else unwinding through communicate() (a KeyboardInterrupt
         # in a foreground run): no grace, but no orphaned git either.
-        if _stop_repack(proc, 0.0):
+        if _stop_git(proc, 0.0):
             _clean_up()
         raise
     if proc.returncode != 0:
@@ -2012,9 +2043,35 @@ _FETCH_BACKENDS = (FETCH_BACKEND_PYGIT2, FETCH_BACKEND_CLI)
 _fetch_backend_warned = False
 
 # How long git's group gets between SIGTERM and SIGKILL when a fetch times out.
-# A fetch has nothing to tidy (git writes refs through lock files and renames
-# a pack in only once it is complete), so this is short.
+# git removes its own lock files and temp packs on SIGTERM, so this is short.
 _CLI_FETCH_TERM_GRACE_SECONDS = 5.0
+# The executor's timeout for a CLI fetch is the fetch's own plus this: SIGTERM
+# grace, the wait after SIGKILL, and room for the thread to return. It fires
+# only when git outlives its SIGKILL (see _cli_fetch).
+_CLI_FETCH_EXECUTOR_SLACK_SECONDS = (
+    _CLI_FETCH_TERM_GRACE_SECONDS + _REPACK_KILL_WAIT_SECONDS + 10.0
+)
+# What a CLI fetch takes from our environment: the repack's (PATH, HOME,
+# XDG_CONFIG_HOME), plus what a network client needs and libgit2 reads
+# in-process: TLS trust (a private CA bundle for a self-hosted server) and
+# proxies.
+_CLI_FETCH_ENV_ALLOWLIST = _REPACK_ENV_ALLOWLIST + (
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "GIT_SSL_CAINFO",
+    "GIT_SSL_CAPATH",
+    "HTTPS_PROXY",
+    "https_proxy",
+    "HTTP_PROXY",
+    "http_proxy",
+    "NO_PROXY",
+    "no_proxy",
+    "ALL_PROXY",
+    "all_proxy",
+)
+# A stale lock file a SIGKILLed git left in a clone ("Unable to create
+# '.../refs/remotes/origin/main.lock': File exists"), as git's stderr names it.
+_STALE_LOCK_RE = re.compile(r"Unable to create '([^']+\.lock)': File exists")
 # ssh options for a CLI fetch. BatchMode: never prompt (no tty anyway).
 # StrictHostKeyChecking=yes against the image's known_hosts: the same trust the
 # image sets up for git over ssh (the Dockerfile's ssh-keyscan of the policy
@@ -2031,6 +2088,13 @@ _CLI_SSH_OPTIONS = (
     "ServerAliveInterval=15",
     "ServerAliveCountMax=4",
 )
+
+
+def _cli_fetch_max_seconds() -> float:
+    """The longest a CLI fetch can live: its timeout plus the executor slack,
+    or a day when SCOPES_GIT_FETCH_TIMEOUT sets no limit."""
+    limit = _finite_positive_or_zero(opal_server_config.SCOPES_GIT_FETCH_TIMEOUT)
+    return limit + _CLI_FETCH_EXECUTOR_SLACK_SECONDS if limit else 86400.0
 
 
 def fetch_backend() -> str:
@@ -2069,15 +2133,13 @@ class GitCliFetchError(pygit2.GitError):
         self.stderr_tail = stderr_tail
 
 
-def _cli_fetch_auth_env(
-    auth, key_dir: str
-) -> Dict[str, str]:  # pragma: no branch - every auth type is listed
+def _cli_fetch_auth_env(auth, key_dir: Optional[str]) -> Dict[str, str]:
     """The environment that carries a scope source's credentials to git.
 
     Never argv: the command line of every process is readable by every
     user of the host, its environment only by its own user (and root).
     SSH: the private key goes to a 0600 file in ``key_dir`` (a 0700
-    directory the caller removes), named in GIT_SSH_COMMAND with the
+    directory the caller makes for SSH sources only, and removes), named in GIT_SSH_COMMAND with the
     options above. A GitHub token: an Authorization header through git's
     GIT_CONFIG_* variables, the basic credentials pygit2 sends
     (username ``git``, the token as password). No auth: ssh still runs with
@@ -2090,6 +2152,7 @@ def _cli_fetch_auth_env(
         ssh += ["-o", option]
     env: Dict[str, str] = {}
     if isinstance(auth, SSHAuthData):
+        assert key_dir is not None, "an SSH key needs a key directory"
         key_path = os.path.join(key_dir, "id")
         fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, "w") as f:
@@ -2119,6 +2182,9 @@ def _cli_fetch_argv(git: str, repo_path: str, remote: str, prune: bool) -> list[
     maintenance of its own, which would race the scope repack (the
     repack lock covers only OPAL's own repack).
     fetch.writeCommitGraph=false for the same reason.
+    fetch.unpackLimit=1: every fetch keeps its objects as one pack, as
+    libgit2's does, instead of unpacking small ones into loose objects,
+    which the scope repack (it counts packs) would never see.
     """
     argv = [
         git,
@@ -2132,6 +2198,8 @@ def _cli_fetch_argv(git: str, repo_path: str, remote: str, prune: bool) -> list[
         "maintenance.auto=false",
         "-c",
         "fetch.writeCommitGraph=false",
+        "-c",
+        "fetch.unpackLimit=1",
         "fetch",
         "--quiet",
         "--no-tags",
@@ -2149,31 +2217,37 @@ def _cli_fetch(
     *,
     fetch_timeout: float,
     prune: bool,
-    term_grace: float = _CLI_FETCH_TERM_GRACE_SECONDS,
+    term_grace: Optional[float] = None,
 ) -> None:
     """Fetch ``remote`` into a scope clone with ``git fetch``. Blocking.
 
     ``fetch_timeout`` is hard (<= 0: none): git's process group gets
-    SIGTERM when it expires, SIGKILL ``term_grace`` seconds later, and
+    SIGTERM when it expires, SIGKILL ``term_grace`` seconds later
+    (default _CLI_FETCH_TERM_GRACE_SECONDS, read at call time), and
     TimeoutError is raised, the same error run_in_git_executor raises, so
     the callers treat a timed-out fetch the same way for both backends. The
     difference: this returns, and with it the busy key, instead of leaving
-    a fetch running on its thread.
+    a fetch running on its thread. Except when git outlives its SIGKILL
+    (uninterruptible I/O): then this waits for it, the executor's own
+    timeout fires, and the fetch is left running exactly as a pygit2 one
+    is, busy key and hung-op marker included, because a second fetch must
+    not start on a clone that one is still writing.
 
     Raises:
-        TimeoutError: the fetch ran past ``timeout``.
-        GitCliFetchError: git exited non-zero.
-        GitNotFoundError: there is no ``git`` on PATH.
+        TimeoutError: the fetch ran past ``fetch_timeout``.
+        GitCliFetchError: git could not be run (no git on PATH, no temp
+            directory for the key) or exited non-zero. Always a
+            pygit2.GitError, so the caller counts and backs it off.
     """
-    env = {k: os.environ[k] for k in _REPACK_ENV_ALLOWLIST if k in os.environ}
-    # Never a credential prompt: a fetch that would need one fails instead.
-    env["GIT_TERMINAL_PROMPT"] = "0"
+    if term_grace is None:
+        term_grace = _CLI_FETCH_TERM_GRACE_SECONDS
+    env = _git_subprocess_env(_CLI_FETCH_ENV_ALLOWLIST)
     env["LC_ALL"] = "C"
-    git = shutil.which("git", path=env.get("PATH"))
-    if git is None:
-        raise GitNotFoundError(errno.ENOENT, "git not found on PATH", "git")
-    key_dir = tempfile.mkdtemp(prefix="opal-git-fetch-")
+    key_dir: Optional[str] = None
     try:
+        git = _resolve_git(env)
+        if isinstance(source.auth, SSHAuthData):
+            key_dir = tempfile.mkdtemp(prefix="opal-git-fetch-")
         env.update(_cli_fetch_auth_env(source.auth, key_dir))
         proc = subprocess.Popen(
             _cli_fetch_argv(git, os.fspath(repo_path), remote, prune),
@@ -2185,21 +2259,69 @@ def _cli_fetch(
             # index-pack children too (see _run_repack).
             start_new_session=True,
         )
+    except OSError as e:
+        if key_dir is not None:
+            shutil.rmtree(key_dir, ignore_errors=True)
+        # A missing git, a full or read-only TMPDIR: the source cannot be
+        # fetched, so it is counted and backed off like any failed fetch,
+        # instead of raising from every sync of every source.
+        raise GitCliFetchError(-1, f"could not run git fetch: {e!r}") from e
+    try:
         try:
             _, stderr = proc.communicate(
                 timeout=fetch_timeout if fetch_timeout and fetch_timeout > 0 else None
             )
         except subprocess.TimeoutExpired:
-            _stop_git(proc, term_grace, what="git fetch")
+            if not _stop_git(
+                proc, term_grace, what="git fetch", leftovers="; waiting for it"
+            ):
+                proc.wait()
             raise TimeoutError(f"git operation exceeded {fetch_timeout}s") from None
         except BaseException:
-            _stop_git(proc, 0.0, what="git fetch")
+            _stop_git(proc, 0.0, what="git fetch", leftovers="")
             raise
     finally:
-        shutil.rmtree(key_dir, ignore_errors=True)
+        if key_dir is not None:
+            shutil.rmtree(key_dir, ignore_errors=True)
     if proc.returncode != 0:
         tail = stderr.decode("utf-8", "replace").strip()[-_REPACK_STDERR_TAIL_CHARS:]
+        _remove_stale_lock(repo_path, tail)
         raise GitCliFetchError(proc.returncode, redact_sensitive_text(tail, source.url))
+
+
+def _remove_stale_lock(repo_path: str | os.PathLike[str], stderr: str) -> None:
+    """Remove a lock file a killed git left in the clone, if stderr names one.
+
+    git removes its own lock files on SIGTERM, but not when it is SIGKILLed
+    (after _CLI_FETCH_TERM_GRACE_SECONDS) while it holds one. Every later
+    fetch of the clone then fails with "Unable to create '...lock': File
+    exists". A lock older than _cli_fetch_max_seconds() belongs to no live
+    CLI fetch, which is killed by then, so it is removed and the next fetch
+    can take it; a younger one may be a running fetch's (another worker's)
+    and stays. Only a path inside the clone's .git is touched. Never raises.
+    """
+    match = _STALE_LOCK_RE.search(stderr)
+    if not match:
+        return
+    lock = Path(match.group(1))
+    git_dir = (Path(repo_path) / ".git").resolve()
+    try:
+        resolved = lock.resolve()
+        if git_dir not in resolved.parents:
+            return
+        age = time.time() - os.stat(resolved).st_mtime
+        if age < _cli_fetch_max_seconds():
+            return
+        os.unlink(resolved)
+    except OSError as e:
+        logger.warning("Could not remove stale lock {path}: {err!r}", path=lock, err=e)
+        return
+    logger.warning(
+        "Removed stale lock {path} ({age:.0f}s old), left by a git fetch that was "
+        "killed while holding it",
+        path=lock,
+        age=age,
+    )
 
 
 class PolicyFetcherCallbacks:
@@ -3244,14 +3366,7 @@ class GitPolicyFetcher(PolicyFetcher):
                 self._repo_path,
                 self._remote,
                 self._source,
-                timeout=(
-                    limit
-                    + _CLI_FETCH_TERM_GRACE_SECONDS
-                    + _REPACK_KILL_WAIT_SECONDS
-                    + 10.0
-                    if limit
-                    else 0
-                ),
+                timeout=limit + _CLI_FETCH_EXECUTOR_SLACK_SECONDS if limit else 0,
                 fetch_timeout=limit,
                 prune=prune,
                 **common,

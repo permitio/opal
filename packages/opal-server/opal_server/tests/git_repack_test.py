@@ -2644,13 +2644,13 @@ def test_no_sweep_while_git_outlives_its_sigkill(tmp_path, monkeypatch):
         monkeypatch,
         'pack="$2/.git/objects/pack"\n: > "$pack/tmp_pack_live"\nexec sleep 30\n',
     )
-    real_stop = git_fetcher._stop_repack
+    real_stop = git_fetcher._stop_git
 
     def _stuck(proc, grace):
         real_stop(proc, 0.0)  # really stop it, then report it as stuck
         return False
 
-    monkeypatch.setattr(git_fetcher, "_stop_repack", _stuck)
+    monkeypatch.setattr(git_fetcher, "_stop_git", _stuck)
     # The leftover of an earlier dead repack is swept before git starts.
     with pytest.raises(TimeoutError):
         _repack_clone(clone_path, timeout=1)
