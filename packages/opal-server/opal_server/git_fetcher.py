@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import codecs
 import datetime
 import errno
@@ -10,10 +11,12 @@ import math
 import os
 import re
 import secrets
+import shlex
 import shutil
 import signal
 import socket
 import subprocess
+import tempfile
 import threading
 import time
 import weakref
@@ -30,7 +33,7 @@ from ddtrace import tracer
 from git import Repo
 from opal_common.async_utils import run_sync
 from opal_common.git_utils.bundle_maker import BundleMaker
-from opal_common.http_utils import redact_url
+from opal_common.http_utils import redact_sensitive_text, redact_url
 from opal_common.logger import logger
 from opal_common.monitoring import metrics
 from opal_common.schemas.policy import PolicyBundle
@@ -1463,9 +1466,12 @@ def _signal_repack_group(proc: subprocess.Popen[bytes], sig: int) -> None:
         pass  # the whole group has already exited
 
 
-def _stop_repack(proc: subprocess.Popen[bytes], grace: float) -> bool:
+def _stop_git(
+    proc: subprocess.Popen[bytes], grace: float, *, what: str = "git repack"
+) -> bool:
     """SIGTERM git's process group, then SIGKILL it if still running after
-    ``grace`` seconds (``grace`` <= 0 kills at once).
+    ``grace`` seconds (``grace`` <= 0 kills at once). ``what`` names the
+    command in the log lines.
 
     Waits with communicate(), not wait(): it drains stderr (a child
     blocked writing to a full pipe could not exit) and returns only once
@@ -1480,8 +1486,9 @@ def _stop_repack(proc: subprocess.Popen[bytes], grace: float) -> bool:
             return True
         except subprocess.TimeoutExpired:
             logger.warning(
-                "git repack (pid {pid}) still running {grace}s after SIGTERM; "
+                "{what} (pid {pid}) still running {grace}s after SIGTERM; "
                 "sending SIGKILL",
+                what=what,
                 pid=proc.pid,
                 grace=grace,
             )
@@ -1490,14 +1497,23 @@ def _stop_repack(proc: subprocess.Popen[bytes], grace: float) -> bool:
         proc.communicate(timeout=_REPACK_KILL_WAIT_SECONDS)
     except subprocess.TimeoutExpired:
         logger.error(
-            "git repack (pid {pid}) still running {secs}s after SIGKILL "
-            "(stuck in uninterruptible I/O?); leaving its files for the next "
-            "repack to sweep",
+            "{what} (pid {pid}) still running {secs}s after SIGKILL "
+            "(stuck in uninterruptible I/O?){then}",
+            what=what,
             pid=proc.pid,
             secs=_REPACK_KILL_WAIT_SECONDS,
+            then=(
+                "; leaving its files for the next repack to sweep"
+                if what == "git repack"
+                else ""
+            ),
         )
         return False
     return True
+
+
+# The repack's name for _stop_git, which the repack code and its tests use.
+_stop_repack = _stop_git
 
 
 def _repack_clone(
@@ -1975,6 +1991,217 @@ def _lock_is_busy(lock: asyncio.Lock) -> bool:
     return lock.locked() or any(not w.cancelled() for w in waiters)
 
 
+# --- scope fetch through the git CLI -----------------------------------------
+#
+# With SCOPES_GIT_FETCH_BACKEND=cli a scope fetch runs `git fetch` in a process
+# group of its own instead of pygit2's remote.fetch. libgit2 (pygit2 1.14,
+# libgit2 1.7) cannot be stopped once a fetch is under way: its server timeouts
+# apply to HTTP(S) only, no callback runs while it reads the ref advertisement,
+# negotiates or waits on a silent connection, and a thread cannot be killed.
+# A stalled SSH fetch therefore holds its source's busy key until the
+# connection dies on its own, often 15 minutes or more, and every sync of that
+# source is skipped meanwhile. A subprocess can be killed: at the timeout git's
+# group gets SIGTERM, then SIGKILL, and the next sync fetches again. ssh's
+# keepalives also notice a dead connection within about a minute. The CLI
+# speaks protocol v2, which libgit2 does not, so the server filters the ref
+# advertisement by the refspec instead of always sending every ref.
+
+FETCH_BACKEND_PYGIT2 = "pygit2"
+FETCH_BACKEND_CLI = "cli"
+_FETCH_BACKENDS = (FETCH_BACKEND_PYGIT2, FETCH_BACKEND_CLI)
+_fetch_backend_warned = False
+
+# How long git's group gets between SIGTERM and SIGKILL when a fetch times out.
+# A fetch has nothing to tidy (git writes refs through lock files and renames
+# a pack in only once it is complete), so this is short.
+_CLI_FETCH_TERM_GRACE_SECONDS = 5.0
+# ssh options for a CLI fetch. BatchMode: never prompt (no tty anyway).
+# StrictHostKeyChecking=yes against the image's known_hosts: the same trust the
+# image sets up for git over ssh (the Dockerfile's ssh-keyscan of the policy
+# repo host); an unknown host fails the fetch instead of being trusted on first
+# use. IdentitiesOnly: only the scope's key, never an agent's or a default one.
+# ServerAliveInterval x ServerAliveCountMax: a silent connection is dropped
+# after about a minute, so a dead TCP path cannot hold a fetch until the
+# kernel gives up on it.
+_CLI_SSH_OPTIONS = (
+    "BatchMode=yes",
+    "StrictHostKeyChecking=yes",
+    "IdentitiesOnly=yes",
+    "ConnectTimeout=30",
+    "ServerAliveInterval=15",
+    "ServerAliveCountMax=4",
+)
+
+
+def fetch_backend() -> str:
+    """SCOPES_GIT_FETCH_BACKEND, normalised; an unknown value means pygit2.
+
+    Warns once per process about an unknown value rather than failing the
+    server at startup: the setting picks an implementation, and the default
+    one is always available.
+    """
+    global _fetch_backend_warned
+    value = str(opal_server_config.SCOPES_GIT_FETCH_BACKEND or "").strip().lower()
+    if value in _FETCH_BACKENDS:
+        return value
+    if not _fetch_backend_warned:
+        _fetch_backend_warned = True
+        logger.warning(
+            "Unknown SCOPES_GIT_FETCH_BACKEND {value!r}; using {default}",
+            value=opal_server_config.SCOPES_GIT_FETCH_BACKEND,
+            default=FETCH_BACKEND_PYGIT2,
+        )
+    return FETCH_BACKEND_PYGIT2
+
+
+class GitCliFetchError(pygit2.GitError):
+    """``git fetch`` on a scope clone exited non-zero.
+
+    A ``pygit2.GitError`` so the callers' handling of a failed fetch (the
+    git_error failure counter, the source's backoff, the re-raise to
+    sync_scope) is the same for both backends. ``stderr_tail`` is the end of
+    git's stderr with credentials masked.
+    """
+
+    def __init__(self, returncode: int, stderr_tail: str) -> None:
+        super().__init__(f"git fetch exited {returncode}: {stderr_tail}")
+        self.returncode = returncode
+        self.stderr_tail = stderr_tail
+
+
+def _cli_fetch_auth_env(
+    auth, key_dir: str
+) -> Dict[str, str]:  # pragma: no branch - every auth type is listed
+    """The environment that carries a scope source's credentials to git.
+
+    Never argv: the command line of every process is readable by every
+    user of the host, its environment only by its own user (and root).
+    SSH: the private key goes to a 0600 file in ``key_dir`` (a 0700
+    directory the caller removes), named in GIT_SSH_COMMAND with the
+    options above. A GitHub token: an Authorization header through git's
+    GIT_CONFIG_* variables, the basic credentials pygit2 sends
+    (username ``git``, the token as password). No auth: ssh still runs with
+    the options above, so host keys and keepalives apply to every source.
+    The same auth types as GitCallback.credentials, which covers SSH and
+    GitHub tokens only.
+    """
+    ssh = ["ssh"]
+    for option in _CLI_SSH_OPTIONS:
+        ssh += ["-o", option]
+    env: Dict[str, str] = {}
+    if isinstance(auth, SSHAuthData):
+        key_path = os.path.join(key_dir, "id")
+        fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as f:
+            key = auth.private_key
+            # ssh rejects a key file whose last line has no newline.
+            f.write(key if key.endswith("\n") else key + "\n")
+        ssh += ["-i", key_path]
+    elif isinstance(auth, GitHubTokenAuthData):
+        basic = base64.b64encode(f"git:{auth.token}".encode()).decode("ascii")
+        env.update(
+            GIT_CONFIG_COUNT="1",
+            GIT_CONFIG_KEY_0="http.extraHeader",
+            GIT_CONFIG_VALUE_0=f"Authorization: Basic {basic}",
+        )
+    env["GIT_SSH_COMMAND"] = " ".join(shlex.quote(part) for part in ssh)
+    return env
+
+
+def _cli_fetch_argv(git: str, repo_path: str, remote: str, prune: bool) -> list[str]:
+    """The ``git fetch`` a CLI scope fetch runs.
+
+    The remote's own refspec and URL (what the clone configured), so the
+    refs it writes are the ones pygit2's fetch writes:
+    refs/remotes/<remote>/* and FETCH_HEAD. --no-tags: tags are not
+    policy, and without it a v2 server is also asked for refs/tags/.
+    gc.auto=0 and maintenance.auto=false: a fetch must not start a gc or
+    maintenance of its own, which would race the scope repack (the
+    repack lock covers only OPAL's own repack).
+    fetch.writeCommitGraph=false for the same reason.
+    """
+    argv = [
+        git,
+        "-C",
+        repo_path,
+        "-c",
+        "protocol.version=2",
+        "-c",
+        "gc.auto=0",
+        "-c",
+        "maintenance.auto=false",
+        "-c",
+        "fetch.writeCommitGraph=false",
+        "fetch",
+        "--quiet",
+        "--no-tags",
+    ]
+    if prune:
+        argv.append("--prune")
+    argv.append(remote)
+    return argv
+
+
+def _cli_fetch(
+    repo_path: str | os.PathLike[str],
+    remote: str,
+    source: GitPolicyScopeSource,
+    *,
+    fetch_timeout: float,
+    prune: bool,
+    term_grace: float = _CLI_FETCH_TERM_GRACE_SECONDS,
+) -> None:
+    """Fetch ``remote`` into a scope clone with ``git fetch``. Blocking.
+
+    ``fetch_timeout`` is hard (<= 0: none): git's process group gets
+    SIGTERM when it expires, SIGKILL ``term_grace`` seconds later, and
+    TimeoutError is raised, the same error run_in_git_executor raises, so
+    the callers treat a timed-out fetch the same way for both backends. The
+    difference: this returns, and with it the busy key, instead of leaving
+    a fetch running on its thread.
+
+    Raises:
+        TimeoutError: the fetch ran past ``timeout``.
+        GitCliFetchError: git exited non-zero.
+        GitNotFoundError: there is no ``git`` on PATH.
+    """
+    env = {k: os.environ[k] for k in _REPACK_ENV_ALLOWLIST if k in os.environ}
+    # Never a credential prompt: a fetch that would need one fails instead.
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["LC_ALL"] = "C"
+    git = shutil.which("git", path=env.get("PATH"))
+    if git is None:
+        raise GitNotFoundError(errno.ENOENT, "git not found on PATH", "git")
+    key_dir = tempfile.mkdtemp(prefix="opal-git-fetch-")
+    try:
+        env.update(_cli_fetch_auth_env(source.auth, key_dir))
+        proc = subprocess.Popen(
+            _cli_fetch_argv(git, os.fspath(repo_path), remote, prune),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            env=env,
+            # Its own process group, so one killpg() reaches git's ssh and
+            # index-pack children too (see _run_repack).
+            start_new_session=True,
+        )
+        try:
+            _, stderr = proc.communicate(
+                timeout=fetch_timeout if fetch_timeout and fetch_timeout > 0 else None
+            )
+        except subprocess.TimeoutExpired:
+            _stop_git(proc, term_grace, what="git fetch")
+            raise TimeoutError(f"git operation exceeded {fetch_timeout}s") from None
+        except BaseException:
+            _stop_git(proc, 0.0, what="git fetch")
+            raise
+    finally:
+        shutil.rmtree(key_dir, ignore_errors=True)
+    if proc.returncode != 0:
+        tail = stderr.decode("utf-8", "replace").strip()[-_REPACK_STDERR_TAIL_CHARS:]
+        raise GitCliFetchError(proc.returncode, redact_sensitive_text(tail, source.url))
+
+
 class PolicyFetcherCallbacks:
     async def on_update(self, old_head: Optional[str], head: str):
         pass
@@ -2337,19 +2564,7 @@ class GitPolicyFetcher(PolicyFetcher):
                                 # Pruned when configured, so a branch deleted
                                 # on the remote leaves the clone: otherwise its
                                 # stale remote-tracking ref is served as the head.
-                                await run_in_git_executor(
-                                    repo.remotes[self._remote].fetch,
-                                    callbacks=self._auth_callbacks,
-                                    prune=(
-                                        FetchPrune.PRUNE
-                                        if opal_server_config.SCOPES_GIT_FETCH_PRUNE
-                                        else FetchPrune.UNSPECIFIED
-                                    ),
-                                    timeout=opal_server_config.SCOPES_GIT_FETCH_TIMEOUT,
-                                    busy_key=self._source_id,
-                                    marker_dir=hung_marker_dir(self._repo_path),
-                                    mark_when_hung=reclone_hung_enabled(),
-                                )
+                                await self._fetch_remote(repo)
                             except TimeoutError as exc:
                                 # Expected when a repo is unreachable: log cleanly
                                 # (no traceback) and skip, matching the clone path.
@@ -3003,6 +3218,52 @@ class GitPolicyFetcher(PolicyFetcher):
         except pygit2.GitError:
             logger.warning("Invalid repo at: {path}", path=self._repo_path)
             return None
+
+    async def _fetch_remote(self, repo: Repository) -> None:
+        """Fetch the clone's remote with the configured backend.
+
+        Both run on the git executor under this source's busy key, with
+        the same hung-op markers, and both raise TimeoutError past
+        SCOPES_GIT_FETCH_TIMEOUT and a pygit2.GitError when the fetch
+        fails. With pygit2 a timed-out fetch keeps running on its
+        thread; with the CLI git is killed at the timeout, so the
+        executor's own timeout is set past the kill and normally never
+        fires.
+        """
+        prune = bool(opal_server_config.SCOPES_GIT_FETCH_PRUNE)
+        timeout = opal_server_config.SCOPES_GIT_FETCH_TIMEOUT
+        common = dict(
+            busy_key=self._source_id,
+            marker_dir=hung_marker_dir(self._repo_path),
+            mark_when_hung=reclone_hung_enabled(),
+        )
+        if fetch_backend() == FETCH_BACKEND_CLI:
+            limit = _finite_positive_or_zero(timeout)
+            await run_in_git_executor(
+                _cli_fetch,
+                self._repo_path,
+                self._remote,
+                self._source,
+                timeout=(
+                    limit
+                    + _CLI_FETCH_TERM_GRACE_SECONDS
+                    + _REPACK_KILL_WAIT_SECONDS
+                    + 10.0
+                    if limit
+                    else 0
+                ),
+                fetch_timeout=limit,
+                prune=prune,
+                **common,
+            )
+            return
+        await run_in_git_executor(
+            repo.remotes[self._remote].fetch,
+            callbacks=self._auth_callbacks,
+            prune=FetchPrune.PRUNE if prune else FetchPrune.UNSPECIFIED,
+            timeout=timeout,
+            **common,
+        )
 
     async def _should_fetch(
         self,

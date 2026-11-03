@@ -236,6 +236,11 @@ class OpalServerConfig(Confi):
         "bounds how many such threads accumulate. Either way one unreachable repo "
         "never blocks boot or other scopes (0 = no timeout).",
     )
+    SCOPES_GIT_FETCH_BACKEND = confi.str(
+        "SCOPES_GIT_FETCH_BACKEND",
+        "pygit2",
+        description="Which implementation fetches a scope clone: `pygit2` (the default, libgit2 in-process) or `cli` (`git fetch` in a process group of its own). A libgit2 fetch cannot be stopped once it has started: libgit2's server timeouts apply to HTTP(S) only, so over SSH a fetch whose connection goes silent keeps running on its thread after SCOPES_GIT_FETCH_TIMEOUT, and every sync of that source is skipped until it returns (\"a previous git operation is still running after its timeout\"). With `cli` the fetch is killed at SCOPES_GIT_FETCH_TIMEOUT (SIGTERM to git's process group, SIGKILL 5 s later) and the next sync fetches again; ssh runs with keepalives (ServerAliveInterval=15, ServerAliveCountMax=4), so a dead connection is dropped within about a minute, and with BatchMode, IdentitiesOnly and StrictHostKeyChecking=yes against the user's known_hosts (the official images add the policy repo host's key there at build time; an unknown host fails the fetch). git speaks protocol v2, which libgit2 does not, and fetches with --no-tags. The scope's SSH key is written to a 0600 file in a private temporary directory for the length of the fetch, and a GitHub token is passed as an Authorization header through git's GIT_CONFIG_* environment variables; neither ever appears on git's command line. Needs `git` and `ssh` on PATH (both are in the official images). Clones are made with pygit2 either way. An unknown value logs a warning and means `pygit2`.",
+    )
     SCOPES_GIT_FETCH_PRUNE = confi.bool(
         "SCOPES_GIT_FETCH_PRUNE",
         False,

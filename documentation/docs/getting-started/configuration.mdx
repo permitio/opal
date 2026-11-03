@@ -515,6 +515,12 @@ Default: `40`
 
 Maximum number of in-flight scope git operations (live plus lingering timed-out) allowed to hold a daemon thread at once, counted GLOBALLY across all sources. It is a last-resort ceiling on thread growth when remotes hang, not a per-source guard — that is handled separately, by skipping a source that already has an operation in flight. Once the ceiling is reached, new git ops are refused (logged, and retried next cycle) for EVERY scope, healthy ones included, until enough threads drain; with remotes that never return, that state can persist. Set it well above SCOPES_GIT_MAX_WORKERS and alert on the refusal log (0 = no cap; a negative value is clamped to 0 and also means no cap, at the cost of unbounded thread growth during an outage).
 
+#### OPAL_SCOPES_GIT_FETCH_BACKEND
+
+Default: `pygit2`
+
+Which implementation fetches a scope clone: `pygit2` (the default, libgit2 in-process) or `cli` (`git fetch` in a process group of its own). A libgit2 fetch cannot be stopped once it has started: libgit2's server timeouts apply to HTTP(S) only, so over SSH a fetch whose connection goes silent keeps running on its thread after SCOPES_GIT_FETCH_TIMEOUT, and every sync of that source is skipped until it returns ("a previous git operation is still running after its timeout"). With `cli` the fetch is killed at SCOPES_GIT_FETCH_TIMEOUT (SIGTERM to git's process group, SIGKILL 5 s later) and the next sync fetches again; ssh runs with keepalives (ServerAliveInterval=15, ServerAliveCountMax=4), so a dead connection is dropped within about a minute, and with BatchMode, IdentitiesOnly and StrictHostKeyChecking=yes against the user's known_hosts (the official images add the policy repo host's key there at build time; an unknown host fails the fetch). git speaks protocol v2, which libgit2 does not, and fetches with --no-tags. The scope's SSH key is written to a 0600 file in a private temporary directory for the length of the fetch, and a GitHub token is passed as an Authorization header through git's GIT_CONFIG_* environment variables; neither ever appears on git's command line. Needs `git` and `ssh` on PATH (both are in the official images). Clones are made with pygit2 either way. An unknown value logs a warning and means `pygit2`.
+
 #### OPAL_SCOPES_GIT_FETCH_PRUNE
 
 Default: `False`
