@@ -20,7 +20,8 @@ import weakref
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import thread as cf_thread
 from contextlib import asynccontextmanager, contextmanager
-from dataclasses import dataclass
+from contextvars import ContextVar
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import AbstractSet, Awaitable, Callable, Dict, NamedTuple, Optional, cast
 
@@ -1750,13 +1751,47 @@ _repack_failed_at: Dict[str, float] = {}
 _repack_git_missing = False
 
 # Sync passes running in this process right now (phases 1 and 2; a pass leaves
-# the count before it repacks). A repack does not start while one runs: a pass
-# takes a slot of its SCOPES_GIT_MAX_WORKERS semaphore before it waits for a
-# clone's lock_source, so its syncs of a clone being repacked would fill every
-# slot and stall the whole pass, every other clone's scopes included, until
-# the repack ended. The mark stays, and the pass that ends last repacks it.
-# Mutated only on the event loop; a forked child starts from 0.
+# the count before it repacks). A repack does not start while one runs: the
+# pass's syncs of a clone being repacked would wait for the repack under that
+# clone's lock_source, and phase 2 starts only once phase 1 has synced every
+# clone, so a repack during phase 1 would hold up the whole pass, every other
+# clone's scopes included, until it ended. The mark stays, and the pass that
+# ends last repacks it. Mutated only on the event loop; a forked child starts
+# from 0.
 _sync_passes_in_flight = 0
+
+
+@dataclass
+class _SyncPass:
+    """The sync pass a task runs in: see GitPolicyFetcher.sync_pass."""
+
+    started: datetime.datetime
+    # (source id, branch) of every "Did not find target branch" this pass
+    # logged, so that the scopes sharing a missing branch log it once.
+    missing_branches_logged: set[tuple[str, str]] = field(default_factory=set)
+    # Set when sync_pass() exits. A task the pass started can outlive it with
+    # the pass still in its context; an ended pass counts as none.
+    ended: bool = False
+
+
+# Per task, not per process: asyncio copies the context into every task it
+# starts, so the syncs a pass runs see that pass, while a sync a bundle request
+# asked for, running beside the pass in a task of its own, sees none, and two
+# passes side by side (the boot sync next to the first periodic one) each see
+# their own.
+_current_sync_pass: ContextVar[Optional[_SyncPass]] = ContextVar(
+    "_current_sync_pass", default=None
+)
+
+
+def _running_sync_pass() -> Optional[_SyncPass]:
+    """The pass the calling task runs in, or None outside one or once that pass
+    has ended."""
+    sync_pass = _current_sync_pass.get()
+    if sync_pass is None or sync_pass.ended:
+        return None
+    return sync_pass
+
 
 # How long sync passes may keep deferring a due repack (see _pass_defers_repack)
 # before it runs beside one anyway.
@@ -2270,13 +2305,13 @@ class GitPolicyFetcher(PolicyFetcher):
                 )
                 return
         async with GitPolicyFetcher.lock_source(self._source_id):
-            # Re-checked under the lock: N pass-originated syncs of one source
-            # that arrive together — phase 2 runs the duplicates concurrently,
-            # and phase 1 may have recorded nothing for it (refused at the
-            # zombie cap, scope gone, no fetch needed) — all pass the cheap
-            # pre-lock check before the first has failed and recorded, then
-            # serialise here; without this second look each would perform its
-            # own full clone attempt against the dead remote.
+            # Re-checked under the lock: N syncs of one source that honour the
+            # backoff and arrive together — phase 2 syncs a few of a clone's
+            # scopes at once, two passes can run side by side, and bundle
+            # requests ask for syncs — all pass the cheap pre-lock check
+            # before the first has failed and recorded, then serialise here;
+            # without this second look each would perform its own full clone
+            # attempt against the dead remote.
             if honor_backoff:
                 entry = self._backoff_entry()
                 if entry is not None:
@@ -2315,11 +2350,13 @@ class GitPolicyFetcher(PolicyFetcher):
                     # every other request being served on this worker.
                     repo = await run_sync(self._get_valid_repo)
                     if repo is not None:
+                        pass_started = GitPolicyFetcher.current_pass_started()
                         should_fetch = await self._should_fetch(
                             repo,
                             hinted_hash=hinted_hash,
                             force_fetch=force_fetch,
                             req_time=req_time,
+                            pass_started=pass_started,
                         )
                         if should_fetch:
                             logger.debug(
@@ -2397,10 +2434,13 @@ class GitPolicyFetcher(PolicyFetcher):
                         # another's fetch for a branch the clone lacks
                         # (_should_fetch): nothing can have changed for it, and
                         # an ERROR on every server per request is noise. Other
-                        # syncs (PUT /scopes, the refresh routes) keep the line.
+                        # syncs (PUT /scopes, the refresh routes) keep the line,
+                        # and a pass's syncs log it once per branch per pass
+                        # (_report_missing_branch).
                         if (
                             should_fetch
                             or not honor_backoff
+                            or pass_started is not None
                             or RepoInterface.has_remote_branch(
                                 repo, self._source.branch, self._remote
                             )
@@ -2528,17 +2568,41 @@ class GitPolicyFetcher(PolicyFetcher):
     @staticmethod
     @contextmanager
     def sync_pass():
-        """Count a sync pass's phases as in flight (_sync_passes_in_flight).
+        """Count a sync pass's phases as in flight (_sync_passes_in_flight),
+        and record the pass's start for the syncs it runs
+        (current_pass_started).
 
         ScopesService.sync_scopes wraps its two phases in this, and runs
         its due repacks only after it exits.
         """
         global _sync_passes_in_flight
         _sync_passes_in_flight += 1
+        sync_pass = _SyncPass(started=datetime.datetime.now())
+        token = _current_sync_pass.set(sync_pass)
         try:
             yield
         finally:
+            # Before the reset, which raises ValueError when the pass's
+            # coroutine is closed outside its task's context (the garbage
+            # collector closing one whose loop is gone): a pass left counted
+            # would hold every repack of this process back for good.
             _sync_passes_in_flight -= 1
+            sync_pass.ended = True
+            _current_sync_pass.reset(token)
+
+    @staticmethod
+    def current_pass_started() -> Optional[datetime.datetime]:
+        """When the sync pass the calling task runs in started.
+
+        A pass's syncs run in tasks it starts inside sync_pass(), which
+        inherit the pass; a task started anywhere else (the sync a request
+        asks for while a pass runs) is not in it.
+
+        Returns:
+            The pass's start time, or None outside a pass or once it ended.
+        """
+        sync_pass = _running_sync_pass()
+        return sync_pass.started if sync_pass is not None else None
 
     @staticmethod
     async def run_due_repacks(live_source_ids: AbstractSet[str]) -> None:
@@ -3010,6 +3074,7 @@ class GitPolicyFetcher(PolicyFetcher):
         hinted_hash: Optional[str] = None,
         force_fetch: bool = False,
         req_time: datetime.datetime = None,
+        pass_started: Optional[datetime.datetime] = None,
     ) -> bool:
         if force_fetch:
             if req_time is not None and await self._was_fetched_after(req_time):
@@ -3028,6 +3093,16 @@ class GitPolicyFetcher(PolicyFetcher):
                 logger.debug(
                     "Target branch was not found in local clone, but the remote "
                     "was fetched after this request; not fetching again"
+                )
+                return False
+            if pass_started is not None and await self._was_fetched_after(pass_started):
+                # The same rule for the syncs of a pass (the boot preload
+                # included): phase 1 fetches every clone, so the scopes of one
+                # clone whose branches the remote lacks cost the pass that one
+                # fetch, not one each. The next pass fetches again.
+                logger.debug(
+                    "Target branch was not found in local clone, but the remote "
+                    "was fetched in this sync pass; not fetching again"
                 )
                 return False
             logger.info(
@@ -3064,7 +3139,7 @@ class GitPolicyFetcher(PolicyFetcher):
             repo, self._source.branch, self._remote
         )
         if new_revision is None:
-            logger.error(f"Did not find target branch on remote: {self._source.branch}")
+            self._report_missing_branch()
             return
 
         # Get the previous commit hash of the target branch
@@ -3082,6 +3157,23 @@ class GitPolicyFetcher(PolicyFetcher):
 
         # Bring forward local branch (a bit like "pull"), so we won't detect changes again
         local_branch.set_target(new_revision)
+
+    def _report_missing_branch(self) -> None:
+        """Log that the remote lacks this scope's branch: in a sync pass once
+        per branch, since every scope naming it reports the same fetch."""
+        sync_pass = _running_sync_pass()
+        if sync_pass is not None:
+            key = (self._source_id, self._source.branch)
+            if key in sync_pass.missing_branches_logged:
+                logger.debug(
+                    "scope {scope}: target branch {branch} is not on the remote "
+                    "(already logged in this sync pass)",
+                    scope=self._scope_id,
+                    branch=self._source.branch,
+                )
+                return
+            sync_pass.missing_branches_logged.add(key)
+        logger.error(f"Did not find target branch on remote: {self._source.branch}")
 
     def _get_current_branch_head(self) -> str:
         # Opened fresh per call instead of using the shared cached handle:

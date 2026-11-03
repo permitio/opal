@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+from collections import defaultdict
 from functools import partial
 from pathlib import Path
 from typing import List, Optional, Set, cast
@@ -38,6 +39,13 @@ from opal_server.scopes.scope_repository import (
     ScopeNotFoundError,
     ScopeRepository,
 )
+
+# How many of one clone's scopes a sync pass syncs at once, in the clone's one
+# slot: they take its lock_source one at a time, and the next ones read their
+# records from the store meanwhile instead of after it. 8 keeps about as many
+# of them queued at the lock as before, so request syncs on it don't starve
+# the pass.
+_SCOPES_IN_FLIGHT_PER_CLONE = 8
 
 
 def is_rego_source_file(
@@ -163,6 +171,8 @@ class ScopesService:
         req_time: datetime.datetime = None,
         honor_backoff: bool = False,
         notify_all: bool = False,
+        *,
+        expected_source_id: Optional[str] = None,
     ) -> Optional[str]:
         """Sync one scope's policy source.
 
@@ -183,9 +193,16 @@ class ScopesService:
         source: a customer who has just repaired credentials must not be told
         200 OK and then wait out hours or days of backoff.
 
+        ``expected_source_id`` is set by a sync pass: the clone the pass
+        listed the scope under. A scope that points at another source by now
+        (a PUT repointed it after the pass read the scopes) is not synced
+        here: the repoint's own sync handles it, and synced here it would
+        work on another clone in the slot of this one.
+
         Returns the source id of the scope's git source, whether or not its
         fetch succeeded, so that the trigger can repack the clone this sync
-        may have left due; None for a scope that is not on git.
+        may have left due; None for a scope that is not on git, or one
+        skipped because it moved.
         """
         if scope is None:
             assert scope_id, ValueError("scope_id not set for sync_scope")
@@ -196,6 +213,15 @@ class ScopesService:
                 logger.warning("Non-git scopes are currently not supported!")
                 return None
             source = cast(GitPolicyScopeSource, scope.policy)
+            source_id = GitPolicyFetcher.source_id(source)
+            if expected_source_id is not None and source_id != expected_source_id:
+                logger.debug(
+                    "Skipping scope {scope_id} in this sync pass: it moved to "
+                    "another source after the pass listed it, and the sync of "
+                    "its repoint handles it",
+                    scope_id=scope.scope_id,
+                )
+                return None
 
             logger.debug(
                 f"Sync scope: {scope.scope_id} (remote: {redact_url(source.url)}, branch: {source.branch}, req_time: {req_time})"
@@ -210,8 +236,6 @@ class ScopesService:
                     pubsub_endpoint=self._pubsub_endpoint,
                     notify_all=notify_all,
                 )
-
-            source_id = GitPolicyFetcher.source_id(source)
 
             async def _scope_still_exists() -> bool:
                 # Also confirms the scope still points at the source this
@@ -563,13 +587,14 @@ class ScopesService:
 
             # Partition into distinct repos (cloned/fetched once, with priority
             # so every repo is pulled asap) and the scopes that merely reuse an
-            # already-handled repo (checked for changes only).
+            # already-handled repo (checked for changes only), grouped by the
+            # clone they reuse.
             unique_scopes = []
-            duplicate_scopes = []
+            duplicate_scopes: dict[str, list[Scope]] = defaultdict(list)
             seen_source_ids = set()
             for scope, src_id in scopes_with_ids:
                 if src_id in seen_source_ids:
-                    duplicate_scopes.append(scope)
+                    duplicate_scopes[src_id].append(scope)
                 else:
                     seen_source_ids.add(src_id)
                     unique_scopes.append(scope)
@@ -589,7 +614,7 @@ class ScopesService:
                     max(1, opal_server_config.SCOPES_GIT_MAX_WORKERS)
                 )
                 await self._sync_scopes_concurrently(
-                    unique_scopes,
+                    [[scope] for scope in unique_scopes],
                     git_semaphore,
                     force_fetch=True,
                     notify_on_changes=notify_on_changes,
@@ -598,7 +623,9 @@ class ScopesService:
 
                 # Phase 2 is local-only in the common case: the repos were just
                 # handled in phase 1, so _should_fetch returns False and no network
-                # fetch happens (only a disk open + change-check + notify).
+                # fetch happens (only a disk open + change-check + notify), also
+                # for a scope whose branch the remote lacks, since its clone was
+                # fetched after this pass started (current_pass_started).
                 # It shares the loop's default executor (the same pool that serves
                 # policy bundles), so bound it by the SAME SCOPES_GIT_MAX_WORKERS
                 # knob as phase 1 rather than a hard-coded floor: an operator who
@@ -606,10 +633,15 @@ class ScopesService:
                 # 2 too, and over-subscribing that ~min(32, cpu+4)-thread pool only
                 # queues work and contends with bundle serving. (The earlier
                 # max(..., 32) made 32 a floor the knob could never reduce below.)
+                # A clone's scopes share one slot (_SCOPES_IN_FLIGHT_PER_CLONE of
+                # them at once in it): as tasks of their own they took their
+                # slots before waiting for the clone's lock_source, so one clone
+                # whose sync was slow filled every slot and no other clone's
+                # scope ran until it was done.
                 local_concurrency = max(1, opal_server_config.SCOPES_GIT_MAX_WORKERS)
                 local_semaphore = asyncio.Semaphore(local_concurrency)
                 await self._sync_scopes_concurrently(
-                    duplicate_scopes,
+                    duplicate_scopes.values(),
                     local_semaphore,
                     force_fetch=False,
                     notify_on_changes=notify_on_changes,
@@ -623,9 +655,17 @@ class ScopesService:
                 await GitPolicyFetcher.run_due_repacks(live_source_ids)
 
     async def _sync_scopes_concurrently(
-        self, scopes, semaphore, *, force_fetch, notify_on_changes, honor_backoff=False
+        self,
+        scope_groups,
+        semaphore,
+        *,
+        force_fetch,
+        notify_on_changes,
+        honor_backoff=False,
     ):
-        """Sync ``scopes`` concurrently, bounded by ``semaphore``.
+        """Sync the groups concurrently, each holding one slot of ``semaphore``
+        while it runs and syncing up to _SCOPES_IN_FLIGHT_PER_CLONE of its
+        scopes at once in it. A group is the scopes of one clone.
 
         Each scope's failure is logged and isolated so one bad repo
         never fails the whole pass.
@@ -637,31 +677,42 @@ class ScopesService:
         """
 
         async def _sync_one(scope):
-            async with semaphore:
-                try:
-                    await self.sync_scope(
-                        scope_id=scope.scope_id,
-                        force_fetch=force_fetch,
-                        notify_on_changes=notify_on_changes,
-                        honor_backoff=honor_backoff,
-                    )
-                except ScopeNotFoundError:
-                    logger.info(
-                        f"scope {scope.scope_id} was deleted while sync was queued, skipping"
-                    )
-                except Exception as e:
-                    # sync_scope already logs its own git failures without a
-                    # traceback (see there); this catches anything that escaped
-                    # it. Same rule: one ERROR line, traceback at DEBUG.
-                    logger.error(
-                        "sync_scope failed for {scope_id}: {etype}: {err}",
-                        scope_id=scope.scope_id,
-                        etype=type(e).__name__,
-                        err=e,
-                    )
-                    logger.opt(exception=True).debug(
-                        "traceback for the failed sync of scope {scope_id}",
-                        scope_id=scope.scope_id,
-                    )
+            try:
+                await self.sync_scope(
+                    scope_id=scope.scope_id,
+                    force_fetch=force_fetch,
+                    notify_on_changes=notify_on_changes,
+                    honor_backoff=honor_backoff,
+                    expected_source_id=GitPolicyFetcher.source_id(scope.policy),
+                )
+            except ScopeNotFoundError:
+                logger.info(
+                    f"scope {scope.scope_id} was deleted while sync was queued, skipping"
+                )
+            except Exception as e:
+                # sync_scope already logs its own git failures without a
+                # traceback (see there); this catches anything that escaped
+                # it. Same rule: one ERROR line, traceback at DEBUG.
+                logger.error(
+                    "sync_scope failed for {scope_id}: {etype}: {err}",
+                    scope_id=scope.scope_id,
+                    etype=type(e).__name__,
+                    err=e,
+                )
+                logger.opt(exception=True).debug(
+                    "traceback for the failed sync of scope {scope_id}",
+                    scope_id=scope.scope_id,
+                )
 
-        await asyncio.gather(*(_sync_one(scope) for scope in scopes))
+        async def _sync_group(group):
+            async with semaphore:
+                pending = iter(group)
+
+                async def lane():
+                    for scope in pending:
+                        await _sync_one(scope)
+
+                lanes = min(_SCOPES_IN_FLIGHT_PER_CLONE, len(group))
+                await asyncio.gather(*(lane() for _ in range(lanes)))
+
+        await asyncio.gather(*(_sync_group(group) for group in scope_groups))
