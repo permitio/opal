@@ -218,7 +218,8 @@ async def test_a_narrow_fetch_over_protocol_v2_sends_only_the_requested_prefixes
     """The point of the setting: over v2 the client sends one ref-prefix per
     requested branch and the server's advertisement holds only those. A local
     origin speaks v2 through git's file transport, and GIT_TRACE_PACKET shows
-    the exchange. GIT_TRACE_PACKET is let through the CLI fetch's env allowlist here only."""
+    the exchange. GIT_TRACE_PACKET is let through the CLI fetch's env allowlist here only.
+    """
     origin = _origin(tmp_path)
     for i in range(20):
         _git("-C", str(origin), "branch", f"noise-{i}")
