@@ -2108,7 +2108,9 @@ def _cli_fetch_auth_env(
     return env
 
 
-def _cli_fetch_argv(git: str, repo_path: str, remote: str, prune: bool) -> list[str]:
+def _cli_fetch_argv(
+    git: str, repo_path: str, remote: str, prune: bool, *, stdin: bool = False
+) -> list[str]:
     """The ``git fetch`` a CLI scope fetch runs.
 
     The remote's own refspec and URL (what the clone configured), so the
@@ -2118,7 +2120,11 @@ def _cli_fetch_argv(git: str, repo_path: str, remote: str, prune: bool) -> list[
     gc.auto=0 and maintenance.auto=false: a fetch must not start a gc or
     maintenance of its own, which would race the scope repack (the
     repack lock covers only OPAL's own repack).
-    fetch.writeCommitGraph=false for the same reason.
+    fetch.writeCommitGraph=false for the same reason. With ``stdin`` the
+    refspecs come on git's stdin instead (--stdin, one per line), replacing
+    the remote's configured one: a list of thousands of branches would not
+    fit a command line. fetch.negotiationAlgorithm=skipping then keeps
+    negotiation short on a clone that holds many more refs than it asks for.
     """
     argv = [
         git,
@@ -2136,8 +2142,15 @@ def _cli_fetch_argv(git: str, repo_path: str, remote: str, prune: bool) -> list[
         "--quiet",
         "--no-tags",
     ]
+    if stdin:
+        argv[argv.index("fetch") : argv.index("fetch")] = [
+            "-c",
+            "fetch.negotiationAlgorithm=skipping",
+        ]
     if prune:
         argv.append("--prune")
+    if stdin:
+        argv.append("--stdin")
     argv.append(remote)
     return argv
 
@@ -2149,6 +2162,7 @@ def _cli_fetch(
     *,
     fetch_timeout: float,
     prune: bool,
+    refspecs: Optional[list[str]] = None,
     term_grace: float = _CLI_FETCH_TERM_GRACE_SECONDS,
 ) -> None:
     """Fetch ``remote`` into a scope clone with ``git fetch``. Blocking.
@@ -2176,8 +2190,10 @@ def _cli_fetch(
     try:
         env.update(_cli_fetch_auth_env(source.auth, key_dir))
         proc = subprocess.Popen(
-            _cli_fetch_argv(git, os.fspath(repo_path), remote, prune),
-            stdin=subprocess.DEVNULL,
+            _cli_fetch_argv(
+                git, os.fspath(repo_path), remote, prune, stdin=refspecs is not None
+            ),
+            stdin=subprocess.PIPE if refspecs is not None else subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             env=env,
@@ -2187,7 +2203,12 @@ def _cli_fetch(
         )
         try:
             _, stderr = proc.communicate(
-                timeout=fetch_timeout if fetch_timeout and fetch_timeout > 0 else None
+                input=(
+                    "".join(f"{r}\n" for r in refspecs).encode()
+                    if refspecs is not None
+                    else None
+                ),
+                timeout=fetch_timeout if fetch_timeout and fetch_timeout > 0 else None,
             )
         except subprocess.TimeoutExpired:
             _stop_git(proc, term_grace, what="git fetch")
@@ -2296,6 +2317,14 @@ class GitPolicyFetcher(PolicyFetcher):
     # the read in fetch_and_notify_on_changes deliberately happens before
     # lock_source so a skipped source costs nothing.
     source_backoff: Dict[str, SourceBackoff] = {}
+    # source_id -> {scope_id: branch}: the branches this process's scopes track
+    # on each clone, recorded as fetchers are made. With
+    # SCOPES_GIT_FETCH_SCOPE_BRANCHES (and the CLI backend) a fetch asks the
+    # remote for these branches only. A scope deleted through ScopesService is
+    # removed; a repoint replaces the entry under the new source (the old
+    # source's entry stays until that scope is deleted, and costs at most a
+    # fetch of one more branch there).
+    scope_branches: Dict[str, Dict[str, str]] = {}
 
     def __init__(
         self,
@@ -2315,9 +2344,47 @@ class GitPolicyFetcher(PolicyFetcher):
         self._remote = remote_name
         self._scope_id = scope_id
         self._liveness_probe = liveness_probe
+        GitPolicyFetcher.scope_branches.setdefault(self._source_id, {})[
+            scope_id
+        ] = self._source.branch
         logger.debug(
             f"Initializing git fetcher: scope_id={scope_id}, url={redact_url(source.url)}, branch={self._source.branch}, source_id={self._source_id}"
         )
+
+    @staticmethod
+    def forget_scope_branch(source_id: str, scope_id: str) -> None:
+        """Stop fetching a deleted scope's branch with its clone."""
+        branches = GitPolicyFetcher.scope_branches.get(source_id)
+        if branches is not None:
+            branches.pop(scope_id, None)
+            if not branches:
+                GitPolicyFetcher.scope_branches.pop(source_id, None)
+
+    def _scope_branch_refspecs(self) -> Optional[list[str]]:
+        """The refspecs a fetch passes when SCOPES_GIT_FETCH_SCOPE_BRANCHES
+        is on: one per branch this process's scopes track on the clone, or
+        None (the remote's configured refspec) when it is off.
+
+        Each is a one-wildcard pattern, ``+refs/heads/B*:refs/remotes/R/B*``,
+        not an exact name: git fails the whole fetch when an exact refspec's
+        branch is missing on the remote (a scope whose branch was deleted
+        would break every scope on the clone), while a pattern that matches
+        nothing is no error. It may also match a few branches whose names
+        start with B, which costs only their refs. With protocol v2 each
+        becomes a ref-prefix, so the server advertises only matching
+        branches. Names that are not valid branch names are left out.
+        """
+        if not opal_server_config.SCOPES_GIT_FETCH_SCOPE_BRANCHES:
+            return None
+        branches = set(
+            GitPolicyFetcher.scope_branches.get(self._source_id, {}).values()
+        )
+        branches.add(self._source.branch)
+        return [
+            f"+refs/heads/{b}*:refs/remotes/{self._remote}/{b}*"
+            for b in sorted(branches)
+            if b and "*" not in b and reference_is_valid_name(f"refs/heads/{b}")
+        ]
 
     @staticmethod
     @asynccontextmanager
@@ -3254,6 +3321,7 @@ class GitPolicyFetcher(PolicyFetcher):
                 ),
                 fetch_timeout=limit,
                 prune=prune,
+                refspecs=self._scope_branch_refspecs(),
                 **common,
             )
             return

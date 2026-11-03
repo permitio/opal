@@ -294,6 +294,11 @@ class ScopesService:
             deleted_source_id = GitPolicyFetcher.source_id(scope.policy)
             scope_dir = GitPolicyFetcher.repo_clone_path(self._base_dir, scope.policy)
 
+            # This process stops fetching the deleted scope's branch with its
+            # clone (SCOPES_GIT_FETCH_SCOPE_BRANCHES). Other processes keep it
+            # until they see the delete or restart; a branch too many costs
+            # one more ref on their fetch, nothing else.
+            GitPolicyFetcher.forget_scope_branch(deleted_source_id, scope_id)
             try:
                 await self._scopes.delete(scope_id)
             finally:
