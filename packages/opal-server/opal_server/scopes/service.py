@@ -2,7 +2,7 @@ import asyncio
 import datetime
 from functools import partial
 from pathlib import Path
-from typing import List, Optional, Set, cast
+from typing import Dict, List, Optional, Set, cast
 
 import git
 from ddtrace import tracer
@@ -139,6 +139,20 @@ class NewCommitsCallbacks(PolicyFetcherCallbacks):
             await publisher.publish(notification.topics, notification.update)
 
 
+# How long a single-scope sync trusts the per-source branch sets read from the
+# scope store (SCOPES_GIT_FETCH_SCOPE_BRANCHES) before reading them again.
+_SOURCE_BRANCHES_MAX_AGE = 300.0
+
+
+def _branches_by_source(scopes_with_ids) -> Dict[str, Set[str]]:
+    """source_id -> the branches the git scopes on that source track."""
+    branches: Dict[str, Set[str]] = {}
+    for scope, source_id in scopes_with_ids:
+        if isinstance(scope.policy, GitPolicyScopeSource):
+            branches.setdefault(source_id, set()).add(scope.policy.branch)
+    return branches
+
+
 class ScopesService:
     def __init__(
         self,
@@ -152,6 +166,29 @@ class ScopesService:
         # Strong refs to the best-effort local clone purges delete_scope spawns
         # (create_task results are otherwise GC-able); discarded on completion.
         self._local_purges: Set[asyncio.Task] = set()
+
+    async def _refresh_source_branches_if_stale(self) -> None:
+        """Re-read every source's branches from the store when the last read (a
+        sync pass's, or this) is older than _SOURCE_BRANCHES_MAX_AGE.
+
+        Only with SCOPES_GIT_FETCH_SCOPE_BRANCHES on: a single-scope sync
+        (a refresh, a PUT) then asks for the branches the store currently
+        has for its clone, without a full read of the store per sync. A
+        scope created since the last read is covered anyway, since a fetch
+        always asks for its own scope's branch; one deleted since is asked
+        for until the next read, which a deleted branch survives (_cli_fetch
+        drops it).
+        """
+        if not opal_server_config.SCOPES_GIT_FETCH_SCOPE_BRANCHES:
+            return
+        if not GitPolicyFetcher.source_branches_stale(_SOURCE_BRANCHES_MAX_AGE):
+            return
+        scopes = await self._scopes.all()
+        GitPolicyFetcher.set_source_branches(
+            _branches_by_source(
+                [(scope, GitPolicyFetcher.source_id(scope.policy)) for scope in scopes]
+            )
+        )
 
     async def sync_scope(
         self,
@@ -190,6 +227,7 @@ class ScopesService:
         if scope is None:
             assert scope_id, ValueError("scope_id not set for sync_scope")
             scope = await self._scopes.get(scope_id)
+        await self._refresh_source_branches_if_stale()
 
         with tracer.trace("scopes_service.sync_scope", resource=scope.scope_id):
             if not isinstance(scope.policy, GitPolicyScopeSource):
@@ -294,11 +332,6 @@ class ScopesService:
             deleted_source_id = GitPolicyFetcher.source_id(scope.policy)
             scope_dir = GitPolicyFetcher.repo_clone_path(self._base_dir, scope.policy)
 
-            # This process stops fetching the deleted scope's branch with its
-            # clone (SCOPES_GIT_FETCH_SCOPE_BRANCHES). Other processes keep it
-            # until they see the delete or restart; a branch too many costs
-            # one more ref on their fetch, nothing else.
-            GitPolicyFetcher.forget_scope_branch(deleted_source_id, scope_id)
             try:
                 await self._scopes.delete(scope_id)
             finally:
@@ -550,6 +583,11 @@ class ScopesService:
                 (scope, GitPolicyFetcher.source_id(scope.policy)) for scope in scopes
             ]
             live_source_ids = {src_id for _, src_id in scopes_with_ids}
+            # Before phase 1, from every scope (not only the polled ones): a
+            # narrowed fetch (SCOPES_GIT_FETCH_SCOPE_BRANCHES) asks for every
+            # branch the store's scopes track on its clone, so the phase-2
+            # scopes that reuse it are fetched too.
+            GitPolicyFetcher.set_source_branches(_branches_by_source(scopes_with_ids))
             # Once per pass as well as on transitions: a DogStatsD gauge is
             # NO DATA between sends, and the steady state the backoff creates
             # (dead sources parked for the cap) has almost no transitions.

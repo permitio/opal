@@ -2186,42 +2186,44 @@ def _cli_fetch_argv(
     fetch.writeCommitGraph=false for the same reason.
     fetch.unpackLimit=1: every fetch keeps its objects as one pack, as
     libgit2's does, instead of unpacking small ones into loose objects,
-    which the scope repack (it counts packs) would never see. With
-    ``stdin`` the refspecs come on git's stdin instead (--stdin, one per
-    line), replacing the remote's configured one: a list of thousands of
-    branches would not fit a command line. fetch.negotiationAlgorithm=skipping
-    then keeps negotiation short on a clone that holds many more refs than
-    it asks for.
+    which the scope repack (it counts packs) would never see.
+
+    With ``stdin`` the refspecs come on git's stdin instead (--stdin, one
+    per line), replacing the remote's configured one: a list of thousands
+    of branches would not fit a command line. Negotiation is then limited
+    to the scope refs (``--negotiation-tip=refs/heads/scopes/*``, the
+    commits this clone serves), so a clone holding many more branches than
+    it asks for does not offer them all as haves, and uses the skipping
+    algorithm. A tip glob that matches nothing (a clone no scope has synced
+    yet) is a warning for git, not an error.
     """
-    argv = [
-        git,
-        "-C",
-        repo_path,
-        "-c",
+    config = [
         "protocol.version=2",
-        "-c",
         "gc.auto=0",
-        "-c",
         "maintenance.auto=false",
-        "-c",
         "fetch.writeCommitGraph=false",
-        "-c",
         "fetch.unpackLimit=1",
-        "fetch",
-        "--quiet",
-        "--no-tags",
     ]
     if stdin:
-        argv[argv.index("fetch") : argv.index("fetch")] = [
-            "-c",
-            "fetch.negotiationAlgorithm=skipping",
-        ]
+        config.append("fetch.negotiationAlgorithm=skipping")
+    argv = [git, "-C", repo_path]
+    for setting in config:
+        argv += ["-c", setting]
+    argv += ["fetch", "--quiet", "--no-tags"]
     if prune:
         argv.append("--prune")
     if stdin:
-        argv.append("--stdin")
+        argv += ["--negotiation-tip=refs/heads/scopes/*", "--stdin"]
     argv.append(remote)
     return argv
+
+
+# Above this many branches a narrowed fetch asks for the whole refspec
+# instead: a protocol-v2 server ignores every ref-prefix of a request holding
+# 65,536 or more (upstream git's ls-refs), which would quietly undo the
+# narrowing, and the list must also stay a sane size on git's stdin.
+_MAX_REQUESTED_BRANCHES = 50_000
+_too_many_branches_warned = False
 
 
 def _cli_fetch(
@@ -2248,6 +2250,9 @@ def _cli_fetch(
     is, busy key and hung-op marker included, because a second fetch must
     not start on a clone that one is still writing.
 
+    ``refspecs``, when given, go on git's stdin and replace the remote's
+    configured refspec (see GitPolicyFetcher._scope_branch_refspecs).
+
     Raises:
         TimeoutError: the fetch ran past ``fetch_timeout``.
         GitCliFetchError: git could not be run (no git on PATH, no temp
@@ -2264,18 +2269,6 @@ def _cli_fetch(
         if isinstance(source.auth, SSHAuthData):
             key_dir = tempfile.mkdtemp(prefix="opal-git-fetch-")
         env.update(_cli_fetch_auth_env(source.auth, key_dir))
-        proc = subprocess.Popen(
-            _cli_fetch_argv(
-                git, os.fspath(repo_path), remote, prune, stdin=refspecs is not None
-            ),
-            stdin=subprocess.PIPE if refspecs is not None else subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-            env=env,
-            # Its own process group, so one killpg() reaches git's ssh and
-            # index-pack children too (see _run_repack).
-            start_new_session=True,
-        )
     except OSError as e:
         if key_dir is not None:
             shutil.rmtree(key_dir, ignore_errors=True)
@@ -2284,31 +2277,68 @@ def _cli_fetch(
         # instead of raising from every sync of every source.
         raise GitCliFetchError(-1, f"could not run git fetch: {e!r}") from e
     try:
-        try:
-            _, stderr = proc.communicate(
-                input=(
-                    "".join(f"{r}\n" for r in refspecs).encode()
-                    if refspecs is not None
-                    else None
-                ),
-                timeout=fetch_timeout if fetch_timeout and fetch_timeout > 0 else None,
-            )
-        except subprocess.TimeoutExpired:
-            if not _stop_git(
-                proc, term_grace, what="git fetch", leftovers="; waiting for it"
-            ):
-                proc.wait()
-            raise TimeoutError(f"git operation exceeded {fetch_timeout}s") from None
-        except BaseException:
-            _stop_git(proc, 0.0, what="git fetch", leftovers="")
-            raise
+        returncode, tail = _run_git_fetch_once(
+            _cli_fetch_argv(
+                git, os.fspath(repo_path), remote, prune, stdin=refspecs is not None
+            ),
+            env,
+            (
+                "".join(f"{r}\n" for r in refspecs).encode()
+                if refspecs is not None
+                else None
+            ),
+            fetch_timeout if fetch_timeout and fetch_timeout > 0 else None,
+            term_grace,
+            fetch_timeout,
+        )
     finally:
         if key_dir is not None:
             shutil.rmtree(key_dir, ignore_errors=True)
-    if proc.returncode != 0:
-        tail = stderr.decode("utf-8", "replace").strip()[-_REPACK_STDERR_TAIL_CHARS:]
+    if returncode != 0:
         _remove_stale_lock(repo_path, tail)
-        raise GitCliFetchError(proc.returncode, redact_sensitive_text(tail, source.url))
+        raise GitCliFetchError(returncode, redact_sensitive_text(tail, source.url))
+
+
+def _run_git_fetch_once(
+    argv: list[str],
+    env: Dict[str, str],
+    stdin: Optional[bytes],
+    budget: Optional[float],
+    term_grace: float,
+    fetch_timeout: float,
+) -> tuple[int, str]:
+    """One ``git fetch`` run: its exit code and the end of its stderr.
+
+    Raises TimeoutError past ``budget`` (git's group SIGTERMed, then
+    SIGKILLed; waited for if it outlives that), GitCliFetchError when git
+    cannot be started.
+    """
+    try:
+        proc = subprocess.Popen(
+            argv,
+            stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            env=env,
+            # Its own process group, so one killpg() reaches git's ssh and
+            # index-pack children too (see _run_repack).
+            start_new_session=True,
+        )
+    except OSError as e:
+        raise GitCliFetchError(-1, f"could not run git fetch: {e!r}") from e
+    try:
+        _, stderr = proc.communicate(input=stdin, timeout=budget)
+    except subprocess.TimeoutExpired:
+        if not _stop_git(
+            proc, term_grace, what="git fetch", leftovers="; waiting for it"
+        ):
+            proc.wait()
+        raise TimeoutError(f"git operation exceeded {fetch_timeout}s") from None
+    except BaseException:
+        _stop_git(proc, 0.0, what="git fetch", leftovers="")
+        raise
+    tail = stderr.decode("utf-8", "replace").strip()[-_REPACK_STDERR_TAIL_CHARS:]
+    return proc.returncode, tail
 
 
 def _remove_stale_lock(repo_path: str | os.PathLike[str], stderr: str) -> None:
@@ -2440,14 +2470,17 @@ class GitPolicyFetcher(PolicyFetcher):
     # the read in fetch_and_notify_on_changes deliberately happens before
     # lock_source so a skipped source costs nothing.
     source_backoff: Dict[str, SourceBackoff] = {}
-    # source_id -> {scope_id: branch}: the branches this process's scopes track
-    # on each clone, recorded as fetchers are made. With
+    # source_id -> the branches the scope store's scopes track on that clone,
+    # as ScopesService last read them (set_source_branches), and when. With
     # SCOPES_GIT_FETCH_SCOPE_BRANCHES (and the CLI backend) a fetch asks the
-    # remote for these branches only. A scope deleted through ScopesService is
-    # removed; a repoint replaces the entry under the new source (the old
-    # source's entry stays until that scope is deleted, and costs at most a
-    # fetch of one more branch there).
-    scope_branches: Dict[str, Dict[str, str]] = {}
+    # remote for these, plus its own scope's branch, only. Replaced whole from
+    # the store, so a deleted or repointed scope drops out at the next read.
+    source_branches: Dict[str, frozenset] = {}
+    source_branches_read_at: Optional[float] = None
+    # source_id -> the branches the last successful fetch asked for; None for
+    # a fetch of the remote's whole refspec. _should_fetch lets a recent fetch
+    # stand in for this scope's own only if it asked for this scope's branch.
+    repos_last_fetched_branches: Dict[str, Optional[frozenset]] = {}
 
     def __init__(
         self,
@@ -2467,47 +2500,79 @@ class GitPolicyFetcher(PolicyFetcher):
         self._remote = remote_name
         self._scope_id = scope_id
         self._liveness_probe = liveness_probe
-        GitPolicyFetcher.scope_branches.setdefault(self._source_id, {})[
-            scope_id
-        ] = self._source.branch
         logger.debug(
             f"Initializing git fetcher: scope_id={scope_id}, url={redact_url(source.url)}, branch={self._source.branch}, source_id={self._source_id}"
         )
 
     @staticmethod
-    def forget_scope_branch(source_id: str, scope_id: str) -> None:
-        """Stop fetching a deleted scope's branch with its clone."""
-        branches = GitPolicyFetcher.scope_branches.get(source_id)
-        if branches is not None:
-            branches.pop(scope_id, None)
-            if not branches:
-                GitPolicyFetcher.scope_branches.pop(source_id, None)
+    def set_source_branches(branches: Dict[str, AbstractSet[str]]) -> None:
+        """Replace the per-source branch sets read from the scope store."""
+        GitPolicyFetcher.source_branches = {
+            source_id: frozenset(b) for source_id, b in branches.items()
+        }
+        GitPolicyFetcher.source_branches_read_at = time.monotonic()
 
-    def _scope_branch_refspecs(self) -> Optional[list[str]]:
-        """The refspecs a fetch passes when SCOPES_GIT_FETCH_SCOPE_BRANCHES
-        is on: one per branch this process's scopes track on the clone, or
-        None (the remote's configured refspec) when it is off.
+    @staticmethod
+    def source_branches_stale(max_age: float) -> bool:
+        read_at = GitPolicyFetcher.source_branches_read_at
+        return read_at is None or time.monotonic() - read_at > max_age
 
-        Each is a one-wildcard pattern, ``+refs/heads/B*:refs/remotes/R/B*``,
-        not an exact name: git fails the whole fetch when an exact refspec's
-        branch is missing on the remote (a scope whose branch was deleted
-        would break every scope on the clone), while a pattern that matches
-        nothing is no error. It may also match a few branches whose names
-        start with B, which costs only their refs. With protocol v2 each
-        becomes a ref-prefix, so the server advertises only matching
-        branches. Names that are not valid branch names are left out.
+    def _requested_branches(self) -> Optional[frozenset]:
+        """The branches a fetch asks for when SCOPES_GIT_FETCH_SCOPE_BRANCHES
+        is on with the CLI backend: the source's branches as last read from
+        the scope store, plus this scope's own. None (the remote's whole
+        refspec) when the setting is off, and when no name is a valid branch
+        name: an empty --stdin would make git fetch everything anyway.
         """
-        if not opal_server_config.SCOPES_GIT_FETCH_SCOPE_BRANCHES:
+        if not (
+            opal_server_config.SCOPES_GIT_FETCH_SCOPE_BRANCHES
+            and fetch_backend() == FETCH_BACKEND_CLI
+        ):
             return None
-        branches = set(
-            GitPolicyFetcher.scope_branches.get(self._source_id, {}).values()
+        names = GitPolicyFetcher.source_branches.get(self._source_id, frozenset()) | {
+            self._source.branch
+        }
+        valid = frozenset(
+            b for b in names if reference_is_valid_name(f"refs/heads/{b}")
         )
-        branches.add(self._source.branch)
+        if len(valid) > _MAX_REQUESTED_BRANCHES:
+            global _too_many_branches_warned
+            if not _too_many_branches_warned:
+                _too_many_branches_warned = True
+                logger.warning(
+                    "Fetching {url} with its whole refspec: its scopes track "
+                    "{count} branches, more than the {cap} a narrowed fetch asks for",
+                    url=redact_url(self._source.url),
+                    count=len(valid),
+                    cap=_MAX_REQUESTED_BRANCHES,
+                )
+            return None
+        return valid or None
+
+    def _scope_branch_refspecs(self, branches: frozenset) -> list[str]:
+        """One one-wildcard refspec per branch, sorted:
+        ``+refs/heads/B*:refs/remotes/R/B*``.
+
+        A pattern, not an exact name, for two reasons. git turns each into
+        one protocol-v2 ref-prefix, while an exact refspec becomes six (git
+        adds its short-name guesses, refs/tags/refs/heads/B and so on), and
+        a server ignores every prefix once a request holds 65,536 of them.
+        And an exact refspec whose branch is missing on the remote fails the
+        whole fetch, while a pattern that matches nothing is no error. The
+        cost: a pattern also fetches the refs and objects of every branch
+        whose name starts with B (``release`` brings ``release-2``). Names of
+        a fixed shape, such as one per environment id, never overlap.
+        """
         return [
             f"+refs/heads/{b}*:refs/remotes/{self._remote}/{b}*"
             for b in sorted(branches)
-            if b and "*" not in b and reference_is_valid_name(f"refs/heads/{b}")
         ]
+
+    def _last_fetch_covers_branch(self) -> bool:
+        requested = GitPolicyFetcher.repos_last_fetched_branches.get(
+            self._source_id, None
+        )
+        return requested is None or self._source.branch in requested
 
     @staticmethod
     @asynccontextmanager
@@ -3429,6 +3494,7 @@ class GitPolicyFetcher(PolicyFetcher):
         )
         if fetch_backend() == FETCH_BACKEND_CLI:
             limit = _finite_positive_or_zero(timeout)
+            branches = self._requested_branches()
             await run_in_git_executor(
                 _cli_fetch,
                 self._repo_path,
@@ -3437,9 +3503,10 @@ class GitPolicyFetcher(PolicyFetcher):
                 timeout=limit + _CLI_FETCH_EXECUTOR_SLACK_SECONDS if limit else 0,
                 fetch_timeout=limit,
                 prune=prune,
-                refspecs=self._scope_branch_refspecs(),
+                refspecs=self._scope_branch_refspecs(branches) if branches else None,
                 **common,
             )
+            GitPolicyFetcher.repos_last_fetched_branches[self._source_id] = branches
             return
         await run_in_git_executor(
             repo.remotes[self._remote].fetch,
@@ -3448,6 +3515,7 @@ class GitPolicyFetcher(PolicyFetcher):
             timeout=timeout,
             **common,
         )
+        GitPolicyFetcher.repos_last_fetched_branches[self._source_id] = None
 
     async def _should_fetch(
         self,
@@ -3457,7 +3525,11 @@ class GitPolicyFetcher(PolicyFetcher):
         req_time: datetime.datetime = None,
     ) -> bool:
         if force_fetch:
-            if req_time is not None and await self._was_fetched_after(req_time):
+            if (
+                req_time is not None
+                and await self._was_fetched_after(req_time)
+                and self._last_fetch_covers_branch()
+            ):
                 logger.debug(
                     "Repo was fetched after refresh request, override force_fetch with False"
                 )
@@ -3465,9 +3537,13 @@ class GitPolicyFetcher(PolicyFetcher):
                 return True  # must fetch
 
         if not RepoInterface.has_remote_branch(repo, self._source.branch, self._remote):
-            if req_time is not None and await self._was_fetched_after(req_time):
+            if (
+                req_time is not None
+                and await self._was_fetched_after(req_time)
+                and self._last_fetch_covers_branch()
+            ):
                 # A fetch that started after this request already looked for
-                # the branch (a fetch brings every branch), so a burst of
+                # the branch (it asked for every branch, or for this one), so a burst of
                 # requests for a branch the remote does not have costs one
                 # fetch, not one per request.
                 logger.debug(
