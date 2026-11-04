@@ -872,8 +872,8 @@ async def test_what_a_git_killed_by_a_signal_opal_did_not_send_left_is_removed(
 def test_a_death_by_signal_is_sh_s_128_plus_a_signal_number_or_no_status():
     killed = [None, -9, 129, 137, 143, 192]
     exited = [0, 1, 128, 193, 255]
-    assert [git_cli._killed_by_signal(s) for s in killed] == [True] * len(killed)
-    assert [git_cli._killed_by_signal(s) for s in exited] == [False] * len(exited)
+    assert [git_cli.killed_by_signal(s) for s in killed] == [True] * len(killed)
+    assert [git_cli.killed_by_signal(s) for s in exited] == [False] * len(exited)
 
 
 @pytest.mark.asyncio
@@ -1470,12 +1470,12 @@ def test_a_group_whose_only_member_left_is_a_zombie_is_gone():
             assert time.monotonic() < deadline, "true never exited"
             time.sleep(0.01)
         os.killpg(zombie.pid, 0)  # the group is still there
-        assert git_cli._live_members(zombie.pid) is False
+        assert git_cli.live_members(zombie.pid) is False
     finally:
         zombie.wait()
     live = subprocess.Popen(["sleep", "30"], start_new_session=True)
     try:
-        assert git_cli._live_members(live.pid) is True
+        assert git_cli.live_members(live.pid) is True
     finally:
         live.kill()
         live.wait()
@@ -1499,12 +1499,12 @@ def test_on_macos_a_group_of_zombies_kill_refuses_is_gone():
                 break
             assert time.monotonic() < deadline, "true never exited"
             time.sleep(0.01)
-        assert git_cli._live_members(zombie.pid) is False
+        assert git_cli.live_members(zombie.pid) is False
     finally:
         zombie.wait()
     live = subprocess.Popen(["sleep", "30"], start_new_session=True)
     try:
-        assert git_cli._live_members(live.pid) is True
+        assert git_cli.live_members(live.pid) is True
     finally:
         live.kill()
         live.wait()

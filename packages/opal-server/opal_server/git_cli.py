@@ -283,8 +283,9 @@ _SSH_SCHEMES = ("ssh", "git+ssh", "ssh+git")
 # Query parameters that carry a credential; git would send them on every
 # request and print them in its errors, so such a URL is refused.
 _QUERY_CREDENTIALS = ("private_token", "access_token", "token")
-# Left in a clone's .git by a git killed while it updated refs. git removes its
-# own on SIGTERM, not on SIGKILL. Refs locks are found under refs/.
+# Left in a clone's .git by a git killed while it updated refs, or the clone's
+# config (a repack's git config). git removes its own on SIGTERM, not on
+# SIGKILL. Refs locks are found under refs/.
 # packed-refs.new is the packed-refs git writes (O_EXCL) while it holds
 # packed-refs.lock: left behind, it fails every later rewrite of packed-refs,
 # the ref deletions of a pruning fetch included.
@@ -294,7 +295,11 @@ _GIT_DIR_LOCKS = (
     "FETCH_HEAD.lock",
     "shallow.lock",
     "index.lock",
+    "config.lock",
 )
+# What a clone's reflogs dir (logs/) is renamed to, plus a random suffix, by a
+# repack that removes it once it has let go of the clone (git_fetcher).
+REFLOGS_SET_ASIDE = "logs.removing-"
 # fetch's in-progress pack, renamed into place only once it is complete.
 _PACK_TEMP_PREFIX = "tmp_"
 # A .keep that index-pack writes beside a fetched pack while fetch updates the
@@ -537,10 +542,11 @@ def close_leftover_lock_fds() -> int:
     return len(left)
 
 
-# The pid of an op is written into its clone's lock file while the op runs, and
-# removed when it is over. A lock file with content, found by whoever takes the
-# lock next, is an op whose process died first: what its git left in the clone
-# is removed before anything else runs there.
+# The pid of an op (a git command-line op here, or a scope clone's repack) is
+# written into its clone's lock file while the op runs, and removed when it is
+# over. A lock file with content, found by whoever takes the lock next, is an op
+# whose process died first: what its git left in the clone is removed before
+# anything else runs there.
 
 
 def mark_op_started(fd: int) -> bool:
@@ -654,6 +660,62 @@ def remove_dead_op_leftovers(repo_path: Path) -> bool:
     return _remove_clone_dirs(repo_path) and complete
 
 
+def clean_up_unfinished_op(repo_path: Path) -> None:
+    """For a libgit2 fetch, which takes no clone lock: when the clone's lock
+    file records an op that never finished (its process died, a repack killed
+    with its container while pack-refs ran, say), remove what it left, as a git
+    command-line op does before it starts (remove_dead_op_leftovers), and clear
+    the record once all of it is gone; while some of it is not, the record
+    stays, for the next op to try again.
+
+    Under the clone's lock, and only when nothing else holds it. Never
+    raises.
+    """
+    try:
+        fd = take_clone_lock(repo_path)
+    except OSError as e:
+        # DEBUG: where flock fails (NFS without local_lock=flock) it fails on
+        # every fetch, and each repack already logs it.
+        logger.debug(
+            "Could not lock {path} to look for a git op that never finished: {err!r}",
+            path=repo_path,
+            err=e,
+        )
+        return
+    if fd is None:
+        # An op holds it, and cleans up after a dead one itself.
+        logger.debug(
+            "Not looking for a git op on {path} that never finished: another op "
+            "holds its lock",
+            path=repo_path,
+        )
+        return
+    try:
+        if os.fstat(fd).st_size == 0:
+            return
+        logger.warning(
+            "The last git op on {path} never finished (its process died): "
+            "removing what it left",
+            path=repo_path,
+        )
+        if remove_dead_op_leftovers(repo_path):
+            mark_op_finished(fd)
+        else:
+            logger.warning(
+                "Leaving the git op on {path} recorded in its lock file: what it "
+                "left could not all be removed, and the next op on it tries again",
+                path=repo_path,
+            )
+    except OSError as e:
+        logger.warning(
+            "Could not check {path} for a git op that never finished: {err!r}",
+            path=repo_path,
+            err=e,
+        )
+    finally:
+        drop_clone_lock(fd)
+
+
 def _remove_clone_dirs(repo_path: Path) -> bool:
     """Remove every directory a clone of ``repo_path`` was being made in; for a
     holder of the clone's lock, under which no clone of it is under way.
@@ -748,7 +810,7 @@ async def cli_fetch(
     pack_leftovers_before: FrozenSet[str] = frozenset()
 
     def _clean_up(status: Optional[int]) -> bool:
-        if _killed_by_signal(status):
+        if killed_by_signal(status):
             return remove_kill_leftovers(repo_path)
         # git's own error exit (a full disk, say) rolls back its locks, not the
         # temp files of the pack it was writing, which would keep the disk full.
@@ -1306,7 +1368,7 @@ def _remove_new_pack_leftovers(repo_path: Path, before: FrozenSet[str]) -> bool:
 _MAX_SIGNAL = 64
 
 
-def _killed_by_signal(status: Optional[int]) -> bool:
+def killed_by_signal(status: Optional[int]) -> bool:
     """Whether a git exit ``status`` is a death by a signal: no status at all
     (git's sh was killed first), a negative one (a Popen's for a signal), or
     sh's 128 plus the signal.
@@ -1321,18 +1383,19 @@ def _killed_by_signal(status: Optional[int]) -> bool:
 
 
 def remove_kill_leftovers(repo_path: Path) -> bool:
-    """Remove what a git fetch killed by a signal can leave in a clone; whether
-    all of it is gone (False: some of it could not be listed or removed, each
-    logged).
+    """Remove what a git fetch, or a repack's git config or git pack-refs,
+    killed by a signal can leave in a clone; whether all of it is gone (False:
+    some of it could not be listed or removed, each logged).
 
     Run only by the holder of the clone's lock, with no other op's process
     left, and only inside this clone's git dir: the lock files of the refs
-    it was updating, of packed-refs, FETCH_HEAD, shallow and the index, the
-    packed-refs.new it was writing under packed-refs.lock, its partial pack
-    (``objects/pack/tmp_*``; a repack, which also holds the clone's lock,
-    cannot be writing one), and the ``.keep`` index-pack writes beside a
-    pack until fetch has updated the refs, when the fetch named in it was on
-    this host and has no process any more. A stale lock or packed-refs.new
+    it was updating, of packed-refs, FETCH_HEAD, shallow, the index and the
+    config, the packed-refs.new it was writing under packed-refs.lock, a
+    fetch's partial pack (``objects/pack/tmp_*``; a repack, which also holds
+    the clone's lock, cannot be writing one), and the ``.keep`` index-pack
+    writes beside a pack until fetch has updated the refs, when the fetch
+    named in it was on this host and has no process any more. A stale lock
+    or packed-refs.new
     fails every later fetch that has to write them, and a pack with a
     ``.keep`` is never merged by a repack. Never raises.
     """
@@ -1686,10 +1749,10 @@ def _write_key(key_dir: str, private_key: str) -> str:
 # error. An op's group holds git's processes only, all of this user, so on
 # macOS EPERM says that no member of it is alive. (macOS is for development
 # and CI; elsewhere EPERM is a member this process may not signal.)
-_EPERM_MEANS_NO_LIVE_MEMBER = sys.platform == "darwin"
+EPERM_MEANS_NO_LIVE_MEMBER = sys.platform == "darwin"
 
 
-def _live_members(pgid: int) -> bool:
+def live_members(pgid: int) -> bool:
     """Whether process group ``pgid`` has a member that is not a zombie.
 
     A zombie is dead, and whether it is ever reaped is up to its parent
@@ -1701,7 +1764,7 @@ def _live_members(pgid: int) -> bool:
     except ProcessLookupError:
         return False
     except PermissionError:
-        return not _EPERM_MEANS_NO_LIVE_MEMBER
+        return not EPERM_MEANS_NO_LIVE_MEMBER
     if not os.path.isdir("/proc/self"):
         return True
     for name in os.listdir("/proc"):
@@ -1821,7 +1884,7 @@ class _Group:
         if pending:
             return False
         while not self._empty:
-            if not _live_members(self._proc.pid):
+            if not live_members(self._proc.pid):
                 self._empty = True
                 break
             if deadline is not None and loop.time() >= deadline:
@@ -1841,11 +1904,11 @@ class _Group:
         except ProcessLookupError:
             self._empty = True
         except PermissionError as e:
-            if _EPERM_MEANS_NO_LIVE_MEMBER:
+            if EPERM_MEANS_NO_LIVE_MEMBER:
                 self._empty = True
                 return
             # A member this process may not signal: the wait for the group
-            # goes on by /proc (_live_members).
+            # goes on by /proc (live_members).
             logger.warning(
                 "Could not signal git's process group {pgid}: {err!r}",
                 pgid=self._proc.pid,

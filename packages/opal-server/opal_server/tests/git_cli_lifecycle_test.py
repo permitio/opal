@@ -1126,6 +1126,119 @@ def test_the_pre_fork_sweep_clears_a_dead_op_s_record_once_all_it_left_is_gone(
     assert (clone_lock_path(clone).read_bytes() != b"") is stuck
 
 
+# --- the clean-up a libgit2 fetch runs first ------------------------------------
+
+
+@pytest.mark.parametrize("stuck", [True, False], ids=["stuck", "removable"])
+def test_unfinished_op_clean_up_keeps_the_record_until_all_it_left_is_gone(
+    stuck, git_origin, tmp_path
+):
+    """What a dead op left that cannot be removed (a directory where packed-
+    refs.new would be) keeps it recorded, for the next op on the clone to try
+    again; the rest goes either way."""
+    clone = tmp_path / "git_sources" / "src"
+    _clone_at(clone, git_origin.url, git_origin.url)
+    lock = clone / ".git" / "packed-refs.lock"
+    lock.write_text("")
+    new_packed_refs = clone / ".git" / "packed-refs.new"
+    if stuck:
+        (new_packed_refs / "x").mkdir(parents=True)
+    else:
+        new_packed_refs.write_text("")
+    clone_lock_path(clone).write_text("4194303\n")
+
+    git_cli.clean_up_unfinished_op(clone)
+
+    assert not lock.exists()
+    assert new_packed_refs.exists() is stuck
+    assert (clone_lock_path(clone).read_bytes() != b"") is stuck
+    assert _lock_is_free(clone)
+
+
+def test_unfinished_op_clean_up_leaves_a_clone_whose_lock_another_op_holds(
+    git_origin, tmp_path
+):
+    """While an op holds the clone's lock (a git fetch of this process or
+    another), the locks of its git are its own, however recorded: they stay,
+    and the skip is logged at DEBUG.
+
+    Once the op is gone with its record left behind, they were a dead
+    op's: they go, and the record with them.
+    """
+    clone = tmp_path / "git_sources" / "src"
+    _clone_at(clone, git_origin.url, git_origin.url)
+    left = _plant_leftovers(clone)
+    debug: list = []
+    sink = opal_common_logger.logger.add(
+        lambda m: debug.append(m.record["message"]), level="DEBUG"
+    )
+    holder = git_cli.take_clone_lock(clone)
+    assert holder is not None
+    try:
+        git_cli.mark_op_started(holder)
+
+        git_cli.clean_up_unfinished_op(clone)
+
+        assert [p for p in left if not p.exists()] == []
+        assert clone_lock_path(clone).read_text().strip() == str(os.getpid())
+        assert [m for m in debug if "another op holds its lock" in m]
+    finally:
+        git_cli.drop_clone_lock(holder)
+        opal_common_logger.logger.remove(sink)
+
+    git_cli.clean_up_unfinished_op(clone)
+
+    assert [p for p in left if p.exists()] == []
+    assert clone_lock_path(clone).read_text() == ""
+
+
+def test_unfinished_op_clean_up_with_no_op_recorded_removes_nothing(
+    git_origin, tmp_path
+):
+    """No record, no dead op: a lock in the clone is someone's to finish (a
+    libgit2 op takes no clone lock and writes no record), never this clean-up's
+    to remove."""
+    clone = tmp_path / "git_sources" / "src"
+    _clone_at(clone, git_origin.url, git_origin.url)
+    left = _plant_leftovers(clone)
+
+    git_cli.clean_up_unfinished_op(clone)
+
+    assert [p for p in left if not p.exists()] == []
+
+
+def test_unfinished_op_clean_up_of_a_clone_it_cannot_lock_is_a_debug_line(tmp_path):
+    """A lock file that cannot be opened (its directory gone, or on NFS without
+    flock) fails every fetch's clean-up the same way, so it is logged at DEBUG
+    only, and the fetch goes on."""
+    clone = tmp_path / "gone" / "src"
+    debug: list = []
+    sink = opal_common_logger.logger.add(
+        lambda m: debug.append(m.record["message"]), level="DEBUG"
+    )
+    try:
+        git_cli.clean_up_unfinished_op(clone)
+    finally:
+        opal_common_logger.logger.remove(sink)
+
+    assert [m for m in debug if "Could not lock" in m and str(clone) in m]
+
+
+@pytest.mark.parametrize("recorded", [False, True], ids=["no-record", "record"])
+def test_unfinished_op_clean_up_releases_the_clone_lock(git_origin, tmp_path, recorded):
+    clone = tmp_path / "git_sources" / "src"
+    _clone_at(clone, git_origin.url, git_origin.url)
+    if recorded:
+        fd = git_cli.take_clone_lock(clone)
+        assert fd is not None
+        git_cli.mark_op_started(fd)
+        git_cli.drop_clone_lock(fd)
+
+    git_cli.clean_up_unfinished_op(clone)
+
+    assert _lock_is_free(clone)
+
+
 @pytest.fixture
 def preload(monkeypatch, preload_sandbox):
     """preload_scopes with SCOPES on and the given sync_scopes, Redis and
