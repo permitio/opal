@@ -275,7 +275,7 @@ ARG POLICY_REPO_HOST="github.com"
 RUN if [ "$TRUST_POLICY_REPO_HOST_SSH_FINGERPRINT" = "true" ] ; then \
   mkdir -p ~/.ssh && \
   chmod 0700 ~/.ssh && \
-  ssh-keyscan -t rsa ${POLICY_REPO_HOST} >> ~/.ssh/known_hosts ; fi
+  ssh-keyscan -t ed25519,ecdsa,rsa ${POLICY_REPO_HOST} >> ~/.ssh/known_hosts ; fi
 
 USER root
 
@@ -450,7 +450,7 @@ ARG POLICY_REPO_HOST="github.com"
 RUN if [ "$TRUST_POLICY_REPO_HOST_SSH_FINGERPRINT" = "true" ] ; then \
   mkdir -p ~/.ssh && \
   chmod 0700 ~/.ssh && \
-  ssh-keyscan -t rsa ${POLICY_REPO_HOST} >> ~/.ssh/known_hosts ; fi
+  ssh-keyscan -t ed25519,ecdsa,rsa ${POLICY_REPO_HOST} >> ~/.ssh/known_hosts ; fi
 USER root
 RUN cd ./packages/opal-server && python setup.py install
 ENV UVICORN_NUM_WORKERS=1
