@@ -1059,7 +1059,9 @@ URL for all data configuration (if you choose to have it all in one place).
 
 Default: `/data/config`
 
-URL to fetch the full basic configuration of data.
+URL to fetch the full basic configuration of data. A POST to it triggers a data update event.
+
+For more information, see [triggering data updates](/tutorials/trigger_data_updates).
 
 #### OPAL_DATA_CALLBACK_DEFAULT_ROUTE
 
@@ -1084,14 +1086,6 @@ Default:
 Configuration of data sources by topics.
 
 For more information, see [configuring external data sources](/tutorials/configure_external_data_sources) and [data source configuration](/getting-started/running-opal/run-opal-server/data-sources).
-
-#### OPAL_DATA_UPDATE_TRIGGER_ROUTE
-
-Default: `/data/update`
-
-URL to trigger data update events.
-
-For more information, see [triggering data updates](/tutorials/trigger_data_updates).
 
 ## OPAL Client Configs
 

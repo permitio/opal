@@ -883,7 +883,8 @@ class OpalServerConfig(Confi):
     DATA_CONFIG_ROUTE = confi.str(
         "DATA_CONFIG_ROUTE",
         "/data/config",
-        description="URL to fetch the full basic configuration of data",
+        description="URL to fetch the full basic configuration of data. A POST to it "
+        "triggers a data update event",
     )
     DATA_CALLBACK_DEFAULT_ROUTE = confi.str(
         "DATA_CALLBACK_DEFAULT_ROUTE",
@@ -902,12 +903,6 @@ class OpalServerConfig(Confi):
             }
         ),
         description="Configuration of data sources by topics",
-    )
-
-    DATA_UPDATE_TRIGGER_ROUTE = confi.str(
-        "DATA_CONFIG_ROUTE",
-        "/data/update",
-        description="URL to trigger data update events",
     )
 
     # Git service webhook (Default is Github)
