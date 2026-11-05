@@ -295,8 +295,11 @@ class OpalServerConfig(Confi):
         "memory. Needs git 2.32 or later on PATH, /bin/sh (git runs under it, "
         "which reports git's exit status), and ssh for SSH sources; the official "
         "images, Debian and Alpine, have all three, and the server does not "
-        "start without git 2.32 or /bin/sh. SSH host keys: see "
-        "SCOPES_GIT_SSH_KNOWN_HOSTS.",
+        "start without git 2.32 or /bin/sh. "
+        "SSH key files go to /dev/shm where it is writable, else to the temp "
+        "dir (TMPDIR); the server does not start when that path holds % or $, "
+        "which ssh would expand. "
+        "SSH host keys: see SCOPES_GIT_SSH_KNOWN_HOSTS.",
     )
     SCOPES_GIT_SSH_KNOWN_HOSTS = confi.str(
         "SCOPES_GIT_SSH_KNOWN_HOSTS",
@@ -310,7 +313,8 @@ class OpalServerConfig(Confi):
         "keys are handled as by the libgit2 fetch. A relative path is taken "
         "relative to the server's working directory at start. With "
         "SCOPES_GIT_FETCH_WITH_CLI on, the server does not start when this "
-        "names no readable file or its path holds whitespace; a file that "
+        "names no readable file or its path holds whitespace, % or $ (ssh "
+        "would read the path as a list, or expand it); a file that "
         "becomes unreadable later fails each SSH fetch at once (counted with "
         "reason `local`). With SCOPES_GIT_FETCH_WITH_CLI off it is ignored, "
         "and logged at ERROR.",

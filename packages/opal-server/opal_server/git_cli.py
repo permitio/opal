@@ -386,9 +386,11 @@ def validate_git_cli_settings() -> None:
     Raises:
         ValueError: with SCOPES_GIT_FETCH_WITH_CLI on, there is no git on
             PATH, or one older than 2.32, or no executable /bin/sh;
-            SCOPES_GIT_CLI_KILL_GRACE is not a finite number >= 0; or
+            SCOPES_GIT_CLI_KILL_GRACE is not a finite number >= 0;
             SCOPES_GIT_SSH_KNOWN_HOSTS names no readable file, or its path
-            holds whitespace (which ssh would read as a list of files).
+            holds whitespace (which ssh would read as a list of files), % or
+            $; or the directory SSH key files go to has % or $ in its path
+            (ssh expands both, in a known_hosts path and in a key's).
     """
     if not opal_server_config.SCOPES_GIT_FETCH_WITH_CLI:
         if opal_server_config.SCOPES_GIT_SSH_KNOWN_HOSTS:
@@ -425,6 +427,13 @@ def validate_git_cli_settings() -> None:
         problem = _known_hosts_problem(path)
         if problem is not None:
             raise ValueError(problem)
+    key_dir_parent = _key_dir_parent()
+    if _ssh_expands(key_dir_parent):
+        raise ValueError(
+            "SCOPES_GIT_FETCH_WITH_CLI is on but SSH key files go to "
+            f"{key_dir_parent!r}, whose path holds % or $, which ssh would "
+            f"expand; point TMPDIR elsewhere, or make {_SHM} writable"
+        )
 
 
 def _check_git_version() -> None:
@@ -460,9 +469,20 @@ def _known_hosts_problem(path: str) -> Optional[str]:
             f"SCOPES_GIT_SSH_KNOWN_HOSTS={path!r}: the path holds whitespace, "
             "which ssh would read as more than one file"
         )
+    if _ssh_expands(path):
+        return (
+            f"SCOPES_GIT_SSH_KNOWN_HOSTS={path!r}: the path holds % or $, which "
+            "ssh would expand (%h to the host, ${VAR} to a variable)"
+        )
     if not os.path.isfile(path) or not os.access(path, os.R_OK):
         return f"SCOPES_GIT_SSH_KNOWN_HOSTS={path!r}: no readable file there"
     return None
+
+
+def _ssh_expands(path: str) -> bool:
+    """Whether ssh would read ``path``, given as UserKnownHostsFile or -i,
+    as another path: it expands % tokens and ${VAR} in both."""
+    return "%" in path or "$" in path
 
 
 def _timeout_or_none(timeout: float) -> Optional[float]:

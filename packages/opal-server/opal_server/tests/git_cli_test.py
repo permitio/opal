@@ -2610,6 +2610,47 @@ def test_the_known_hosts_setting_is_checked_with_the_cli_fetch_on(
         assert known_hosts_file() is None
 
 
+@pytest.mark.parametrize("name", ["100%_hosts", "at-%h", "in-${HOME}", "a$b"])
+def test_a_known_hosts_path_that_ssh_would_expand_is_refused(
+    name, tmp_path, monkeypatch
+):
+    """ssh expands % tokens and ${VAR} in UserKnownHostsFile: with OpenSSH
+    9.2, ``%_`` fails every op, and ``%h`` or ``${HOME}`` read another file.
+    Such a path is refused at startup, as one with whitespace is, and fails
+    each SSH op at once, before ssh runs."""
+    path = tmp_path / name
+    path.write_text("")
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", True)
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_SSH_KNOWN_HOSTS", str(path))
+
+    with pytest.raises(ValueError, match=r"holds % or \$"):
+        validate_git_cli_settings()
+    remote = git_cli._remote_for_git("ssh://git@h/r.git", _source("ssh://git@h/r.git"))
+    with pytest.raises(GitCliLocalError, match=r"holds % or \$"):
+        git_cli._ssh_host_key_options(remote)
+
+
+@pytest.mark.parametrize("name", ["100%", "in-${HOME}"])
+def test_the_server_does_not_start_when_ssh_key_files_would_go_to_a_path_ssh_expands(
+    name, tmp_path, monkeypatch
+):
+    """With no writable /dev/shm, an SSH key file goes to the temp dir, and ssh
+    expands % tokens and ${VAR} in its -i path too."""
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", True)
+    monkeypatch.setattr(git_cli, "_SHM", str(tmp_path / "no-shm"))
+    temp = tmp_path / name
+    temp.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(temp))
+
+    with pytest.raises(ValueError, match=r"SSH key files go to .*holds % or \$"):
+        validate_git_cli_settings()
+
+    shm = tmp_path / "shm"
+    shm.mkdir()
+    monkeypatch.setattr(git_cli, "_SHM", str(shm))
+    validate_git_cli_settings()
+
+
 def test_a_relative_known_hosts_path_is_the_server_s_working_directory_s(
     tmp_path, monkeypatch
 ):
