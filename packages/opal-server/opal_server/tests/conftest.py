@@ -308,8 +308,11 @@ class _GitHttpHandler(BaseHTTPRequestHandler):
         server = cast(GitHttpServer, self.server)
         server.requests.append((self.command, self.path, dict(self.headers)))
         if server.redirect_to is not None:
+            # The Location header carries the request's path: without CR and
+            # LF, no request can add a header of its own to the answer.
+            path = self.path.replace("\r", "").replace("\n", "")
             self.send_response(302)
-            self.send_header("Location", server.redirect_to.rstrip("/") + self.path)
+            self.send_header("Location", server.redirect_to.rstrip("/") + path)
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
