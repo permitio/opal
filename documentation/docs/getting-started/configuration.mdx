@@ -531,7 +531,7 @@ Pub/sub channel (worker-to-worker, over the broadcaster) used to purge GitPolicy
 
 Default: `10.0`
 
-Max seconds the pre-fork scope preload waits for in-flight git ops to finish before tearing down and forking workers. Ops still lingering past this bound are left running on their daemon threads and their cached handles are left unfreed by the pre-fork cache reset, avoiding a use-after-free (0 = don't wait). With `OPAL_SCOPES_GIT_FETCH_WITH_CLI` on, the preload's event loop also waits up to this long for git command-line ops still being stopped; those not done by then get SIGKILL as the loop ends, their clones stay recorded as unfinished, and the next op on each clone removes what git left.
+Max seconds the pre-fork scope preload waits for in-flight git ops to finish before tearing down and forking workers. Ops still lingering past this bound are left running on their daemon threads and their cached handles are left unfreed by the pre-fork cache reset, avoiding a use-after-free (0 = don't wait). With SCOPES_GIT_FETCH_WITH_CLI on, the preload's event loop also waits up to this long for git command-line ops still being stopped; those not done by then get SIGKILL as the loop ends, their clones stay recorded as unfinished, and the next op on each clone removes what git left.
 
 #### OPAL_SCOPES_GIT_RECLONE_HUNG_ON_START
 
@@ -549,7 +549,7 @@ Maximum number of in-flight scope git operations (live plus lingering timed-out)
 
 Default: `False`
 
-Whether a scope fetch prunes: a branch deleted on the remote then leaves the clone, so a scope naming it misses instead of being served the deleted branch's last head. Off by default: a pruned fetch compares every local and remote ref, which on a clone with tens of thousands of branches adds seconds per fetch under the lock every scope on that clone shares. With the libgit2 fetch (SCOPES_GIT_FETCH_WITH_CLI off), each ref pruned from a clone whose refs are packed (see SCOPES_GIT_REPACK_PACK_LIMIT) costs about 20 ms more, since libgit2 rewrites the packed-refs file for each one, so pruning a thousand refs from such a clone takes tens of seconds, against a couple of seconds with git. Turn SCOPES_GIT_FETCH_WITH_CLI on for large clones that prune. Only `refs/remotes/<remote>/*` are pruned; the scopes' `refs/heads/scopes/*` stay.
+Whether a scope fetch prunes: a branch deleted on the remote then leaves the clone, so a scope naming it misses instead of being served the deleted branch's last head. Off by default: a pruned fetch compares every local and remote ref, which on a clone with tens of thousands of branches adds seconds per fetch under the lock every scope on that clone shares. With the libgit2 fetch (SCOPES_GIT_FETCH_WITH_CLI off), each ref pruned from a clone whose refs are packed (see SCOPES_GIT_REPACK_PACK_LIMIT) costs more, since libgit2 rewrites the packed-refs file for each one, and that file grows with the repository's branches: about 20 ms per ref on a clone of a repository with 63,000 branches, and about 1 ms with 2,000. Pruning a thousand refs from the larger clone takes tens of seconds, against a couple of seconds with git. Turn SCOPES_GIT_FETCH_WITH_CLI on for large clones that prune. Only `refs/remotes/<remote>/*` are pruned; the scopes' `refs/heads/scopes/*` stay.
 
 #### OPAL_SCOPES_GIT_BACKOFF_BASE_SECONDS
 

@@ -275,7 +275,11 @@ class OpalServerConfig(Confi):
         "Credentials reach git through its environment, for http(s) through a "
         "credential helper that answers only for the source's own host, or, for "
         "an SSH key, a file only the server's user can read, removed when the "
-        "op ends; never through its command line. Each op forks the server "
+        "op ends; never through its command line. git speaks protocol v2, "
+        "whatever a clone's own config says, and ssh gives up on a connect "
+        "after 30 seconds and on a link the server stays silent on after about "
+        "a minute (4 keepalives, 15 seconds apart, unanswered), with an error "
+        "of its own rather than at the timeout. Each op forks the server "
         "process, which under uvloop costs about 40 ms at 1.5 GB of resident "
         "memory. Needs git 2.32 or later on PATH, /bin/sh (git runs under it, "
         "which reports git's exit status), and ssh for SSH sources; the official "
@@ -321,13 +325,15 @@ class OpalServerConfig(Confi):
         "served the deleted branch's last head. Off by default: a pruned fetch "
         "compares every local and remote ref, which on a clone with tens of "
         "thousands of branches adds seconds per fetch under the lock every scope "
-        "on that clone shares (about 2 s on 5.5 s at 61,000 refs). With the "
-        "libgit2 fetch (SCOPES_GIT_FETCH_WITH_CLI off), each ref pruned from a "
-        "clone whose refs are packed (see SCOPES_GIT_REPACK_PACK_LIMIT) costs "
-        "about 20 ms more, since libgit2 rewrites the packed-refs file for each "
-        "one: pruning 1,000 refs from a clone of a repository with 63,000 "
-        "branches took 23 s, against 2 s with git. Turn SCOPES_GIT_FETCH_WITH_CLI "
-        "on for large clones that prune. Only "
+        "on that clone shares. With the libgit2 fetch (SCOPES_GIT_FETCH_WITH_CLI "
+        "off), each ref pruned from a clone whose refs are packed (see "
+        "SCOPES_GIT_REPACK_PACK_LIMIT) costs more, since libgit2 rewrites the "
+        "packed-refs file for each one, and that file grows with the "
+        "repository's branches: about 20 ms per ref on a clone of a repository "
+        "with 63,000 branches, and about 1 ms with 2,000. Pruning a thousand "
+        "refs from the larger clone takes tens of seconds, against a couple of "
+        "seconds with git. Turn "
+        "SCOPES_GIT_FETCH_WITH_CLI on for large clones that prune. Only "
         "`refs/remotes/<remote>/*` are pruned; the scopes' "
         "`refs/heads/scopes/*` stay.",
     )
@@ -356,7 +362,11 @@ class OpalServerConfig(Confi):
         "ops to finish before tearing down and forking workers. Ops still lingering "
         "past this bound are left running on their daemon threads and their cached "
         "handles are left unfreed by the pre-fork cache reset, avoiding a use-after-free "
-        "(0 = don't wait).",
+        "(0 = don't wait). With SCOPES_GIT_FETCH_WITH_CLI on, the preload's event "
+        "loop also waits up to this long for git command-line ops still being "
+        "stopped; those not done by then get SIGKILL as the loop ends, their "
+        "clones stay recorded as unfinished, and the next op on each clone "
+        "removes what git left.",
     )
     SCOPES_GIT_RECLONE_HUNG_ON_START = confi.bool(
         "SCOPES_GIT_RECLONE_HUNG_ON_START",
@@ -477,9 +487,10 @@ class OpalServerConfig(Confi):
         "file, and the clone's reflogs, which OPAL never reads, are turned off "
         "(core.logAllRefUpdates=false in the clone's config, which new scope "
         "clones are made with) and removed (moved aside within the repack's "
-        "timeout, and deleted once the repack has let go of the clone): on a "
-        "clone of a repository with 63,000 branches they took 500 MB on 4 KB "
-        "blocks in 126,000 files, against 33 MB of objects. A clone whose refs "
+        "timeout, and deleted once the repack has let go of the clone): with a "
+        "file of at least one filesystem block per ref, the reflogs of a clone "
+        "with tens of thousands of branches can take many times the disk of its "
+        "objects. A clone whose refs "
         "are not packed (a fresh libgit2 clone, or one made by an earlier "
         "version) gets these ref steps alone at the end of the next sync pass "
         "after its clone or fetch, without waiting for the limit. They are "
@@ -514,8 +525,7 @@ class OpalServerConfig(Confi):
         "directory must be on a local filesystem, or on NFS mounted with "
         "local_lock=flock, since where flock fails every repack fails and is "
         "retried once an hour. Its memory counts against the container's limit: "
-        "allow about 0.5 KB per object of the repository (measured 1.2 GB for a "
-        "61k-branch repository of 2.3 million objects, 0.8 GB for 1.6 million). On "
+        "allow about 0.5 KB per object of the repository. On "
         "Linux git runs with oom_score_adj 1000, so when the container runs out "
         "of memory the kernel picks the repack before an opal-server worker. "
         "Where the whole container is the unit of an OOM kill (Kubernetes on "
@@ -573,8 +583,9 @@ class OpalServerConfig(Confi):
         "the whole pass, every other clone's scopes included; the pass that ends "
         "last runs it. A pass that starts while a repack is already running still "
         "waits for it in the same way, as it does for a slow fetch. The next "
-        "periodic pass starts only once the repacks are done. The default is about 7x a repack measured on a production clone "
-        "(16s for 61k branches, most of it CPU); too low a value is worse than "
+        "periodic pass starts only once the repacks are done. The default leaves "
+        "several times the time a repack of a clone with tens of thousands of "
+        "branches takes, most of it CPU; too low a value is worse than "
         "too high, since a repack that always times out never reclaims any disk. "
         "Watch opal_server.scopes.git_repack with outcome:timeout and the "
         "git_repack_seconds distribution. 0, negative, nan or inf fall back to the default of "
@@ -955,7 +966,7 @@ class OpalServerConfig(Confi):
     SCOPES_REPO_CLONES_SHARDS = confi.int(
         "SCOPES_REPO_CLONES_SHARDS",
         1,
-        description="The max number of local clones to use for the same repo (reused across scopes)",
+        description="The max number of local clones to use for the same repo (reused across scopes).",
     )
 
     REDIS_URL = confi.str(
