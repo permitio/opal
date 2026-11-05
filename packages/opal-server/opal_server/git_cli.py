@@ -41,6 +41,7 @@ import base64
 import fcntl
 import math
 import os
+import pwd
 import re
 import secrets
 import shlex
@@ -131,8 +132,11 @@ MIN_GIT_VERSION = (2, 32)
 # business in git's environment, and an inherited GIT_DIR or GIT_WORK_TREE
 # would point git at some other repository. Proxy variables are dropped, as
 # libgit2 (through pygit2) uses no proxy. HOME is not passed on (see
-# _isolated_env).
-_ENV_ALLOWLIST = ("PATH", "GIT_SSL_CAINFO", "GIT_SSL_CAPATH")
+# _isolated_env). nss_wrapper's variables (LD_PRELOAD, which the server
+# process has already loaded, and NSS_WRAPPER_*) are passed on: they give a
+# uid with no passwd entry the user that ssh looks up before anything else.
+_ENV_ALLOWLIST = ("PATH", "GIT_SSL_CAINFO", "GIT_SSL_CAPATH", "LD_PRELOAD")
+_ENV_ALLOWED_PREFIX = "NSS_WRAPPER_"
 # Where OpenSSL, which libgit2 uses, looks for CA certificates, and where git's
 # own TLS library is told to.
 _CA_ENV = (("SSL_CERT_FILE", "GIT_SSL_CAINFO"), ("SSL_CERT_DIR", "GIT_SSL_CAPATH"))
@@ -382,6 +386,8 @@ def validate_git_cli_settings() -> None:
     With SCOPES_GIT_FETCH_WITH_CLI off it only logs an ERROR when
     SCOPES_GIT_SSH_KNOWN_HOSTS is set, which is then ignored: turning the
     CLI setting off alone, to fall back to libgit2, never stops a server.
+    With it on, a uid with no entry in the user database, which ssh
+    refuses to run under, is logged as an ERROR: only SSH sources fail.
 
     Raises:
         ValueError: with SCOPES_GIT_FETCH_WITH_CLI on, there is no git on
@@ -433,6 +439,27 @@ def validate_git_cli_settings() -> None:
             "SCOPES_GIT_FETCH_WITH_CLI is on but SSH key files go to "
             f"{key_dir_parent!r}, whose path holds % or $, which ssh would "
             f"expand; point TMPDIR elsewhere, or make {_SHM} writable"
+        )
+    _check_user_entry()
+
+
+def _check_user_entry() -> None:
+    """Log an ERROR when this process's uid has no entry in the user database.
+
+    ssh looks its own user up before anything else and exits without
+    one, where libssh2 needs none.
+    """
+    try:
+        pwd.getpwuid(os.getuid())
+    except KeyError:
+        logger.error(
+            "SCOPES_GIT_FETCH_WITH_CLI is on but uid {uid} has no entry in the "
+            "user database (/etc/passwd): ssh does not run without one, so every "
+            "scope source fetched over SSH fails (HTTP sources are not "
+            "affected). Add an entry for the uid, or use nss_wrapper "
+            "(LD_PRELOAD, NSS_WRAPPER_PASSWD, NSS_WRAPPER_GROUP), whose "
+            "variables git and ssh are given",
+            uid=os.getuid(),
         )
 
 
@@ -1695,8 +1722,12 @@ def _isolated_env() -> Dict[str, str]:
     config (libgit2 reads them, but they would bring hooks, helpers, headers
     and proxies to every op; their safe.directory is given to git in
     _git_env), only the transports libgit2 speaks, the CA settings libgit2's
-    OpenSSL would use, and no prompt."""
-    env = {k: os.environ[k] for k in _ENV_ALLOWLIST if k in os.environ}
+    OpenSSL would use, nss_wrapper's variables, and no prompt."""
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if k in _ENV_ALLOWLIST or k.startswith(_ENV_ALLOWED_PREFIX)
+    }
     for openssl, git in _CA_ENV:
         if git not in env and os.environ.get(openssl):
             env[git] = os.environ[openssl]

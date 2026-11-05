@@ -2712,6 +2712,64 @@ def test_the_server_does_not_start_with_the_cli_fetch_on_and_no_git_or_no_sh(
     validate_git_cli_settings()
 
 
+def test_a_uid_with_no_user_entry_is_logged_as_an_error_that_names_ssh_sources(
+    monkeypatch,
+):
+    """Ssh exits at once under a uid with no passwd entry (an arbitrary uid
+    given at runtime, say), where libssh2 needs none.
+
+    The server still starts, as HTTP sources work, but says so once at
+    startup.
+    """
+
+    def no_entry(uid):
+        raise KeyError(f"getpwuid(): uid not found: {uid}")
+
+    errors = []
+    sink = logger.add(lambda m: errors.append(m.record["message"]), level="ERROR")
+    try:
+        monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", True)
+        validate_git_cli_settings()
+        with_entry = list(errors)
+        monkeypatch.setattr(git_cli.pwd, "getpwuid", no_entry)
+        validate_git_cli_settings()
+        without_entry = errors[len(with_entry) :]
+        monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", False)
+        validate_git_cli_settings()
+    finally:
+        logger.remove(sink)
+
+    assert with_entry == []
+    assert len(without_entry) == 1 and errors == without_entry
+    assert f"uid {os.getuid()} has no entry" in without_entry[0]
+    assert "over SSH fails" in without_entry[0] and "nss_wrapper" in without_entry[0]
+
+
+def test_nss_wrapper_s_variables_reach_git_and_no_other_server_variable_does(
+    monkeypatch,
+):
+    """nss_wrapper gives a uid with no passwd entry one, for ssh too, through
+    LD_PRELOAD and NSS_WRAPPER_*; nothing else the server has gets through."""
+    wrapper = {
+        "LD_PRELOAD": "libnss_wrapper.so",
+        "NSS_WRAPPER_PASSWD": "/srv/passwd",
+        "NSS_WRAPPER_GROUP": "/srv/group",
+        "NSS_WRAPPER_HOSTS": "/srv/hosts",
+    }
+    for key, value in wrapper.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/srv/lib")
+    monkeypatch.setenv("OPAL_AUTH_MASTER_TOKEN", "not-for-git")
+    url = "ssh://git@127.0.0.1/repo.git"
+    source = _source(url, SSHAuthData(username="git", private_key=_FAKE_KEY))
+
+    with git_cli._git_env(source, git_cli._remote_for_git(url, source)) as (env, _):
+        given = dict(env)
+
+    assert {k: given.get(k) for k in wrapper} == wrapper
+    assert "LD_LIBRARY_PATH" not in given and "OPAL_AUTH_MASTER_TOKEN" not in given
+
+
 @pytest.mark.parametrize("timeout", [0, -1, float("nan")])
 def test_no_fetch_timeout_with_the_cli_fetch_on_is_warned_about(timeout, monkeypatch):
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", True)
