@@ -650,8 +650,8 @@ async def test_markers_are_cleared_even_with_the_setting_off(tmp_path):
 def test_clear_hung_markers_retries_when_an_entry_vanishes_mid_walk(
     tmp_path, monkeypatch
 ):
-    """Python 3.10-3.12 rmtree stops with FileNotFoundError when an entry it
-    listed is removed first, leaving the rest."""
+    """On Python 3.11 and 3.12 rmtree stops with FileNotFoundError when an
+    entry it listed is removed first, leaving the rest."""
     clone = _clone_dir(tmp_path, _sid(1), hung=True)
     real = git_fetcher_module.shutil.rmtree
     calls = []
