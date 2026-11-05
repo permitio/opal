@@ -144,7 +144,7 @@ class BranchHeadNotFoundError(ValueError):
 
 class GitRepackError(RuntimeError):
     """``git repack`` on a scope clone exited non-zero (or ``command``, the git
-    pack-refs of a run of the ref steps alone).
+    pack-refs, or git config, of a run of the ref steps alone).
 
     ``stderr_tail`` is the end of what git wrote to stderr (the ``fatal:``
     line comes last), capped so a chatty failure cannot flood the log line
@@ -1307,12 +1307,35 @@ def _clone_pack_dir(repo_path: str | os.PathLike[str]) -> Path:
     return Path(repo_path) / ".git" / "objects" / "pack"
 
 
-def _refs_unpacked(repo_path: str | os.PathLike[str]) -> bool:
-    """Whether a scope clone has no packed-refs file, so that each of its refs
-    is in a file of its own: a libgit2 clone until its first repack (a git
-    command-line clone writes packed-refs). False without a clone."""
+def _packing_refs() -> bool:
+    """Whether the repack's ref steps pack a clone's refs (git pack-refs).
+
+    Not with the libgit2 fetch pruning (SCOPES_GIT_FETCH_WITH_CLI off,
+    SCOPES_GIT_FETCH_PRUNE on): libgit2 removes a pruned ref's own file,
+    but rewrites the whole packed-refs file for each ref it prunes from
+    it. A fetch that pruned 3,000 refs from a clone of a repository with
+    25,000 branches took 16 s with them packed and 0.5 s with them
+    loose, and that grows with both counts, past
+    SCOPES_GIT_FETCH_TIMEOUT, where a libgit2 fetch cannot be stopped.
+    """
+    return git_cli_enabled() or not opal_server_config.SCOPES_GIT_FETCH_PRUNE
+
+
+def _ref_steps_due(repo_path: str | os.PathLike[str]) -> bool:
+    """Whether a scope clone has something for the repack's ref steps
+    (_tidy_refs) to do: refs to pack while they pack them (no packed-refs file,
+    so each ref is in a file of its own: a libgit2 clone until its first
+    repack, while a git command-line clone writes packed-refs), or reflogs
+    while they do not (_packing_refs; new scope clones are made without).
+
+    False without a clone.
+    """
     git_dir = Path(repo_path) / ".git"
-    return git_dir.is_dir() and not os.path.lexists(git_dir / "packed-refs")
+    if not git_dir.is_dir():
+        return False
+    if _packing_refs():
+        return not os.path.lexists(git_dir / "packed-refs")
+    return os.path.lexists(git_dir / "logs")
 
 
 def _count_pack_files(repo_path: str | os.PathLike[str]) -> int:
@@ -1819,12 +1842,13 @@ def _pack_clone_refs(
     term_grace: float = _REPACK_TERM_GRACE_SECONDS,
 ) -> bool:
     """The repack's ref steps alone (``_tidy_refs``), with no git repack: for a
-    clone whose refs are all in files of their own (a fresh libgit2 clone)
-    while it holds fewer packs than the repack limit.
+    clone they have something to do on (``_ref_steps_due``: a fresh libgit2
+    clone, whose refs are all in files of their own) while it holds fewer packs
+    than the repack limit.
 
     Everything else is as for ``_repack_clone``: the locks, the record, the
     timeout, the cleanup and what it raises, a failed git pack-refs
-    included (GitRepackError).
+    included (git config when the refs are not packed; GitRepackError).
     """
     return _repack_under_locks(
         repo_path, timeout, term_grace=term_grace, refs_only=True
@@ -2140,7 +2164,7 @@ def _tidy_refs(
     refs_only: bool,
 ) -> None:
     """Turn the clone's reflogs off, set them aside for removal, and pack its
-    refs.
+    refs, unless the libgit2 fetch prunes (_packing_refs).
 
     A libgit2 clone keeps every ref in a file of its own, and a reflog file
     beside each: on a clone of a repository with 63,207 branches 250 MB of
@@ -2164,9 +2188,10 @@ def _tidy_refs(
     matter more than its refs. That includes the ref steps running past
     their share of the repack's timeout: the running one is stopped, and
     git repack gets the rest. With ``refs_only`` there is nothing after
-    them, so pack-refs failing or leaving the refs loose raises
-    GitRepackError instead, and running out of time TimeoutError, counted
-    all the same, as is a step whose git outlives its stop, which raises
+    them, so pack-refs failing or leaving the refs loose (git config
+    failing, when the refs are not packed) raises GitRepackError instead,
+    and running out of time TimeoutError, counted all the same, as is a
+    step whose git outlives its stop, which raises
     TimeoutError too: the run then waits out the repack's cooldown rather
     than running again on every pass.
 
@@ -2179,6 +2204,9 @@ def _tidy_refs(
     """
     path = os.fspath(repo_path)
     git_dir = Path(repo_path) / ".git"
+    packing = _packing_refs()
+    # The step whose failure fails a run of the ref steps alone.
+    last = "pack-refs" if packing else "config"
 
     def _clean_up() -> None:
         step.removed(git_cli.remove_kill_leftovers(Path(repo_path)))
@@ -2209,8 +2237,8 @@ def _tidy_refs(
             _clean_up()  # an OOM kill, say
         if returncode != 0:
             _emit_ref_step_failed(name.replace("-", "_"))
-            if refs_only and name == "pack-refs":
-                raise GitRepackError(returncode, err, command="git pack-refs")
+            if refs_only and name == last:
+                raise GitRepackError(returncode, err, command=f"git {name}")
             logger.warning(
                 "{what} exited with status {code}: {err}",
                 what=what,
@@ -2228,6 +2256,8 @@ def _tidy_refs(
         return
     if returncode == 0:
         _set_reflogs_aside(git_dir)
+    if not packing:
+        return
     returncode = _run("pack-refs", ["pack-refs", "--all"])
     if returncode != 0:
         return
@@ -3394,7 +3424,7 @@ class GitPolicyFetcher(PolicyFetcher):
 
     async def _mark_repack_due(self) -> None:
         """Mark this clone due for a repack once its fetch packs pile up, or
-        for the repack's ref steps alone while its refs are unpacked.
+        for the repack's ref steps alone while they have something to do.
 
         libgit2 writes one pack per fetch and never merges them (see
         SCOPES_GIT_REPACK_PACK_LIMIT), and a libgit2 clone keeps every ref
@@ -3402,7 +3432,8 @@ class GitPolicyFetcher(PolicyFetcher):
         reflogs on: a fresh clone of a repository with 63,000 branches
         holds 259 MB of ref files on 4 KB blocks, which would wait for the
         clone's first repack, as many fetches later as the limit. A clone
-        with no packed-refs file is therefore marked too, below the limit,
+        with no packed-refs file (with reflogs, when the libgit2 fetch
+        prunes: _ref_steps_due) is therefore marked too, below the limit,
         and the due repack runs only the ref steps on it
         (_pack_clone_refs). Called only after a fetch or a clone made by
         this sync succeeded and PDPs were notified, under lock_source. It
@@ -3416,8 +3447,8 @@ class GitPolicyFetcher(PolicyFetcher):
         Never fails the sync, and marks nothing when the limit is 0 or
         negative, when git was found missing, while this source waits out
         a failed repack in this process, or when the clone holds fewer
-        packs than the limit and has packed refs. A failure in another
-        process (_REPACK_FAILED_MARKER) is the due repack's to read.
+        packs than the limit and nothing for the ref steps. A failure in
+        another process (_REPACK_FAILED_MARKER) is the due repack's to read.
         """
         limit = _repack_pack_limit()
         if limit <= 0 or _repack_git_missing or _repack_cooling_down(self._source_id):
@@ -3436,7 +3467,7 @@ class GitPolicyFetcher(PolicyFetcher):
         # A clone whose repack failed in another process (its marker) is marked
         # all the same: the due repack reads the marker, names the clone once
         # per cooldown and tells a dead repack from one still running.
-        if packs >= limit or await run_sync(_refs_unpacked, path):
+        if packs >= limit or await run_sync(_ref_steps_due, path):
             previous = _repacks_due.get(self._source_id)
             _repacks_due[self._source_id] = _DueRepack(
                 source_id=self._source_id,
@@ -3655,8 +3686,9 @@ class GitPolicyFetcher(PolicyFetcher):
         anything when the limit is 0 or negative, when git was found
         missing, while this source waits out a failed repack (in any
         process), or when the clone holds fewer packs than the limit
-        (re-cloned since, say) and has packed refs. Below the limit with
-        its refs unpacked, only the ref steps run (_pack_clone_refs),
+        (re-cloned since, say) and nothing for the ref steps
+        (_ref_steps_due). Below the limit with something for them, only
+        the ref steps run (_pack_clone_refs),
         counted, traced and logged on their own (git_pack_refs). A due
         clone while another repack is running in this pod, a previous
         leader's included, while a git command-line op holds the clone's
@@ -3681,7 +3713,7 @@ class GitPolicyFetcher(PolicyFetcher):
             )
             return
         refs_only = packs_before < limit
-        if refs_only and not await run_sync(_refs_unpacked, path):
+        if refs_only and not await run_sync(_ref_steps_due, path):
             return
         if await run_sync(_repack_failed_recently, path):
             if await run_sync(_repack_lock_held, path):
@@ -3795,8 +3827,8 @@ class GitPolicyFetcher(PolicyFetcher):
         if refs_only:
             _emit_repack_attempt("ok", seconds, refs_only=True)
             logger.info(
-                "Packed the refs of scope clone {path} ({url}) in {seconds:.1f}s: "
-                + refs,
+                "{what} of scope clone {path} ({url}) in {seconds:.1f}s: " + refs,
+                what="Packed the refs" if _packing_refs() else "Removed the reflogs",
                 path=path,
                 url=due.url,
                 seconds=seconds,
@@ -3867,10 +3899,16 @@ class GitPolicyFetcher(PolicyFetcher):
         outcome = "timeout" if isinstance(err, TimeoutError) else "error"
         still_running = GitPolicyFetcher._release_handle_after_repack(due)
         _emit_repack_attempt(outcome, seconds, refs_only=refs_only)
+        if not refs_only:
+            what = "Repack"
+        elif _packing_refs():
+            what = "Packing the refs"
+        else:
+            what = "Removing the reflogs"
         logger.warning(
             "{what} of scope clone {path} ({url}) failed after {seconds:.1f}s"
             "{detail}; not retrying it for {cooldown:.0f}s: {etype}: {err}",
-            what="Packing the refs" if refs_only else "Repack",
+            what=what,
             path=due.repo_path,
             url=due.url,
             seconds=seconds,

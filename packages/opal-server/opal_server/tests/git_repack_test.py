@@ -3663,8 +3663,12 @@ async def test_libgit2_and_git_fetch_a_housekept_clone(tmp_path, monkeypatch):
     """On a clone whose refs are all packed, the scope fetcher's libgit2 fetch
     and its git fetch (SCOPES_GIT_FETCH_WITH_CLI) both move a branch, bring a
     new one and, with prune on, remove one the remote deleted; neither writes a
-    reflog."""
-    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_PRUNE", True)
+    reflog.
+
+    Prune goes on once the refs are packed: with the libgit2 fetch
+    pruning the ref steps leave them loose (_packing_refs), and a clone git
+    made has them packed.
+    """
     scope = _ScopeRepo(tmp_path, "s1")
     await scope.fetched(2)
     scope.remote.create_reference("refs/heads/env2", scope.tip)
@@ -3672,6 +3676,7 @@ async def test_libgit2_and_git_fetch_a_housekept_clone(tmp_path, monkeypatch):
     GitPolicyFetcher.forget_repo(str(scope.clone_path))
     assert _repack_clone(scope.clone_path, timeout=60) is True
     assert _loose_refs(scope.clone_path) == []
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_PRUNE", True)
     clone = scope.clone_path
 
     # libgit2, through the scope fetcher
@@ -3811,6 +3816,134 @@ async def test_a_git_clone_is_not_marked_for_its_refs(tmp_path, monkeypatch):
     tip = await scope.push_and_sync()
     assert scope.notified[-1][1] == tip
     assert git_fetcher._repacks_due == {}
+
+
+@pytest.mark.asyncio
+async def test_a_libgit2_fetch_that_prunes_keeps_the_refs_in_files_of_their_own(
+    tmp_path, monkeypatch, emitted
+):
+    """libgit2 removes a pruned ref's own file, but rewrites the whole
+    packed-refs file for each ref it prunes from it: pruning 3,000 refs from
+    a clone of a repository with 25,000 branches took 16 s packed, 0.5 s
+    loose. With the libgit2 fetch pruning (SCOPES_GIT_FETCH_WITH_CLI off,
+    SCOPES_GIT_FETCH_PRUNE on) the ref steps therefore leave the refs loose:
+    a fresh clone, made with no reflogs, is not marked for them, and the
+    repack at the pack limit merges the packs without packing a ref. The
+    pruning fetch after it removes the deleted branch.
+
+    Mutation: packing the refs anyway, in the repack or in a run of the ref
+    steps alone, fails it.
+    """
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_PRUNE", True)
+    scope = _ScopeRepo(tmp_path, "s1")
+    scope.remote.create_reference("refs/heads/env2", scope.tip)
+    clone = scope.clone_path
+
+    await scope.fetched(_LIMIT - 1)
+    assert git_fetcher._repacks_due == {}
+    await scope.push_and_sync()  # the fetch that reaches the limit
+
+    assert _repack_outcomes(emitted) == ["ok"]
+    assert _count_pack_files(clone) == 1
+    assert _pack_refs_outcomes(emitted) == []
+    assert not (clone / ".git" / "packed-refs").exists()
+    assert "refs/remotes/origin/env2" in _loose_refs(clone)
+    scope.remote.references.delete("refs/heads/env2")
+    tip = await scope.push_and_sync()
+    refs = _refs(clone)
+    assert "refs/remotes/origin/env2" not in refs
+    assert refs["refs/remotes/origin/master"] == tip
+    assert scope.notified[-1][1] == tip
+    assert _reflogs(clone) == []
+
+
+@pytest.mark.asyncio
+async def test_with_libgit2_pruning_the_ref_steps_alone_remove_the_reflogs(
+    tmp_path, monkeypatch, emitted, records
+):
+    """A clone made with reflogs on (by an earlier version) still gets the ref
+    steps alone at the end of the next pass with the libgit2 fetch pruning:
+    they turn its reflogs off and remove them, leave its refs in files of
+    their own, and are logged as such. Its fetches mark it no more after it.
+
+    Mutation: marking a clone for its loose refs whatever the settings runs
+    the ref steps after every fetch.
+    """
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_PRUNE", True)
+    scope = _ScopeRepo(tmp_path, "s1")
+    clone = scope.clone_path
+    pygit2.clone_repository(scope.fetcher._source.url, str(clone)).free()
+    await scope.sync()
+    assert "refs/heads/scopes/s1" in _reflogs(clone)  # the premise
+    assert set(git_fetcher._repacks_due) == {scope.source_id}
+
+    await GitPolicyFetcher.run_due_repacks({scope.source_id})
+
+    assert _pack_refs_outcomes(emitted) == ["ok"]
+    assert _reflogs_setting(clone) == "false"
+    assert not (clone / ".git" / "logs").exists()
+    assert _wait_for(lambda: not _asides(clone))
+    assert "refs/heads/scopes/s1" in _loose_refs(clone)
+    assert not (clone / ".git" / "packed-refs").exists()
+    assert [
+        r
+        for r in records
+        if r["level"].name == "INFO" and "Removed the reflogs of" in r["message"]
+    ]
+    tip = await scope.push_and_sync()
+    assert scope.notified[-1][1] == tip
+    assert git_fetcher._repacks_due == {}
+    assert _pack_refs_outcomes(emitted) == ["ok"]
+    assert not (clone / ".git" / "logs").exists()
+
+
+@pytest.mark.asyncio
+async def test_with_libgit2_pruning_a_failed_config_alone_waits_out_the_cooldown(
+    tmp_path, monkeypatch, emitted, records
+):
+    """With the refs left loose, git config is the one git of a run of the
+    ref steps alone: when it fails, the run fails, logged with git's stderr
+    and cooled down as a failed pack-refs is, rather than run again at the
+    end of every pass.
+
+    Mutation: only warning, as when a repack follows, runs it on every pass.
+    """
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_PRUNE", True)
+    real_git = shutil.which("git")
+    state = tmp_path / "state"
+    state.mkdir()
+    _install_git_shim(
+        tmp_path,
+        monkeypatch,
+        'if [ "$3" = config ]; then\n'
+        f'  echo x >> "{state}/config"\n'
+        "  echo 'error: could not lock config file' >&2\n"
+        "  exit 255\n"
+        "fi\n"
+        f'exec "{real_git}" "$@"\n',
+        refs_steps=True,
+    )
+    scope = _ScopeRepo(tmp_path, "s1")
+    pygit2.clone_repository(scope.fetcher._source.url, str(scope.clone_path)).free()
+    await scope.sync()
+
+    await GitPolicyFetcher.run_due_repacks({scope.source_id})
+
+    assert _pack_refs_outcomes(emitted) == ["error"]
+    assert scope.source_id in git_fetcher._repack_failed_at
+    [warning] = [
+        r
+        for r in records
+        if r["level"].name == "WARNING" and "Removing the reflogs" in r["message"]
+    ]
+    assert "git config exited with status 255" in warning["message"]
+    assert "could not lock config file" in warning["message"]
+    await scope.sync_pass()
+    await scope.push_and_sync()
+    assert (state / "config").read_text().split() == ["x"]
+    assert _pack_refs_outcomes(emitted) == ["error"]
+    assert _ref_step_failures(emitted) == ["config"]
+    assert (scope.clone_path / ".git" / "logs").exists()
 
 
 @pytest.mark.asyncio
@@ -4802,10 +4935,10 @@ async def _clone_whose_pack_refs_was_killed(tmp_path, monkeypatch):
     left in the clone.
 
     Its remote has then deleted env2, so a fetch that prunes has to
-    rewrite packed-refs, and fails while the lock is there. Prune is on.
-    Returns the scope and the ref's lock.
+    rewrite packed-refs, and fails while the lock is there. Prune is on
+    from then on (on before, it would keep the refs loose:
+    _packing_refs). Returns the scope and the ref's lock.
     """
-    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_PRUNE", True)
     scope = _ScopeRepo(tmp_path, "s1")
     await scope.fetched(2)
     scope.remote.create_reference("refs/heads/env2", scope.tip)
@@ -4864,6 +4997,7 @@ async def _clone_whose_pack_refs_was_killed(tmp_path, monkeypatch):
     scope.remote.references.delete("refs/heads/env2")
     stuck = _git(clone, "fetch", "--prune", "--no-tags", "-q", "origin", check=False)
     assert stuck.returncode != 0, "the premise: a pruning fetch fails on the lock"
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_PRUNE", True)
     return scope, ref_lock
 
 
@@ -4892,13 +5026,13 @@ async def test_a_pack_refs_killed_with_its_process_costs_no_fetch_or_repack(
         assert not (git_dir / "packed-refs.lock").exists() and not ref_lock.exists()
         assert _loose_refs(clone) == []
 
+    # The fetch that has to rewrite packed-refs, by git as the clone lock's
+    # other holders run it.
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", True)
     if restart:
         git_fetcher.sweep_scope_clone_leftovers(tmp_path / "base")
     else:
         _repacked_at_once()
-    # The fetch that has to rewrite packed-refs, by git as the clone lock's
-    # other holders run it.
-    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", True)
     tip = str(scope.push())
     await scope.sync()
     assert _refs(clone)["refs/remotes/origin/master"] == tip
@@ -4939,6 +5073,8 @@ async def test_a_pack_refs_killed_without_a_preload_costs_no_fetch(
     assert scope.notified[-1][1] == tip
     assert not (git_dir / "packed-refs.lock").exists() and not ref_lock.exists()
     GitPolicyFetcher.forget_repo(str(clone))
+    # Off, so that the ref steps pack the refs with libgit2 too (_packing_refs).
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_PRUNE", False)
     assert _repack_clone(clone, timeout=60) is True
     assert _loose_refs(clone) == []
     _git(clone, "fsck", "--no-progress")
