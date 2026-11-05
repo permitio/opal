@@ -13,9 +13,11 @@ class InterceptHandler(logging.Handler):
             level = record.levelno
 
         # Find caller from where originated the logged message: walk up from
-        # this frame, past the logging module and any import machinery.
+        # this frame, past the logging module and any import machinery. A logging
+        # method called straight from C has no frame outside them, so the walk
+        # stops at the last frame.
         frame, depth = inspect.currentframe(), 0
-        while frame:
+        while frame and frame.f_back:
             filename = frame.f_code.co_filename
             is_logging = filename == logging.__file__
             is_frozen = "importlib" in filename and "_bootstrap" in filename

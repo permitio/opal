@@ -34,9 +34,19 @@ It means that you logging verbosity does not include the RPC and Pub/Sub logs. Y
 
 | Env Var Name                 | Function                                                                                                                                                                                                                                         |
 | :--------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| OPAL_LOG_MODULE_INCLUDE_LIST | A directive to include logs outputted by the modules appearing in the lists. e.g: setting `OPAL_LOG_MODULE_INCLUDE_LIST=["uvicorn.protocols.http"]` means that all log lines by the module `uvicorn.protocols.http` will be included in the log. |
+| OPAL_LOG_MODULE_INCLUDE_LIST | A directive to include logs outputted by the modules appearing in the lists. e.g: setting `OPAL_LOG_MODULE_INCLUDE_LIST=uvicorn.protocols.http` means that all log lines by the module `uvicorn.protocols.http` will be included in the log.     |
 | OPAL_LOG_MODULE_EXCLUDE_LIST | If you want less logs, you can ignore logs emitted by these modules. Opposite of `OPAL_LOG_MODULE_INCLUDE_LIST`. To get all logs and make sure nothing is filtered, set the env var like so: `OPAL_LOG_MODULE_EXCLUDE_LIST=[]`.                  |
 | OPAL_LOG_LEVEL               | Default is `INFO`, you can set to `DEBUG` to get more logs, or to higher other log level (less recommended).                                                                                                                                     |
+
+Both lists take comma-separated module names rather than a JSON array, match by prefix, and apply to console output only. Setting a list replaces its default, so keep the entries you still want.
+
+With the default lists, `uvicorn` lines other than `uvicorn.protocols.http` don't reach the console at any level. That includes a failing startup's traceback (`uvicorn.lifespan.on`) and `Exception in ASGI application` from websocket connections (`uvicorn.protocols.websockets.*`), so a boot failure under gunicorn can show only `Worker failed to boot.` To see these lines, use one of these settings:
+
+| Setting                                                                | What it shows                                                                                                                                              |
+| :--------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OPAL_LOG_MODULE_INCLUDE_LIST=uvicorn.protocols.http,uvicorn.lifespan` | Application startup and shutdown lines (`uvicorn.lifespan`) on the console, including a failing startup's traceback. `uvicorn.server` lines stay filtered. |
+| `OPAL_LOG_MODULE_EXCLUDE_LIST=[]`                                      | All `uvicorn` lines on the console: `[]` matches no module name, so no `uvicorn` line is excluded.                                                         |
+| `OPAL_LOG_TO_FILE=true`                                                | All of these lines in a log file, at `OPAL_LOG_FILE_LEVEL`. The file has no module filter.                                                                 |
 
 #### Inline OPA logs
 

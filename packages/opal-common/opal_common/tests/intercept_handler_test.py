@@ -5,17 +5,23 @@ identity.
 ``record["function"]`` downstream depend on it.
 """
 
+import _thread
 import asyncio
 import logging
+import time
 from contextlib import contextmanager
 from typing import Any, Callable, Dict, Iterator, List, Optional
 
 import pytest
 from loguru import logger
 from opal_common.logging_utils.filter import ModuleFilter
+from opal_common.logging_utils.formatter import Formatter
 from opal_common.logging_utils.intercept import InterceptHandler
 
 Record = Dict[str, Any]
+
+_PACKAGE = __name__.split(".")[0]
+_PARENT_MODULE = __name__.rpartition(".")[0]
 
 
 @contextmanager
@@ -45,6 +51,7 @@ def stdlib_logger() -> Iterator[logging.Logger]:
 @contextmanager
 def _captured_records(
     module_filter: Optional[ModuleFilter] = None,
+    formatter: Optional[Formatter] = None,
 ) -> Iterator[List[Record]]:
     records: List[Record] = []
     sink_id = logger.add(
@@ -52,6 +59,7 @@ def _captured_records(
         level="DEBUG",
         diagnose=False,
         filter=module_filter.filter if module_filter else None,
+        format=formatter.format if formatter else "{message}",
     )
     try:
         yield records
@@ -97,13 +105,14 @@ def test_exception_record_keeps_its_caller_and_traceback(
     assert record["name"] == __name__
     assert record["function"] == "_log_exception"
     assert record["exception"].type is ValueError
+    assert record["exception"].traceback is not None
 
 
 def test_library_record_keeps_the_librarys_module_name():
     """A real library call site, not one in this file: the case the module
-    lists and log-index filters are written for."""
+    lists are written for."""
     with _intercepted("asyncio"), _captured_records() as records:
-        asyncio.new_event_loop().close()
+        asyncio.SelectorEventLoop().close()
 
     selector_records = [r for r in records if "Using selector" in r["message"]]
     assert selector_records, records
@@ -113,9 +122,9 @@ def test_library_record_keeps_the_librarys_module_name():
 @pytest.mark.parametrize(
     "module_filter, delivered",
     [
-        pytest.param(ModuleFilter(exclude_list=[__name__]), False, id="excluded"),
+        pytest.param(ModuleFilter(exclude_list=[_PACKAGE]), False, id="excluded"),
         pytest.param(
-            ModuleFilter(exclude_list=[__name__], include_list=[__name__]),
+            ModuleFilter(exclude_list=[_PACKAGE], include_list=[_PARENT_MODULE]),
             True,
             id="included-over-excluded",
         ),
@@ -132,3 +141,35 @@ def test_module_filter_acts_on_the_callers_name(
         stdlib_logger.info("probe")
 
     assert bool(records) is delivered
+
+
+def test_record_logged_straight_from_c_keeps_the_last_frame(
+    stdlib_logger: logging.Logger,
+):
+    """``_thread`` runs the logging method with no Python frame above it, so no
+    frame in the walk is outside the ``logging`` module."""
+    with _captured_records(ModuleFilter(exclude_list=["other"])) as records:
+        _thread.start_new_thread(stdlib_logger.warning, ("probe",))
+        deadline = time.monotonic() + 5
+        while not records and time.monotonic() < deadline:
+            time.sleep(0.01)
+
+    (record,) = records
+    assert record["name"] == "logging"
+    assert record["function"] == "warning"
+    assert record["message"] == "probe"
+
+
+def test_record_without_a_module_name_reaches_the_sink(
+    stdlib_logger: logging.Logger,
+):
+    """``exec`` with globals that lack ``__name__`` gives loguru no name for
+    the frame, which ``Formatter`` stores as an empty string."""
+    module_filter = ModuleFilter(exclude_list=["other"])
+    formatter = Formatter("{name} {message}")
+    with _captured_records(module_filter, formatter) as records:
+        exec("stdlib.info('probe')", {"stdlib": stdlib_logger})
+
+    (record,) = records
+    assert record["name"] == ""
+    assert record["message"] == "probe"
