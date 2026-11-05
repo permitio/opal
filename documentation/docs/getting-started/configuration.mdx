@@ -1195,6 +1195,14 @@ Interval in seconds to backup policy store's data.
 
 _Added in OPAL v0.6.0_
 
+#### OPAL_DEFAULT_OPAL_SERVER_CONNECTIVITY_DISABLED
+
+Default: `False`
+
+With `OPAL_OFFLINE_MODE_ENABLED` on, start the client without connecting to the OPAL server: once the backup at `OPAL_STORE_BACKUP_PATH` is loaded into the policy store, the client serves it and receives no policy or data updates. When no valid backup can be loaded, the client logs a warning and connects to the server as usual. Ignored with offline mode off. The connectivity can be read with `GET /opal-server/connectivity` and switched at runtime with `POST /opal-server/connectivity/disable` and `POST /opal-server/connectivity/enable`, which refetches policy and data as a reconnect does.
+
+For more information, see [OPAL server connectivity control](/tutorials/opal_server_connectivity).
+
 ### Policy Store Configuration
 
 #### OPAL_POLICY_STORE_TYPE
