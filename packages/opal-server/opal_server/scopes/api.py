@@ -747,6 +747,27 @@ def verify_private_key_or_throw(scope_in: Scope):
             )
 
 
+def verify_branch_or_throw(scope_in: Scope):
+    """Refuse a git branch that cannot name a ref.
+
+    An empty name or ``x~1``, say: no fetch can bring it, so the scope
+    could never be served.
+    """
+    if not isinstance(scope_in.policy, GitPolicyScopeSource):
+        return
+    fetcher = GitPolicyFetcher(
+        pathlib.Path(opal_server_config.BASE_DIR), scope_in.scope_id, scope_in.policy
+    )
+    if not fetcher.branch_can_be_a_ref():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={
+                "error": f"policy.branch {scope_in.policy.branch!r} "
+                "cannot be a git branch name"
+            },
+        )
+
+
 def init_scope_router(
     scopes: ScopeRepository,
     authenticator: JWTAuthenticator,
@@ -810,6 +831,7 @@ def init_scope_router(
             )
 
         verify_private_key_or_throw(scope_in)
+        verify_branch_or_throw(scope_in)
 
         new_source_id = (
             GitPolicyFetcher.source_id(scope_in.policy)

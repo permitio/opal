@@ -4126,8 +4126,11 @@ class GitPolicyFetcher(PolicyFetcher):
                     ref = probe.lookup_reference(
                         f"refs/remotes/{self._remote}/{self._source.branch}"
                     )
-                except KeyError:
+                except (KeyError, pygit2.InvalidSpecError):
                     # Branch not fetched yet — the fetch path handles that.
+                    # Nor one that cannot be a ref (an empty name, ``x~1``):
+                    # raised, it stopped the fetch of the clone, which the
+                    # scope's siblings on it wait for in a sync pass.
                     return repo
                 if probe.get(ref.target) is None:
                     logger.warning(
