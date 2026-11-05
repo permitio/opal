@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import RedirectResponse
@@ -23,11 +23,11 @@ from opal_server.config import opal_server_config
 from opal_server.data.data_update_publisher import DataUpdatePublisher
 
 
-def _report_for_log(report: DataUpdateReport) -> dict:
+def _report_for_log(report: DataUpdateReport) -> Dict[str, Any]:
     """Render a client's update report for logging.
 
     Drops each entry's ``config`` (fetcher auth headers) and ``data``
-    (inline payload) and strips auth embedded in each entry's ``url``.
+    (inline payload) and passes each entry's ``url`` through ``redact_url``.
     """
     rendered = report.model_dump(
         exclude={"reports": {"__all__": {"entry": {"config", "data"}}}}
