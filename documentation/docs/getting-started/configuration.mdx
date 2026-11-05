@@ -41,7 +41,7 @@ export OPAL_SERVER_URL=http://localhost:7002
 export OPAL_CLIENT_TOKEN=your-secret-token
 
 # Policy engine type (OPA is default, Cedar also available)
-export OPAL_POLICY_STORE_TYPE=opa
+export OPAL_POLICY_STORE_TYPE=OPA
 ```
 
 ### Production Configuration
@@ -341,9 +341,9 @@ The minimum log level for file logging.
 
 #### OPAL_AUTH_PUBLIC_KEY_FORMAT
 
-Default: `SSH`
+Default: `ssh`
 
-Format of the public key. Options: `PEM`, `JWK`, `SSH`.
+Format of the public key. Options: `pem`, `ssh`, `der`.
 
 Read more about [secure mode setup](/getting-started/running-opal/as-python-package/secure-mode-setup).
 
@@ -415,7 +415,7 @@ These configuration variables are specific to the OPAL Server.
 
 #### OPAL_SERVER_WORKER_COUNT
 
-Default: `auto` (calculated based on CPU cores)
+Default: `None` (calculated based on CPU cores)
 
 Worker count for the server (when run using CLI).
 
@@ -743,9 +743,9 @@ Redis connection URL.
 
 #### OPAL_AUTH_PRIVATE_KEY_FORMAT
 
-Default: `PEM`
+Default: `pem`
 
-Format of the private key. Options: `PEM`, `JWK`.
+Format of the private key. Options: `pem`, `ssh`, `der`.
 
 Read more about [secure mode setup](/getting-started/running-opal/as-python-package/secure-mode-setup).
 
@@ -1201,9 +1201,9 @@ For more information, see [OPAL server connectivity control](/tutorials/opal_ser
 
 #### OPAL_POLICY_STORE_TYPE
 
-Default: `opa`
+Default: `OPA`
 
-Type of policy store to use. Options: `opa`, `cedar`.
+Type of policy store to use. Options: `OPA`, `CEDAR`.
 
 For more information, see [Cedar and OPAL](/tutorials/cedar).
 
@@ -1495,7 +1495,7 @@ For more information, see [monitoring OPAL](/tutorials/monitoring_opal).
 Default:
 ```json
 {
-  "method": "POST",
+  "method": "post",
   "headers": {
     "content-type": "application/json"
   },
