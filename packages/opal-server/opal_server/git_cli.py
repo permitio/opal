@@ -1267,7 +1267,12 @@ class _Op:
         failed once sh may have been running).
 
         Closes this process's fd on the lock, waits until no process
-        holds it any more, then finishes under a lock of its own.
+        holds it any more, then finishes under a lock of its own. Another
+        process can take the lock meanwhile, record its op in place of this
+        one's and die, leaving more than this op's ``clean_up`` removes (a
+        clone half made): what any dead op can leave goes as well
+        (remove_dead_op_leftovers), and the record stays while some of it
+        does not.
         """
         if self._done:
             return
@@ -1297,7 +1302,14 @@ class _Op:
             self._call_on_gone(False)
             return
         self.lock_fd = fd
-        await self.finish(succeeded=False, status=None)
+        await self.finish(
+            succeeded=False, status=None, then=self._remove_dead_op_leftovers
+        )
+
+    def _remove_dead_op_leftovers(self) -> None:
+        """remove_dead_op_leftovers, noting what it could not remove."""
+        if not remove_dead_op_leftovers(self.repo_path):
+            self._left_behind = True
 
     def _call_on_gone(self, how: Optional[bool]) -> None:
         self._done = True

@@ -863,6 +863,88 @@ def test_a_start_given_up_on_leaves_the_clone_held_until_its_last_process_exits(
     assert clone_lock_path(clone).read_bytes() == b""
 
 
+@pytest.mark.parametrize("stuck", [False, True], ids=["removable", "stuck"])
+@pytest.mark.asyncio
+async def test_a_given_up_start_cleans_up_after_an_op_that_held_the_clone_meanwhile(
+    stuck, git_origin, tmp_path, monkeypatch
+):
+    """A start given up on waits for the clone's lock with no fd of its own on
+    it, so another process can hold the clone first, record its op, start a
+    clone beside it and die.
+
+    Once the start has the lock, what that op left goes too; when some
+    of it cannot, its record stays, for the next op to try again.
+    """
+    clone = tmp_path / "cli"
+    _clone_at(clone, git_origin.url, git_origin.url)
+    lock = clone_lock_path(clone)
+    partial = clone.parent / f".{clone.name}.clone-0123456789abcdef"
+    shims = tmp_path / "bin"
+    shims.mkdir()
+    started = shims / "other.started"
+    # Holds the clone's lock from git's start (it inherits git's fd) until it
+    # exits, out of the group's reach: the other process's op, recorded with
+    # a pid no process has, which dies with a clone half made.
+    other = shims / "other.py"
+    other.write_text(
+        textwrap.dedent(
+            """\
+            import os, sys
+            os.setsid()
+            lock, partial, started = sys.argv[1:]
+            with open(lock, "r+b") as f:
+                f.write(b"4194303\\n")
+                f.truncate()
+            os.makedirs(os.path.join(partial, ".git"))
+            open(started, "w").close()
+            """
+        )
+    )
+    (shims / "git").write_text(
+        "#!/bin/sh\n"
+        f"\"{sys.executable}\" '{other}' '{lock}' '{partial}' '{started}' &\n"
+        "exec sleep 30\n"
+    )
+    (shims / "git").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{shims}{os.pathsep}{os.environ['PATH']}")
+    if stuck:
+        rmtree = shutil.rmtree
+
+        def _busy(path, *args, **kwargs):
+            if Path(path) == partial:
+                raise OSError(errno.EBUSY, "Device or resource busy", str(path))
+            rmtree(path, *args, **kwargs)
+
+        monkeypatch.setattr(git_cli.shutil, "rmtree", _busy)
+    spawn = asyncio.create_subprocess_exec
+
+    async def _given_up_on(*args, **kwargs):
+        proc = await spawn(*args, **kwargs)
+        await _until(started.exists)
+        proc.kill()
+        await proc.wait()
+        proc._transport.close()  # type: ignore[attr-defined]  # as git_cli does
+        raise OSError(24, "Too many open files")
+
+    monkeypatch.setattr(git_cli.asyncio, "create_subprocess_exec", _given_up_on)
+    gone = []
+
+    with pytest.raises(GitCliLocalError):
+        await cli_fetch(
+            clone,
+            "origin",
+            _source(git_origin.url),
+            prune=False,
+            timeout=60,
+            on_gone=gone.append,
+        )
+    await _until(lambda: gone)
+
+    assert gone == [False]
+    assert partial.exists() is stuck
+    assert lock.read_bytes() == (b"4194303\n" if stuck else b"")
+
+
 @_LOOPS
 def test_the_event_loop_ending_mid_stop_kills_git_and_leaves_the_clone_to_the_next_op(
     loop, git_origin, tmp_path, monkeypatch, processes_with, released_keys, git_groups
