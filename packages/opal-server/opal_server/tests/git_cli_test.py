@@ -494,6 +494,45 @@ async def test_a_small_fetch_lands_in_one_new_pack_and_no_loose_objects(
 
 
 @pytest.mark.asyncio
+async def test_a_fetch_into_a_clone_with_many_packs_starts_no_gc(git_origin, tmp_path):
+    """Past gc.autoPackLimit (50 packs, the default of
+    SCOPES_GIT_REPACK_PACK_LIMIT too), a plain git fetch starts ``git
+    maintenance run --auto``, whose gc repacks the clone outside OPAL's repack
+    and its lock.
+
+    Here the fetch adds its one pack, and the clone's 55 others stay.
+    The clone's config has gc run in the foreground, so that a gc would
+    be over by the time the fetch returns.
+    """
+    clone = tmp_path / "cli"
+    await _clone(git_origin.url, clone)
+    pack_dir = clone / ".git" / "objects" / "pack"
+    repo = pygit2.Repository(str(clone))
+    try:
+        repo.config["gc.autoDetach"] = False
+        repo.config["maintenance.autoDetach"] = False
+        blobs = [str(repo.create_blob(f"blob {i}\n")) for i in range(55)]
+    finally:
+        repo.free()
+    for blob in blobs:
+        subprocess.run(
+            ["git", "-C", str(clone), "pack-objects", "-q", str(pack_dir / "pack")],
+            input=f"{blob}\n",
+            text=True,
+            check=True,
+            capture_output=True,
+        )
+    packs = set(pack_dir.glob("*.pack"))
+    assert len(packs) > 55
+    git_origin.commit("master")
+
+    await _fetch(clone, _source(git_origin.url))
+
+    after = set(pack_dir.glob("*.pack"))
+    assert packs <= after and len(after - packs) == 1
+
+
+@pytest.mark.asyncio
 async def test_a_fetch_uses_the_refspecs_in_the_clone_s_config(git_origin, tmp_path):
     """Git is given the remote's URL instead of its name, so the refspecs it
     fetches come from the clone's config, as libgit2 reads them."""

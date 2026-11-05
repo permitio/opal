@@ -1314,6 +1314,56 @@ def test_the_preload_waits_for_ops_still_being_stopped_before_its_loop_ends(
     assert clone_lock_path(clone).read_bytes() == b""
 
 
+def test_the_preload_waits_for_ops_being_stopped_no_longer_than_its_drain_timeout(
+    git_origin, tmp_path, monkeypatch, preload, processes_with, git_groups
+):
+    """The same with a kill grace longer than SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT:
+    the preload, which holds up the gunicorn master, waits for the drain
+    timeout, not the grace, and warns. Its loop's end then SIGKILLs the op's
+    group, and the op stays recorded in the clone's lock file, for the next
+    op on the clone to clean up after."""
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", True)
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_CLI_KILL_GRACE", 30.0)
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT", 1.0)
+    started = _ssh_shim(
+        tmp_path, monkeypatch, _ignore_sigterm(tmp_path / "bin" / "ssh.started")
+    )
+    marker = f"preload-{uuid.uuid4().hex}"
+    clone = GitPolicyFetcher.base_dir(tmp_path) / "0123abcd-0"
+    _clone_at(clone, git_origin.url, f"ssh://git@127.0.0.1:1/{marker}.git")
+
+    async def _sync(**kwargs):
+        task = asyncio.ensure_future(
+            cli_fetch(clone, "origin", _source(git_origin.url), prune=False, timeout=60)
+        )
+        await _until(lambda: started.exists() and git_groups)
+        task.cancel()
+        await asyncio.sleep(0.2)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert git_cli.background_ops() == 1
+
+    records = []
+    sink = opal_common_logger.logger.add(
+        lambda m: records.append(m.record), level="WARNING"
+    )
+    begun = time.monotonic()
+    try:
+        preload(_sync)
+    finally:
+        opal_common_logger.logger.remove(sink)
+    took = time.monotonic() - begun
+
+    assert took < 15, took
+    assert any("still being stopped after 1.0s" in r["message"] for r in records)
+    deadline = time.monotonic() + 10
+    while processes_with(marker):
+        assert time.monotonic() < deadline, processes_with(marker)
+        time.sleep(0.05)
+    assert clone_lock_path(clone).read_bytes() != b""
+
+
 def test_the_preload_drops_asyncio_s_warning_about_children_reaped_elsewhere(
     preload, caplog
 ):
