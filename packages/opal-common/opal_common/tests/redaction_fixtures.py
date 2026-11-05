@@ -18,6 +18,8 @@ class CapturedLogs:
     #: Records as a ``serialize=True`` sink writes them - ``extra`` included,
     #: so a keyword argument the message does not reference still shows up.
     serialized: List[str] = field(default_factory=list)
+    #: The two sinks' loguru handler ids.
+    sink_ids: List[int] = field(default_factory=list)
 
     @property
     def combined(self) -> str:
@@ -58,14 +60,14 @@ def capture_logs() -> Iterator[CapturedLogs]:
     """
     logs = CapturedLogs()
     with without_log_patcher():
-        sink_ids = [
+        logs.sink_ids = [
             logger.add(logs.text.append, level="DEBUG", colorize=False, diagnose=False),
             logger.add(logs.serialized.append, level="DEBUG", serialize=True),
         ]
         try:
             yield logs
         finally:
-            for sink_id in sink_ids:
+            for sink_id in logs.sink_ids:
                 logger.remove(sink_id)
 
 
