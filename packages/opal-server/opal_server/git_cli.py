@@ -146,7 +146,7 @@ _SH = "/bin/sh"
 # every child with waitpid(-1), and asyncio then reports 255 for a child that
 # handler reaped first. Python 3.12's PidfdChildWatcher loses that race on
 # every child (it reaps through a pidfd the handler's waitpid(-1) beats);
-# 3.10's ThreadedChildWatcher only when the handler happens to run first.
+# 3.11's ThreadedChildWatcher only when the handler happens to run first.
 # git's own stdout goes to /dev/null, so the status is all that sh's stdout
 # carries, and no status at all means sh was killed before git's came back.
 #
