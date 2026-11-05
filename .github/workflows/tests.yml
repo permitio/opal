@@ -5,12 +5,22 @@ name: Tests
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master, 'release/**' ]
   pull_request:
-    branches: [ master ]
+    branches: [ master, 'release/**' ]
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
+
+env:
+  # With the docker-container builder that setup-buildx-action creates, buildx (>= 0.30)
+  # adds the GitHub event payload to the build's provenance and writes that provenance
+  # into the metadata file even in its default `min` mode. build-push-action prints the
+  # metadata file in a "Metadata" log group, so a pull_request run would put the PR title
+  # and description from the triggering event (re-runs reuse it) into this public repo's
+  # logs, where editing the description later cannot remove them. Set for the whole
+  # workflow so a build job added later is covered too.
+  BUILDX_METADATA_PROVENANCE: disabled
 
 jobs:
   build:
@@ -27,8 +37,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
+      # Every leg reports its own result; with fail-fast one failing leg
+      # cancels the others and hides whether they pass.
+      fail-fast: false
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12"]
+        # 3.13 leg: opal-common and opal-client only. Their python_requires
+        # admits 3.13; opal-server's does not, because its pinned pygit2<1.15
+        # ships no cp313 wheel and the sdist needs libgit2 1.7 headers. So this
+        # leg cannot install requirements.txt (which pulls in all three) and
+        # instead pip-installs the two relaxed packages - with pip, deliberately:
+        # uv does not enforce Requires-Python for local path sources, so a uv
+        # install here would pass even if the metadata still said <3.13.
+        include:
+          - python-version: "3.13"
+            common-and-client-only: true
 
     steps:
     - uses: actions/checkout@v2
@@ -40,8 +63,27 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         python -m pip install flake8
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-        if [ -f ./tests/requirements.txt ]; then pip install -r ./tests/requirements.txt; fi
+        if [ "${{ matrix.common-and-client-only }}" = "true" ]; then
+          pip install -e ./packages/opal-common -e ./packages/opal-client \
+            pytest pytest-asyncio pytest-rerunfailures
+        else
+          pip install -r requirements.txt
+        fi
+    # opa_argv_real_binary_test.py hands the argv OPAL generates to the REAL
+    # binary. Without it those assertions SKIP, and the inline-OPA regression
+    # they exist for is python-version-gated - it is invisible on 3.10 and fatal
+    # on 3.11+ - so they need to run on every leg of this matrix, not just
+    # wherever a developer happens to have opa installed.
+    - name: Install OPA (for the inline-OPA argv tests)
+      run: |
+        # --retry: a dropped connection mid-download failed a whole leg once (curl: (56))
+        curl -fsSL --retry 3 --retry-all-errors -o /usr/local/bin/opa \
+          "https://openpolicyagent.org/downloads/v${OPA_VERSION}/opa_linux_amd64_static"
+        chmod +x /usr/local/bin/opa
+        opa version
+      env:
+        # pinned: an unpinned `latest` would make a flag rename look like our bug
+        OPA_VERSION: 1.21.4  # keep equal to the opa-extractor image in docker/Dockerfile
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names
@@ -50,7 +92,18 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     - name: Test with pytest
       run: |
-        pytest
+        if [ "${{ matrix.common-and-client-only }}" = "true" ]; then
+          # These three need a running/importable opal-server, which this leg
+          # cannot install (see the matrix note). Everything else in the two
+          # relaxed packages runs - including the wire_compat corpus, the enum
+          # inventory sweep and the real-binary OPA argv tests.
+          pytest packages/opal-common packages/opal-client \
+            --ignore=packages/opal-common/opal_common/tests/test_config.py \
+            --ignore=packages/opal-client/opal_client/tests/data_updater_test.py \
+            --ignore=packages/opal-client/opal_client/tests/server_to_client_intergation_test.py
+        else
+          pytest
+        fi
 
   e2e-tests:
     runs-on: ubuntu-latest
@@ -78,6 +131,7 @@ jobs:
         id: build_client
         uses: docker/build-push-action@v2
         with:
+          context: .
           file: docker/Dockerfile
           push: false
           target: client
@@ -91,6 +145,7 @@ jobs:
         id: build_server
         uses: docker/build-push-action@v2
         with:
+          context: .
           file: docker/Dockerfile
           push: false
           target: server
@@ -99,6 +154,31 @@ jobs:
           load: true
           tags: |
             permitio/opal-server:test
+
+      - name: Check that no test certificate fixture is in the images
+        # .dockerignore and docker/Dockerfile's COPY --exclude both keep them out. This fails if
+        # one slips back in. These builds read .dockerignore, so they can't show that --exclude
+        # works alone; pin it, since a build that skips .dockerignore (docker build <git-url>)
+        # has only --exclude.
+        run: |
+          if [ "$(grep -cF -- 'COPY --exclude=**/tests/*.pem ./packages ./packages/' docker/Dockerfile)" -ne 2 ]; then
+            echo "::error::docker/Dockerfile must keep COPY --exclude=**/tests/*.pem in both stages, for builds that skip .dockerignore"
+            exit 1
+          fi
+          for image in permitio/opal-client:test permitio/opal-server:test; do
+            tests=$(docker run --rm --entrypoint sh "$image" -c 'find /opal/packages -path "*/tests/*" -name "*.py" | wc -l')
+            found=$(docker run --rm --entrypoint sh "$image" -c 'find /opal/packages -name "*.pem"')
+            if [ "$tests" -eq 0 ]; then
+              echo "::error::$image: no test modules under /opal/packages, so this check saw nothing"
+              exit 1
+            fi
+            if [ -n "$found" ]; then
+              echo "::error::$image carries certificate fixtures:"
+              echo "$found"
+              exit 1
+            fi
+            echo "$image: no .pem among $tests test files"
+          done
 
       - name: Set up Python
         uses: actions/setup-python@v2
@@ -153,6 +233,7 @@ jobs:
         id: build_client_alpine
         uses: docker/build-push-action@v2
         with:
+          context: .
           file: docker/Dockerfile
           push: false
           target: client-alpine
@@ -166,6 +247,7 @@ jobs:
         id: build_server_alpine
         uses: docker/build-push-action@v2
         with:
+          context: .
           file: docker/Dockerfile
           push: false
           target: server-alpine
@@ -174,6 +256,31 @@ jobs:
           load: true
           tags: |
             permitio/opal-server:test-alpine
+
+      - name: Check that no test certificate fixture is in the images
+        # .dockerignore and docker/Dockerfile's COPY --exclude both keep them out. This fails if
+        # one slips back in. These builds read .dockerignore, so they can't show that --exclude
+        # works alone; pin it, since a build that skips .dockerignore (docker build <git-url>)
+        # has only --exclude.
+        run: |
+          if [ "$(grep -cF -- 'COPY --exclude=**/tests/*.pem ./packages ./packages/' docker/Dockerfile)" -ne 2 ]; then
+            echo "::error::docker/Dockerfile must keep COPY --exclude=**/tests/*.pem in both stages, for builds that skip .dockerignore"
+            exit 1
+          fi
+          for image in permitio/opal-client:test-alpine permitio/opal-server:test-alpine; do
+            tests=$(docker run --rm --entrypoint sh "$image" -c 'find /opal/packages -path "*/tests/*" -name "*.py" | wc -l')
+            found=$(docker run --rm --entrypoint sh "$image" -c 'find /opal/packages -name "*.pem"')
+            if [ "$tests" -eq 0 ]; then
+              echo "::error::$image: no test modules under /opal/packages, so this check saw nothing"
+              exit 1
+            fi
+            if [ -n "$found" ]; then
+              echo "::error::$image carries certificate fixtures:"
+              echo "$found"
+              exit 1
+            fi
+            echo "$image: no .pem among $tests test files"
+          done
 
       - name: Create alpine docker compose file
         run: sed 's/:latest-alpine/:test-alpine/g' docker/docker-compose-example-alpine.yml > docker/docker-compose-test-alpine.yml
@@ -186,3 +293,70 @@ jobs:
 
       - name: Output container logs (alpine)
         run: docker compose -f docker/docker-compose-test-alpine.yml logs
+
+  binary-stages:
+    # The OPA and EOPA extraction stages, for both release architectures. The jobs above
+    # build amd64 only, and arm64 builds run only in on_release.yml, so a wrong opa_digest
+    # or EOPA checksum after a version bump would otherwise fail only once a release is cut.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130  # v3.7.0
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3.12.0
+      - name: Build the OPA and EOPA stages for linux/amd64 and linux/arm64
+        run: |
+          for target in opa-extractor eopa-extractor; do
+            docker buildx build --platform linux/amd64,linux/arm64 --target "$target" -f docker/Dockerfile .
+          done
+
+  ci:
+    # The branch ruleset requires only this check, so the jobs above and their
+    # matrix legs can be renamed without editing the ruleset. always(): GitHub
+    # counts a skipped required check as passing, so this job must run, and
+    # fail, when a needed job fails or is cancelled.
+    name: CI
+    if: always()
+    needs: [build, e2e-tests, e2e-tests-alpine, binary-stages]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check that the CI job needs every other job
+        run: |
+          workflow=.github/workflows/tests.yml
+          # The parentheses matter: yq reads a - b - c as a - (b - c).
+          unlisted=$(yq -r '((.jobs | keys) - ["ci"]) - .jobs.ci.needs | .[]' "$workflow")
+          unknown=$(yq -r '.jobs.ci.needs - ((.jobs | keys) - ["ci"]) | .[]' "$workflow")
+          if [[ -n "$unlisted" ]]; then
+            echo "Add these jobs to the needs list of the CI job in $workflow:" >&2
+            echo "$unlisted" >&2
+          fi
+          if [[ -n "$unknown" ]]; then
+            echo "These names in the needs list of the CI job in $workflow are not jobs:" >&2
+            echo "$unknown" >&2
+          fi
+          if [[ -n "$unlisted" || -n "$unknown" ]]; then
+            exit 1
+          fi
+      - name: Require every job to succeed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<<"$NEEDS"
+          if ! jq -e 'all(.[]; .result == "success")' <<<"$NEEDS" >/dev/null; then
+            echo "A required job did not succeed." >&2
+            exit 1
+          fi

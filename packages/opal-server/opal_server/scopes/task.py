@@ -4,13 +4,15 @@ from pathlib import Path
 from typing import Any
 
 from fastapi_websocket_pubsub import Topic
-from opal_common.logger import logger
+from opal_common.logger import configure_logs, logger, logs_configured
 from opal_common.monitoring import metrics
 from opal_server.config import opal_server_config
 from opal_server.git_fetcher import (
     GitPolicyFetcher,
     drain_git_ops,
     git_busy_count,
+    reclone_hung_enabled,
+    reclone_hung_scope_clones,
     shutdown_git_executor,
 )
 from opal_server.metrics_setup import configure_server_metrics
@@ -166,8 +168,8 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                     await self._service.sync_scopes(only_poll_updates=True)
                 except asyncio.CancelledError:
                     raise
-                except Exception as e:
-                    logger.exception(f"Periodic sync (sync_scopes) failed")
+                except Exception:
+                    logger.exception("Periodic sync (sync_scopes) failed")
 
         except asyncio.CancelledError:
             logger.info("Periodic sync cancelled")
@@ -177,16 +179,31 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         if data is not None and isinstance(data, dict):
             # Refresh single scope
             try:
-                await self._service.sync_scope(
+                source_id = await self._service.sync_scope(
                     scope_id=data["scope_id"],
                     force_fetch=data.get("force_fetch", False),
                     hinted_hash=data.get("hinted_hash"),
                     req_time=datetime.datetime.now(),
+                    # PUT /scopes sets it when the scope's source changed.
+                    notify_all=bool(data.get("repointed", False)),
+                    # A sync a bundle request asked for (its branch was missing).
+                    honor_backoff=bool(data.get("honor_backoff", False)),
                 )
             except KeyError:
                 logger.warning(
                     "Got invalid keyword args for single scope refresh: %s", data
                 )
+                return
+            if source_id is not None:
+                # Outside a pass nothing else repacks the clone this sync may
+                # have left at SCOPES_GIT_REPACK_PACK_LIMIT, and with
+                # POLICY_REFRESH_INTERVAL=0 (the default) no pass runs after
+                # the boot one. The refresh's notification is out by now, and
+                # every trigger is a task of its own, so the repack delays
+                # only the next syncs of this clone. It waits for the clone's
+                # lock, unlike a pass's, and leaves the clone to the pass
+                # when one is running: see run_due_repack.
+                await GitPolicyFetcher.run_due_repack(source_id, wait_for_lock=True)
         else:
             # Refresh all scopes. This branch is reached only from something
             # asking for a sync NOW — POST /scopes/refresh (the git-provider
@@ -203,23 +220,60 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         """Clone all scopes repositories as part as server startup.
 
         This speeds up the first sync of scopes after workers are
-        started.
+        started. scripts/gunicorn_conf.py::when_ready configures logging
+        before calling this; a caller that didn't (e.g. a custom
+        GUNICORN_CONF) gets configure_logs() here, so the preload never
+        logs through loguru's unscrubbed default handler.
         """
         if opal_server_config.SCOPES:
-            # This runs in the gunicorn MASTER (scripts/gunicorn_conf.py:when_ready)
-            # before any worker configured monitoring. Without this the git
-            # metrics emitted during preload (git_ops_in_flight, scopes.count,
-            # sources_in_backoff, git_op_failures...) go out un-namespaced and
-            # never reach the dashboards/monitors built on permit.opal.*.
+            if not logs_configured():
+                configure_logs()
+            # This runs in the gunicorn MASTER (scripts/gunicorn_conf.py::when_ready)
+            # before any worker configured monitoring. Without
+            # configure_server_metrics() the git metrics emitted during preload
+            # (git_ops_in_flight, scopes.count, sources_in_backoff,
+            # git_op_failures...) go out un-namespaced and never reach the
+            # dashboards/monitors built on permit.opal.*.
             configure_server_metrics()
             logger.info("Preloading repo clones for scopes")
 
+            scopes = ScopeRepository(RedisDB(opal_server_config.REDIS_URL))
             service = ScopesService(
                 base_dir=Path(opal_server_config.BASE_DIR),
-                scopes=ScopeRepository(RedisDB(opal_server_config.REDIS_URL)),
+                scopes=scopes,
                 pubsub_endpoint=None,
             )
-            asyncio.run(service.sync_scopes(notify_on_changes=False))
+
+            async def _preload():
+                # Before the sync, while nothing else in this container uses
+                # the clones: delete the ones whose git op was still hung when
+                # its process ended, so the sync clones them fresh, as on a new
+                # pod (see SCOPES_GIT_RECLONE_HUNG_ON_START). With the setting
+                # off it only removes leftover hung-op markers, and needs no
+                # scope list. In the same event loop as the sync, which reads
+                # the scopes again: the Redis client binds its connections to
+                # the loop that first uses them, so it cannot be reused across
+                # asyncio.run calls.
+                live_source_ids = (
+                    {
+                        GitPolicyFetcher.source_id(scope.policy)
+                        for scope in await scopes.all()
+                    }
+                    if reclone_hung_enabled()
+                    else None
+                )
+                reclone_hung_scope_clones(
+                    Path(opal_server_config.BASE_DIR), live_source_ids
+                )
+                # No repack here, where it would delay the start of every
+                # worker: the preload's fetches only mark their clones due, the
+                # marks are inherited across fork, and the leader's first pass
+                # repacks.
+                await service.sync_scopes(
+                    notify_on_changes=False, run_due_repacks=False
+                )
+
+            asyncio.run(_preload())
 
             # Bounded window for a just-finished clone/fetch to clear its in-flight
             # marker before teardown+fork. Ops still lingering (hung remote) are

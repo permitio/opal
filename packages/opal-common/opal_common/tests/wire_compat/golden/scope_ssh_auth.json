@@ -1,0 +1,168 @@
+{
+  "builder": null,
+  "case": "scope_ssh_auth",
+  "dict": {
+    "data": {
+      "entries": []
+    },
+    "policy": {
+      "auth": {
+        "auth_type": "ssh",
+        "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\\nCORPUS\\n",
+        "public_key": null,
+        "username": "git"
+      },
+      "branch": "main",
+      "bundle_ignore": null,
+      "directories": [
+        "."
+      ],
+      "extensions": [
+        ".rego",
+        ".json"
+      ],
+      "manifest": ".manifest",
+      "poll_updates": false,
+      "source_type": "git",
+      "url": "git@github.com:acme/policy.git"
+    },
+    "scope_id": "tenant-a"
+  },
+  "dict_by_alias": {
+    "data": {
+      "entries": []
+    },
+    "policy": {
+      "auth": {
+        "auth_type": "ssh",
+        "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\\nCORPUS\\n",
+        "public_key": null,
+        "username": "git"
+      },
+      "branch": "main",
+      "bundle_ignore": null,
+      "directories": [
+        "."
+      ],
+      "extensions": [
+        ".rego",
+        ".json"
+      ],
+      "manifest": ".manifest",
+      "poll_updates": false,
+      "source_type": "git",
+      "url": "git@github.com:acme/policy.git"
+    },
+    "scope_id": "tenant-a"
+  },
+  "json": {
+    "data": {
+      "entries": []
+    },
+    "policy": {
+      "auth": {
+        "auth_type": "ssh",
+        "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\\nCORPUS\\n",
+        "public_key": null,
+        "username": "git"
+      },
+      "branch": "main",
+      "bundle_ignore": null,
+      "directories": [
+        "."
+      ],
+      "extensions": [
+        ".rego",
+        ".json"
+      ],
+      "manifest": ".manifest",
+      "poll_updates": false,
+      "source_type": "git",
+      "url": "git@github.com:acme/policy.git"
+    },
+    "scope_id": "tenant-a"
+  },
+  "json_by_alias": {
+    "data": {
+      "entries": []
+    },
+    "policy": {
+      "auth": {
+        "auth_type": "ssh",
+        "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\\nCORPUS\\n",
+        "public_key": null,
+        "username": "git"
+      },
+      "branch": "main",
+      "bundle_ignore": null,
+      "directories": [
+        "."
+      ],
+      "extensions": [
+        ".rego",
+        ".json"
+      ],
+      "manifest": ".manifest",
+      "poll_updates": false,
+      "source_type": "git",
+      "url": "git@github.com:acme/policy.git"
+    },
+    "scope_id": "tenant-a"
+  },
+  "json_reparsed": {
+    "data": {
+      "entries": []
+    },
+    "policy": {
+      "auth": {
+        "auth_type": "ssh",
+        "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\\nCORPUS\\n",
+        "public_key": null,
+        "username": "git"
+      },
+      "branch": "main",
+      "bundle_ignore": null,
+      "directories": [
+        "."
+      ],
+      "extensions": [
+        ".rego",
+        ".json"
+      ],
+      "manifest": ".manifest",
+      "poll_updates": false,
+      "source_type": "git",
+      "url": "git@github.com:acme/policy.git"
+    },
+    "scope_id": "tenant-a"
+  },
+  "model": "opal_common.schemas.scopes:Scope",
+  "note": "persisted to Redis by the server; v1-written records must read under v2",
+  "payload": {
+    "data": {
+      "entries": []
+    },
+    "policy": {
+      "auth": {
+        "auth_type": "ssh",
+        "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\\nCORPUS\\n",
+        "public_key": null,
+        "username": "git"
+      },
+      "branch": "main",
+      "directories": [
+        "."
+      ],
+      "extensions": [
+        ".rego",
+        ".json"
+      ],
+      "manifest": ".manifest",
+      "poll_updates": false,
+      "source_type": "git",
+      "url": "git@github.com:acme/policy.git"
+    },
+    "scope_id": "tenant-a"
+  },
+  "pydantic": "1.10.26"
+}

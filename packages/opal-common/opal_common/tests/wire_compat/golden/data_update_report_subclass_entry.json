@@ -1,0 +1,122 @@
+{
+  "builder": "data_update_report_with_polling_entry",
+  "case": "data_update_report_subclass_entry",
+  "dict": {
+    "policy_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "reports": [
+      {
+        "entry": {
+          "config": null,
+          "data": null,
+          "dst_path": "/acl",
+          "periodic_update_interval": 30.0,
+          "save_method": "PUT",
+          "topics": [
+            "policy_data"
+          ],
+          "url": "https://backend.example.com/v1/policy/data"
+        },
+        "fetched": true,
+        "hash": "aaaaaaaa",
+        "saved": true
+      }
+    ],
+    "update_id": "dddddddd-1111-1111-1111-111111111111",
+    "user_data": {}
+  },
+  "dict_by_alias": {
+    "policy_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "reports": [
+      {
+        "entry": {
+          "config": null,
+          "data": null,
+          "dst_path": "/acl",
+          "periodic_update_interval": 30.0,
+          "save_method": "PUT",
+          "topics": [
+            "policy_data"
+          ],
+          "url": "https://backend.example.com/v1/policy/data"
+        },
+        "fetched": true,
+        "hash": "aaaaaaaa",
+        "saved": true
+      }
+    ],
+    "update_id": "dddddddd-1111-1111-1111-111111111111",
+    "user_data": {}
+  },
+  "json": {
+    "policy_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "reports": [
+      {
+        "entry": {
+          "config": null,
+          "data": null,
+          "dst_path": "/acl",
+          "periodic_update_interval": 30.0,
+          "save_method": "PUT",
+          "topics": [
+            "policy_data"
+          ],
+          "url": "https://backend.example.com/v1/policy/data"
+        },
+        "fetched": true,
+        "hash": "aaaaaaaa",
+        "saved": true
+      }
+    ],
+    "update_id": "dddddddd-1111-1111-1111-111111111111",
+    "user_data": {}
+  },
+  "json_by_alias": {
+    "policy_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "reports": [
+      {
+        "entry": {
+          "config": null,
+          "data": null,
+          "dst_path": "/acl",
+          "periodic_update_interval": 30.0,
+          "save_method": "PUT",
+          "topics": [
+            "policy_data"
+          ],
+          "url": "https://backend.example.com/v1/policy/data"
+        },
+        "fetched": true,
+        "hash": "aaaaaaaa",
+        "saved": true
+      }
+    ],
+    "update_id": "dddddddd-1111-1111-1111-111111111111",
+    "user_data": {}
+  },
+  "json_reparsed": {
+    "policy_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "reports": [
+      {
+        "entry": {
+          "config": null,
+          "data": null,
+          "dst_path": "/acl",
+          "save_method": "PUT",
+          "topics": [
+            "policy_data"
+          ],
+          "url": "https://backend.example.com/v1/policy/data"
+        },
+        "fetched": true,
+        "hash": "aaaaaaaa",
+        "saved": true
+      }
+    ],
+    "update_id": "dddddddd-1111-1111-1111-111111111111",
+    "user_data": {}
+  },
+  "model": "opal_common.schemas.data:DataUpdateReport",
+  "note": "the callback report as CallbacksReporter actually builds it: a DataSourceEntryWithPollingInterval assigned to a DataSourceEntry field",
+  "payload": {},
+  "pydantic": "1.10.26"
+}

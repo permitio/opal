@@ -1,0 +1,65 @@
+{
+  "builder": null,
+  "case": "policy_bundle_no_deleted",
+  "dict": {
+    "data_modules": [],
+    "deleted_files": null,
+    "hash": "cccccccccccccccccccccccccccccccccccccccc",
+    "manifest": [
+      "acl.rego"
+    ],
+    "old_hash": null,
+    "policy_modules": []
+  },
+  "dict_by_alias": {
+    "data_modules": [],
+    "deleted_files": null,
+    "hash": "cccccccccccccccccccccccccccccccccccccccc",
+    "manifest": [
+      "acl.rego"
+    ],
+    "old_hash": null,
+    "policy_modules": []
+  },
+  "json": {
+    "data_modules": [],
+    "deleted_files": null,
+    "hash": "cccccccccccccccccccccccccccccccccccccccc",
+    "manifest": [
+      "acl.rego"
+    ],
+    "old_hash": null,
+    "policy_modules": []
+  },
+  "json_by_alias": {
+    "data_modules": [],
+    "deleted_files": null,
+    "hash": "cccccccccccccccccccccccccccccccccccccccc",
+    "manifest": [
+      "acl.rego"
+    ],
+    "old_hash": null,
+    "policy_modules": []
+  },
+  "json_reparsed": {
+    "data_modules": [],
+    "deleted_files": null,
+    "hash": "cccccccccccccccccccccccccccccccccccccccc",
+    "manifest": [
+      "acl.rego"
+    ],
+    "old_hash": null,
+    "policy_modules": []
+  },
+  "model": "opal_common.schemas.policy:PolicyBundle",
+  "note": "deleted_files omitted - the exact field trap 1 hit",
+  "payload": {
+    "data_modules": [],
+    "hash": "cccccccccccccccccccccccccccccccccccccccc",
+    "manifest": [
+      "acl.rego"
+    ],
+    "policy_modules": []
+  },
+  "pydantic": "1.10.26"
+}

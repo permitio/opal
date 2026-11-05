@@ -1,0 +1,97 @@
+{
+  "builder": null,
+  "case": "callback_entry",
+  "dict": {
+    "config": {
+      "data": null,
+      "fetcher": null,
+      "headers": {
+        "Authorization": "Bearer corpus-token",
+        "X-Trace": "abc"
+      },
+      "is_json": true,
+      "method": "get",
+      "process_data": true
+    },
+    "key": "cb-1",
+    "url": "https://callback.example.com/hook"
+  },
+  "dict_by_alias": {
+    "config": {
+      "data": null,
+      "fetcher": null,
+      "headers": {
+        "Authorization": "Bearer corpus-token",
+        "X-Trace": "abc"
+      },
+      "is_json": true,
+      "method": "get",
+      "process_data": true
+    },
+    "key": "cb-1",
+    "url": "https://callback.example.com/hook"
+  },
+  "json": {
+    "config": {
+      "data": null,
+      "fetcher": null,
+      "headers": {
+        "Authorization": "Bearer corpus-token",
+        "X-Trace": "abc"
+      },
+      "is_json": true,
+      "method": "get",
+      "process_data": true
+    },
+    "key": "cb-1",
+    "url": "https://callback.example.com/hook"
+  },
+  "json_by_alias": {
+    "config": {
+      "data": null,
+      "fetcher": null,
+      "headers": {
+        "Authorization": "Bearer corpus-token",
+        "X-Trace": "abc"
+      },
+      "is_json": true,
+      "method": "get",
+      "process_data": true
+    },
+    "key": "cb-1",
+    "url": "https://callback.example.com/hook"
+  },
+  "json_reparsed": {
+    "config": {
+      "data": null,
+      "fetcher": null,
+      "headers": {
+        "Authorization": "Bearer corpus-token",
+        "X-Trace": "abc"
+      },
+      "is_json": true,
+      "method": "get",
+      "process_data": true
+    },
+    "key": "cb-1",
+    "url": "https://callback.example.com/hook"
+  },
+  "model": "opal_common.schemas.data:CallbackEntry",
+  "note": "POST /callbacks body; config is a declared HttpFetcherConfig",
+  "payload": {
+    "config": {
+      "data": null,
+      "fetcher": null,
+      "headers": {
+        "Authorization": "Bearer corpus-token",
+        "X-Trace": "abc"
+      },
+      "is_json": true,
+      "method": "get",
+      "process_data": true
+    },
+    "key": "cb-1",
+    "url": "https://callback.example.com/hook"
+  },
+  "pydantic": "1.10.26"
+}

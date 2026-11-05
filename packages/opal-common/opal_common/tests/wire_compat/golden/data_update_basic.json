@@ -1,0 +1,187 @@
+{
+  "builder": null,
+  "case": "data_update_basic",
+  "dict": {
+    "callback": {
+      "callbacks": []
+    },
+    "entries": [
+      {
+        "config": {
+          "data": null,
+          "fetcher": null,
+          "headers": {
+            "Authorization": "Bearer corpus-token",
+            "X-Trace": "abc"
+          },
+          "is_json": true,
+          "method": "get",
+          "process_data": true
+        },
+        "data": null,
+        "dst_path": "/acl",
+        "save_method": "PUT",
+        "topics": [
+          "policy_data",
+          "policy_data/tenant_1"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      }
+    ],
+    "id": "11111111-1111-1111-1111-111111111111",
+    "reason": "corpus: basic fetch entry"
+  },
+  "dict_by_alias": {
+    "callback": {
+      "callbacks": []
+    },
+    "entries": [
+      {
+        "config": {
+          "data": null,
+          "fetcher": null,
+          "headers": {
+            "Authorization": "Bearer corpus-token",
+            "X-Trace": "abc"
+          },
+          "is_json": true,
+          "method": "get",
+          "process_data": true
+        },
+        "data": null,
+        "dst_path": "/acl",
+        "save_method": "PUT",
+        "topics": [
+          "policy_data",
+          "policy_data/tenant_1"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      }
+    ],
+    "id": "11111111-1111-1111-1111-111111111111",
+    "reason": "corpus: basic fetch entry"
+  },
+  "json": {
+    "callback": {
+      "callbacks": []
+    },
+    "entries": [
+      {
+        "config": {
+          "data": null,
+          "fetcher": null,
+          "headers": {
+            "Authorization": "Bearer corpus-token",
+            "X-Trace": "abc"
+          },
+          "is_json": true,
+          "method": "get",
+          "process_data": true
+        },
+        "data": null,
+        "dst_path": "/acl",
+        "save_method": "PUT",
+        "topics": [
+          "policy_data",
+          "policy_data/tenant_1"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      }
+    ],
+    "id": "11111111-1111-1111-1111-111111111111",
+    "reason": "corpus: basic fetch entry"
+  },
+  "json_by_alias": {
+    "callback": {
+      "callbacks": []
+    },
+    "entries": [
+      {
+        "config": {
+          "data": null,
+          "fetcher": null,
+          "headers": {
+            "Authorization": "Bearer corpus-token",
+            "X-Trace": "abc"
+          },
+          "is_json": true,
+          "method": "get",
+          "process_data": true
+        },
+        "data": null,
+        "dst_path": "/acl",
+        "save_method": "PUT",
+        "topics": [
+          "policy_data",
+          "policy_data/tenant_1"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      }
+    ],
+    "id": "11111111-1111-1111-1111-111111111111",
+    "reason": "corpus: basic fetch entry"
+  },
+  "json_reparsed": {
+    "callback": {
+      "callbacks": []
+    },
+    "entries": [
+      {
+        "config": {
+          "data": null,
+          "fetcher": null,
+          "headers": {
+            "Authorization": "Bearer corpus-token",
+            "X-Trace": "abc"
+          },
+          "is_json": true,
+          "method": "get",
+          "process_data": true
+        },
+        "data": null,
+        "dst_path": "/acl",
+        "save_method": "PUT",
+        "topics": [
+          "policy_data",
+          "policy_data/tenant_1"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      }
+    ],
+    "id": "11111111-1111-1111-1111-111111111111",
+    "reason": "corpus: basic fetch entry"
+  },
+  "model": "opal_common.schemas.data:DataUpdate",
+  "note": "the primary publish payload; a v1 opal-client must parse whatever v2 emits",
+  "payload": {
+    "callback": {
+      "callbacks": []
+    },
+    "entries": [
+      {
+        "config": {
+          "data": null,
+          "fetcher": null,
+          "headers": {
+            "Authorization": "Bearer corpus-token",
+            "X-Trace": "abc"
+          },
+          "is_json": true,
+          "method": "get",
+          "process_data": true
+        },
+        "data": null,
+        "dst_path": "/acl",
+        "save_method": "PUT",
+        "topics": [
+          "policy_data",
+          "policy_data/tenant_1"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      }
+    ],
+    "id": "11111111-1111-1111-1111-111111111111",
+    "reason": "corpus: basic fetch entry"
+  },
+  "pydantic": "1.10.26"
+}

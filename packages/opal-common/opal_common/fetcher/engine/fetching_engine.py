@@ -9,6 +9,7 @@ from opal_common.fetcher.events import FetcherConfig, FetchEvent
 from opal_common.fetcher.fetch_provider import BaseFetchProvider
 from opal_common.fetcher.fetcher_register import FetcherRegister
 from opal_common.fetcher.logger import get_logger
+from opal_common.logging_utils.errors import describe_error
 
 logger = get_logger("engine")
 
@@ -72,9 +73,12 @@ class FetchingEngine(BaseFetchingEngine):
 
     async def __aexit__(self, exc_type, exc, tb):
         if exc is not None:
+            # Not repr(exc): for aiohttp errors it includes the request headers.
+            # The traceback renders str(exc), which does not.
             logger.error(
-                "Error occurred within FetchingEngine context",
-                exc_info=repr((exc_type, exc, tb)),
+                "Error occurred within FetchingEngine context: %s",
+                describe_error(exc),
+                exc_info=(exc_type, exc, tb),
             )
         await self.terminate_workers()
 

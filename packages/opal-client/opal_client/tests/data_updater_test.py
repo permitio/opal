@@ -11,7 +11,7 @@ import requests
 import uvicorn
 from aiohttp import ClientSession
 from fastapi_websocket_pubsub import PubSubClient
-from pydantic.json import pydantic_encoder
+from pydantic_core import to_jsonable_python
 
 # Add parent path to use local src as package for tests
 root_dir = os.path.abspath(
@@ -218,7 +218,7 @@ async def test_data_updater(server):
     # trigger an update
     res = requests.post(
         DATA_UPDATE_ROUTE,
-        data=json.dumps(update, default=pydantic_encoder),
+        data=json.dumps(update, default=to_jsonable_python),
         headers=headers,
     )
     assert res.status_code == 200
@@ -238,7 +238,7 @@ async def test_data_updater(server):
                     }
                 ],
             },
-            default=pydantic_encoder,
+            default=to_jsonable_python,
         ),
         headers=headers,
     )

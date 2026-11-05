@@ -1,0 +1,155 @@
+{
+  "builder": null,
+  "case": "store_transaction_policy",
+  "dict": {
+    "actions": [
+      "set_policies",
+      "delete_policies"
+    ],
+    "creation_time": "2026-09-15T10:00:00Z",
+    "end_time": "2026-09-15T10:00:02Z",
+    "error": "",
+    "id": "77777777-7777-7777-7777-777777777777",
+    "remotes_status": [
+      {
+        "error": null,
+        "remote_url": "https://git.example.com/p.git",
+        "succeed": true
+      },
+      {
+        "error": "GitError",
+        "remote_url": "https://git.example.com/q.git",
+        "succeed": false
+      }
+    ],
+    "success": true,
+    "transaction_type": {
+      "__enum__": "TransactionType.policy",
+      "value": "policy"
+    }
+  },
+  "dict_by_alias": {
+    "actions": [
+      "set_policies",
+      "delete_policies"
+    ],
+    "creation_time": "2026-09-15T10:00:00Z",
+    "end_time": "2026-09-15T10:00:02Z",
+    "error": "",
+    "id": "77777777-7777-7777-7777-777777777777",
+    "remotes_status": [
+      {
+        "error": null,
+        "remote_url": "https://git.example.com/p.git",
+        "succeed": true
+      },
+      {
+        "error": "GitError",
+        "remote_url": "https://git.example.com/q.git",
+        "succeed": false
+      }
+    ],
+    "success": true,
+    "transaction_type": {
+      "__enum__": "TransactionType.policy",
+      "value": "policy"
+    }
+  },
+  "json": {
+    "actions": [
+      "set_policies",
+      "delete_policies"
+    ],
+    "creation_time": "2026-09-15T10:00:00Z",
+    "end_time": "2026-09-15T10:00:02Z",
+    "error": "",
+    "id": "77777777-7777-7777-7777-777777777777",
+    "remotes_status": [
+      {
+        "error": null,
+        "remote_url": "https://git.example.com/p.git",
+        "succeed": true
+      },
+      {
+        "error": "GitError",
+        "remote_url": "https://git.example.com/q.git",
+        "succeed": false
+      }
+    ],
+    "success": true,
+    "transaction_type": "policy"
+  },
+  "json_by_alias": {
+    "actions": [
+      "set_policies",
+      "delete_policies"
+    ],
+    "creation_time": "2026-09-15T10:00:00Z",
+    "end_time": "2026-09-15T10:00:02Z",
+    "error": "",
+    "id": "77777777-7777-7777-7777-777777777777",
+    "remotes_status": [
+      {
+        "error": null,
+        "remote_url": "https://git.example.com/p.git",
+        "succeed": true
+      },
+      {
+        "error": "GitError",
+        "remote_url": "https://git.example.com/q.git",
+        "succeed": false
+      }
+    ],
+    "success": true,
+    "transaction_type": "policy"
+  },
+  "json_reparsed": {
+    "actions": [
+      "set_policies",
+      "delete_policies"
+    ],
+    "creation_time": "2026-09-15T10:00:00Z",
+    "end_time": "2026-09-15T10:00:02Z",
+    "error": "",
+    "id": "77777777-7777-7777-7777-777777777777",
+    "remotes_status": [
+      {
+        "error": null,
+        "remote_url": "https://git.example.com/p.git",
+        "succeed": true
+      },
+      {
+        "error": "GitError",
+        "remote_url": "https://git.example.com/q.git",
+        "succeed": false
+      }
+    ],
+    "success": true,
+    "transaction_type": "policy"
+  },
+  "model": "opal_common.schemas.store:StoreTransaction",
+  "note": "client-side transaction record; transaction_type is a str Enum",
+  "payload": {
+    "actions": [
+      "set_policies",
+      "delete_policies"
+    ],
+    "creation_time": "2026-09-15T10:00:00Z",
+    "end_time": "2026-09-15T10:00:02Z",
+    "id": "77777777-7777-7777-7777-777777777777",
+    "remotes_status": [
+      {
+        "remote_url": "https://git.example.com/p.git",
+        "succeed": true
+      },
+      {
+        "error": "GitError",
+        "remote_url": "https://git.example.com/q.git",
+        "succeed": false
+      }
+    ],
+    "success": true,
+    "transaction_type": "policy"
+  },
+  "pydantic": "1.10.26"
+}

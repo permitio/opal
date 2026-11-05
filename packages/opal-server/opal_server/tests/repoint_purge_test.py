@@ -91,7 +91,7 @@ def test_repoint_publishes_purge_for_old_source(tmp_path, monkeypatch):
     client = _client(repo, pubsub, tmp_path)
 
     new = _scope("s1", "https://git/new.git")
-    resp = client.put("/scopes", json=new.dict())
+    resp = client.put("/scopes", json=new.model_dump())
 
     assert resp.status_code == 201
     old_sid = GitPolicyFetcher.source_id(old.policy)
@@ -117,7 +117,7 @@ def test_put_same_source_publishes_no_purge(tmp_path, monkeypatch):
     pubsub = FakePubSubEndpoint()
     client = _client(repo, pubsub, tmp_path)
 
-    resp = client.put("/scopes", json=_scope("s1", "https://git/same.git").dict())
+    resp = client.put("/scopes", json=_scope("s1", "https://git/same.git").model_dump())
 
     assert resp.status_code == 201
     assert _purge_messages(pubsub) == []
@@ -131,7 +131,9 @@ def test_put_new_scope_publishes_no_purge(tmp_path, monkeypatch):
     pubsub = FakePubSubEndpoint()
     client = _client(repo, pubsub, tmp_path)
 
-    resp = client.put("/scopes", json=_scope("brand-new", "https://git/x.git").dict())
+    resp = client.put(
+        "/scopes", json=_scope("brand-new", "https://git/x.git").model_dump()
+    )
 
     assert resp.status_code == 201
     assert _purge_messages(pubsub) == []
@@ -165,7 +167,7 @@ def test_repoint_purge_still_publishes_when_put_raises_ambiguously(
 
     new = _scope("s1", "https://git/new.git")
     with pytest.raises(ConnectionError):
-        client.put("/scopes", json=new.dict())
+        client.put("/scopes", json=new.model_dump())
 
     old_sid = GitPolicyFetcher.source_id(old.policy)
     old_clone = str(GitPolicyFetcher.repo_clone_path(tmp_path, old.policy))
@@ -197,7 +199,7 @@ def test_put_with_unreadable_old_record_still_succeeds(tmp_path, monkeypatch):
     pubsub = FakePubSubEndpoint()
     client = _client(repo, pubsub, tmp_path)
 
-    resp = client.put("/scopes", json=_scope("s1", "https://git/new.git").dict())
+    resp = client.put("/scopes", json=_scope("s1", "https://git/new.git").model_dump())
 
     assert resp.status_code == 201
     assert _purge_messages(pubsub) == []

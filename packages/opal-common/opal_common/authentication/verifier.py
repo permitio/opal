@@ -95,17 +95,16 @@ class JWTVerifier:
                 audience=self._audience,
                 issuer=self._issuer,
             )
+        # The 401 body must not echo the presented token back: clients log it.
         except jwt.ExpiredSignatureError:
-            raise Unauthorized(token=token, description="Access token is expired")
+            raise Unauthorized(description="Access token is expired")
         except jwt.InvalidAudienceError:
             raise Unauthorized(
-                token=token, description="Invalid access token: invalid audience claim"
+                description="Invalid access token: invalid audience claim"
             )
         except jwt.InvalidIssuerError:
-            raise Unauthorized(
-                token=token, description="Invalid access token: invalid issuer claim"
-            )
+            raise Unauthorized(description="Invalid access token: invalid issuer claim")
         except jwt.DecodeError:
-            raise Unauthorized(token=token, description="Could not decode access token")
+            raise Unauthorized(description="Could not decode access token")
         except Exception:
-            raise Unauthorized(token=token, description="Unknown JWT error")
+            raise Unauthorized(description="Unknown JWT error")

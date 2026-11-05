@@ -1,7 +1,9 @@
 import asyncio
+import os
 import pathlib
 import threading
 import time
+import weakref
 from concurrent.futures import thread as cf_thread
 
 import pytest
@@ -336,7 +338,89 @@ def test_adjust_thread_count_falls_back_on_worker_shape_mismatch(monkeypatch):
         ex.shutdown(wait=False)
 
 
-def test_after_fork_child_reset_reinits_held_lock_without_deadlock():
+class _LoopKey:
+    """A weakly referenceable key, as the event loops keying
+    _live_ops_semaphores are."""
+
+
+class _ForkHandlerStandIns:
+    """A stand-in for every global ``_reset_git_executor_after_fork`` resets,
+    each holding something for it to reset.
+
+    The tests below run the handler in the pytest process, where the
+    real globals belong to the rest of the session: the busy markers and
+    single-flight lock of whatever else runs, and the repack lock's fds.
+    Installed through ``monkeypatch.context()``, so the real ones come
+    back when the context exits.
+    """
+
+    def __init__(self, m: pytest.MonkeyPatch, tmp_path: pathlib.Path):
+        import opal_server.git_fetcher as gf
+
+        self.busy_lock = threading.Lock()
+        self.loop = _LoopKey()  # held here, so its entry outlives the setup
+        self.semaphores: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary(
+            {self.loop: object()}
+        )
+        self.busy: set = set()
+        self.lock_fd = os.open(tmp_path, os.O_RDONLY)
+        self.lock_fds = {self.lock_fd}
+        self.repack_lock = threading.Lock()
+        assert self.repack_lock.acquire(blocking=False)  # a repack ran at fork
+        m.setattr(gf, "_git_busy_lock", self.busy_lock)
+        m.setattr(gf, "_live_ops_semaphores", self.semaphores)
+        m.setattr(gf, "_git_busy", self.busy)
+        m.setattr(gf, "_repack_lock_fds", self.lock_fds)
+        m.setattr(gf, "_repack_lock", self.repack_lock)
+
+    def assert_reset(self) -> None:
+        import opal_server.git_fetcher as gf
+
+        assert not self.busy_lock.locked()
+        assert len(self.semaphores) == 0, "the live-op semaphores were kept"
+        assert self.busy == set()
+        assert self.lock_fds == set()
+        with pytest.raises(OSError):
+            os.fstat(self.lock_fd)
+        assert gf._repack_lock is not self.repack_lock
+        assert not gf._repack_lock.locked()
+
+    def close(self) -> None:
+        """Close the fd the handler did not; never one it closed, whose number
+        may since belong to another open file."""
+        if self.lock_fd in self.lock_fds:
+            os.close(self.lock_fd)
+
+
+@pytest.fixture
+def real_fork_handler_state():
+    """What the rest of the session holds across these tests: a busy marker,
+    and the real globals themselves. Checked untouched afterwards."""
+    import opal_server.git_fetcher as gf
+
+    real = {
+        name: getattr(gf, name)
+        for name in (
+            "_git_busy_lock",
+            "_live_ops_semaphores",
+            "_git_busy",
+            "_repack_lock_fds",
+            "_repack_lock",
+        )
+    }
+    gf._git_busy.add("held-across-the-handler")
+    try:
+        yield
+        for name, value in real.items():
+            assert getattr(gf, name) is value, f"{name} was rebound"
+        assert "held-across-the-handler" in gf._git_busy
+    finally:
+        gf._git_busy.discard("held-across-the-handler")
+
+
+def test_after_fork_child_reset_reinits_held_lock_without_deadlock(
+    tmp_path, monkeypatch, real_fork_handler_state
+):
     import opal_server.git_fetcher as gf
     from opal_server.git_fetcher import (
         _mark_git_op_done,
@@ -345,23 +429,37 @@ def test_after_fork_child_reset_reinits_held_lock_without_deadlock():
         git_op_in_flight,
     )
 
-    _mark_git_op_started("stale-child-sid")
-    done = threading.Event()
+    with monkeypatch.context() as m:
+        stand_ins = _ForkHandlerStandIns(m, tmp_path)
+        try:
+            _mark_git_op_started("stale-child-sid")
+            done = threading.Event()
 
-    def _run_child_handler():
-        _reset_git_executor_after_fork()
-        done.set()
+            def _run_child_handler():
+                _reset_git_executor_after_fork()
+                done.set()
 
-    worker = threading.Thread(target=_run_child_handler, daemon=True)
-    gf._git_busy_lock.acquire()  # emulate the 'before' handler holding it at fork
-    try:
-        worker.start()
-        assert done.wait(2), "child reset deadlocked on the inherited-held lock"
-        assert gf._git_busy_lock.acquire(timeout=1), "lock still held after child reset"
-        gf._git_busy_lock.release()
-        assert git_op_in_flight("stale-child-sid") is False
-    finally:
-        _mark_git_op_done("stale-child-sid")
+            worker = threading.Thread(target=_run_child_handler, daemon=True)
+            # Emulate the 'before' handler holding it at fork.
+            gf._git_busy_lock.acquire()
+            try:
+                worker.start()
+                assert done.wait(2), "child reset deadlocked on the inherited-held lock"
+                assert gf._git_busy_lock.acquire(
+                    timeout=1
+                ), "lock still held after child reset"
+                gf._git_busy_lock.release()
+                assert git_op_in_flight("stale-child-sid") is False
+                stand_ins.assert_reset()
+            finally:
+                if stand_ins.busy_lock.locked():
+                    # Still held as the 'before' handler left it: the handler
+                    # never reinitialised it. Released, so that the cleanup
+                    # below fails the test instead of hanging on it.
+                    stand_ins.busy_lock.release()
+                _mark_git_op_done("stale-child-sid")
+        finally:
+            stand_ins.close()
 
 
 def test_reset_caches_skips_free_for_in_flight_source():
@@ -396,7 +494,9 @@ def test_reset_caches_skips_free_for_in_flight_source():
         GitPolicyFetcher.repo_locks.clear()
 
 
-def test_pre_fork_shutdown_keeps_busy_marker_child_reset_clears_it():
+def test_pre_fork_shutdown_keeps_busy_marker_child_reset_clears_it(
+    tmp_path, monkeypatch, real_fork_handler_state
+):
     from opal_server.git_fetcher import (
         _mark_git_op_done,
         _mark_git_op_started,
@@ -405,14 +505,22 @@ def test_pre_fork_shutdown_keeps_busy_marker_child_reset_clears_it():
         shutdown_git_executor,
     )
 
-    _mark_git_op_started("survive-sid")
-    try:
-        shutdown_git_executor()
-        assert git_op_in_flight("survive-sid") is True  # survives pre-fork teardown
-        _reset_git_executor_after_fork()
-        assert git_op_in_flight("survive-sid") is False
-    finally:
-        _mark_git_op_done("survive-sid")
+    with monkeypatch.context() as m:
+        stand_ins = _ForkHandlerStandIns(m, tmp_path)
+        try:
+            _mark_git_op_started("survive-sid")
+            try:
+                shutdown_git_executor()
+                # Survives the pre-fork teardown.
+                assert git_op_in_flight("survive-sid") is True
+                stand_ins.semaphores[stand_ins.loop] = object()  # refilled
+                _reset_git_executor_after_fork()
+                assert git_op_in_flight("survive-sid") is False
+                stand_ins.assert_reset()
+            finally:
+                _mark_git_op_done("survive-sid")
+        finally:
+            stand_ins.close()
 
 
 def test_drain_git_ops_returns_true_when_no_ops():

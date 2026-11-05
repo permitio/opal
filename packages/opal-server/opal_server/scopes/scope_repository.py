@@ -28,7 +28,7 @@ class ScopeRepository:
             if not value:
                 # The scan lists keys and then reads each one, so a scope
                 # deleted in between comes back as None. Passing that to
-                # parse_raw raises ValidationError and kills the WHOLE scan —
+                # model_validate_json raises ValidationError and kills the WHOLE scan —
                 # one concurrently-deleted scope would abort an entire
                 # sync_scopes pass, and poison the sibling check a delete's
                 # purge depends on (observed under the bed's churn: two
@@ -39,7 +39,7 @@ class ScopeRepository:
                 # parse still raises, because that is corruption and should not
                 # be silently skipped.
                 continue
-            scope = Scope.parse_raw(value)
+            scope = Scope.model_validate_json(value)
             scopes.append(scope)
 
         return scopes
@@ -49,7 +49,7 @@ class ScopeRepository:
         value = await self._redis_db.get(key)
 
         if value:
-            return Scope.parse_raw(value)
+            return Scope.model_validate_json(value)
         else:
             raise ScopeNotFoundError(scope_id)
 

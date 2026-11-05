@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 import shutil
 import signal
 from abc import ABC, abstractmethod
@@ -13,6 +14,42 @@ from opal_client.logger import logger
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 AsyncCallback = Callable[[], Coroutine]
+
+# cedar-agent takes its auth token as the argument after ``-a``/``--authentication``.
+_CREDENTIAL_VALUE_FLAGS = frozenset({"-a", "--authentication"})
+_CREDENTIAL_FLAG_NAME_RE = re.compile(r"token|secret|password|passphrase", re.I)
+
+
+def redact_engine_arguments(arguments: List[str]) -> List[str]:
+    """Mask credential values in an engine command line, for logging only.
+
+    Masks the argument after ``-a``/``--authentication`` or after any flag
+    whose name matches ``_CREDENTIAL_FLAG_NAME_RE``, and the value of such a flag
+    in ``--flag=value`` form. ``--authentication=<scheme>`` (OPA's form, whose
+    value is a scheme name and not a credential) is left as is.
+    """
+    redacted = []
+    mask_next = False
+    for arg in arguments:
+        if mask_next:
+            redacted.append("***")
+            mask_next = False
+            continue
+        flag, sep, _ = arg.partition("=")
+        is_flag = flag.startswith("-")
+        if is_flag and sep and _CREDENTIAL_FLAG_NAME_RE.search(flag):
+            redacted.append(f"{flag}=***")
+            continue
+        redacted.append(arg)
+        mask_next = (
+            is_flag
+            and not sep
+            and (
+                arg in _CREDENTIAL_VALUE_FLAGS
+                or _CREDENTIAL_FLAG_NAME_RE.search(arg) is not None
+            )
+        )
+    return redacted
 
 
 class PolicyEngineRunner(ABC):
@@ -177,8 +214,9 @@ class PolicyEngineRunner(ABC):
 
         executable_path = self.get_executable_path()
         arguments = self.get_arguments()
+        logged_arguments = " ".join(redact_engine_arguments(arguments))
         logger.info(
-            f"Running policy engine inline: {executable_path} {' '.join(arguments)}"
+            f"Running policy engine inline: {executable_path} {logged_arguments}"
         )
         self._process = await asyncio.create_subprocess_exec(
             executable_path,

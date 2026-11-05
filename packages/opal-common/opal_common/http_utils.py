@@ -23,6 +23,52 @@ SENSITIVE_QUERY_PARAMS = frozenset(
 #: Matches ``scheme://userinfo@`` anywhere in free text.
 _USERINFO_RE = re.compile(r"(?P<scheme>[a-zA-Z][a-zA-Z0-9+.\-]*://)[^/@\s]+@")
 
+#: Matches ``?token=value`` (or ``&``/``#``/``;``) for a sensitive param in free text.
+#: An already-masked ``***`` value matches alone, so text right after it (e.g. a
+#: ``:``) survives a second pass.
+_SENSITIVE_PARAM_RE = re.compile(
+    r"(?P<prefix>[?&#;](?:"
+    + "|".join(sorted(SENSITIVE_QUERY_PARAMS))
+    + r")=)(?:\*\*\*|[^\s&#;'\"<>\\)\]}]*)",
+    re.IGNORECASE,
+)
+
+#: An Authorization header value as rendered by a dict/multidict repr or JSON
+#: (including JSON embedded in a JSON string, hence the optional backslash).
+_QUOTED_AUTH_HEADER_RE = re.compile(
+    r"(?P<prefix>(?P<q>\\?[\"'])(?:proxy-)?authorization(?P=q)\s*:\s*(?P<vq>\\?[\"']))"
+    r".*?(?P=vq)",
+    re.IGNORECASE,
+)
+
+#: An Authorization header in ``name: value`` form; the value is an optional auth
+#: scheme plus one token (or an already-masked ``***``, as above).
+_HEADER_AUTH_RE = re.compile(
+    r"(?P<prefix>\b(?:proxy-)?authorization\s*:\s*)"
+    r"(?:\*\*\*|(?:(?:bearer|basic|token|digest)\s+)?[^\s'\",;\\]+)",
+    re.IGNORECASE,
+)
+
+#: A ``Bearer``/``Basic`` credential anywhere in free text.
+_AUTH_SCHEME_RE = re.compile(
+    r"(?P<prefix>\b(?:bearer|basic)\s+)(?P<token>[A-Za-z0-9][A-Za-z0-9\-._~+/]*=*)",
+    re.IGNORECASE,
+)
+
+
+#: A lowercase word after Bearer/Basic at least this long is taken for a
+#: credential rather than prose.
+_CREDENTIAL_WORD_MIN_LEN = 16
+
+
+def _mask_auth_scheme_token(match: "re.Match[str]") -> str:
+    token = match.group("token")
+    # A short lowercase word is prose ("Bearer token is not valid"), not a credential.
+    is_word = token.isalpha() and token.islower()
+    if is_word and len(token) < _CREDENTIAL_WORD_MIN_LEN:
+        return match.group(0)
+    return f"{match.group('prefix')}***"
+
 
 def _mask_sensitive_params(component: str) -> Tuple[str, bool]:
     """Mask values of known sensitive params in a raw query/fragment component.
@@ -96,9 +142,10 @@ def redact_url_in_text(text: str, url: str = "") -> str:
     """Redact embedded credentials from free text such as a git error message.
 
     Replaces verbatim occurrences of a known ``url`` with its fully redacted
-    form (so query-string tokens of that URL are masked too), then scrubs any
-    remaining ``scheme://user:password@`` userinfo found anywhere in the text
-    (a regex, so it is robust to the exact URL form git happens to print).
+    form, then scrubs any remaining ``scheme://user:password@`` userinfo and
+    the values of ``SENSITIVE_QUERY_PARAMS`` (``?token=...``, ``&key=...``)
+    found anywhere in the text - regexes, so they are robust to the exact URL
+    form git or aiohttp happens to print.
 
     The known-URL replacement runs *first*: the regex rewrites
     ``user:pw@`` -> ``***@``, which would otherwise destroy the verbatim ``url``
@@ -110,7 +157,32 @@ def redact_url_in_text(text: str, url: str = "") -> str:
     if url:
         scrubbed = scrubbed.replace(url, redact_url(url))
     scrubbed = _USERINFO_RE.sub(lambda m: f"{m.group('scheme')}***@", scrubbed)
+    scrubbed = _SENSITIVE_PARAM_RE.sub(lambda m: f"{m.group('prefix')}***", scrubbed)
     return scrubbed
+
+
+def redact_sensitive_text(text: str, url: str = "") -> str:
+    """Mask credentials anywhere in free text, e.g. a formatted log record.
+
+    On top of ``redact_url_in_text`` this masks Authorization /
+    Proxy-Authorization header values - as rendered in dict and multidict
+    reprs (``'Authorization': '...'``), JSON (``"Authorization": "..."``) and
+    header form (``Authorization: ...``) - and ``Bearer``/``Basic`` credentials
+    wherever they appear. Matching is case-insensitive and the result is
+    idempotent. A known ``url`` is redacted as a whole first, as in
+    ``redact_url_in_text``.
+
+    Never raises: this runs on every log record, so a non-string input is
+    returned unchanged rather than breaking logging.
+    """
+    if not text or not isinstance(text, str):
+        return text
+    scrubbed = redact_url_in_text(text, url)
+    scrubbed = _QUOTED_AUTH_HEADER_RE.sub(
+        lambda m: f"{m.group('prefix')}***{m.group('vq')}", scrubbed
+    )
+    scrubbed = _HEADER_AUTH_RE.sub(lambda m: f"{m.group('prefix')}***", scrubbed)
+    return _AUTH_SCHEME_RE.sub(_mask_auth_scheme_token, scrubbed)
 
 
 def is_http_error_response(

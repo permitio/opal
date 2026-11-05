@@ -15,7 +15,7 @@ defects, and a distributed reclaim policy wants its own change) — see the
 follow-up, **PER-15612**. PR3 delivers the offline-repo resilience and the
 fleet-wide purge; the sweep gates flip when PER-15612 lands.
 
-Of the 22 rows below: **18 pass outright**; the three orphan-sweep gates are red
+Of the 23 rows below: **19 pass outright**; the three orphan-sweep gates are red
 by design (`test_orphan_clone_dir_is_reclaimed` and
 `test_redis_wiped_boot_reclaims_clones` fail outright,
 `test_shard_reconfig_still_serves_but_orphans_old_clones` passes its green half
@@ -56,7 +56,9 @@ python -m pytest -v --boot-scopes=50              # full set
 python -m pytest test_leak.py -v --boot-scopes=20 # just the leak gates
 ```
 Useful flags: `--boot-scopes=N` (any N), `--keep-stack` (skip teardown),
-env `BOOT_TARGET_SECONDS=120` (tighten the boot gate).
+env `BOOT_TARGET_SECONDS=120` (tighten the boot gate), env
+`REPACK_GATE_SERVER_LIMIT=0` (run the repack gate with repacking off; it must
+fail).
 
 ## Expected behavior
 
@@ -86,6 +88,7 @@ Gate-coverage matrix (what each flagship test actually does):
 | `test_shard_reconfig_still_serves_but_orphans_old_clones` | **half-gate (S5, orphan sweep)** | Green half PASSES — serving survives a `SCOPES_REPO_CLONES_SHARDS` reconfig (re-clone under new ids); red half FAILS (PER-15612) — the old-shard dirs are orphaned until the orphan sweep lands |
 | `test_force_push_rewrite_recovers` | **characterization** | PASSES — a force-pushed (rewritten) head is picked up on refresh, pinning today's behavior (pygit2's forced default fetch refspec plus `set_target` moving the local ref) |
 | `test_deleted_branch_keeps_serving_last_head` | **characterization** | PASSES — deleting the tracked branch upstream doesn't crash anything; fetch doesn't prune, so OPAL silently keeps serving the last known head (documented, not necessarily desirable, behavior) |
+| `test_pushes_keep_pack_count_bounded` | **gate (scope clone repack)** | PASSES since the scope clone repack — 10 pushes to one repo, each followed by a refresh, keep the clone's `pack-*.pack` count at or below `SCOPES_GIT_REPACK_PACK_LIMIT` (5, set for this test's container only via `OPAL_TEST_REPACK_PACK_LIMIT`) while the scope serves the last push, and the count must build up to the limit and drop back, with at least one repack of that clone in the server log ending at one pack (so a clone it cannot see, or fetches that stop writing packs, fail it instead of passing it); measured `[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3]`, two repacks of 5 packs into 1. Fails without it, where libgit2 writes one pack per fetch and never merges them, so the count reaches the push count plus the clone's own pack: `REPACK_GATE_SERVER_LIMIT=0` runs it with repacking off, which for this gate is `origin/master`'s behaviour, and measured `[1, 2, …, 11]`, no repack logged, FAIL. Prints each repack's duration and pack-dir bytes before/after from the server log |
 
 ## Invariants
 `invariants.py` defines quiescence invariants I1-I6, checked at every `opal`-fixture
@@ -144,3 +147,8 @@ Docker + docker compose v2, plus host Python with `pytest pytest-timeout request
   clones/fetches against the `blackhole` sidecar fail fast — the code default
   exceeds this bed's serve windows, so offline-repo/timeout gates need the
   short timeout to observe a healthy scope recover within their deadlines.
+- `OPAL_SCOPES_GIT_REPACK_PACK_LIMIT` stays at the code default (50) for the
+  bed. Only `test_pushes_keep_pack_count_bounded` lowers it (to 5, through
+  `OPAL_TEST_REPACK_PACK_LIMIT`) for its own container and recreates the
+  server at the default afterwards, so the RSS guards and every other gate run
+  with the production threshold.

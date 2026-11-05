@@ -1,0 +1,93 @@
+{
+  "builder": null,
+  "case": "access_token",
+  "dict": {
+    "details": {
+      "claims": {
+        "permit_client_id": "pdp-1"
+      },
+      "expired": {
+        "__datetime__": "2027-09-15T10:00:00+00:00"
+      },
+      "id": {
+        "__uuid__": "bbbbbbbb-9999-9999-9999-999999999999"
+      },
+      "type": {
+        "__enum__": "PeerType.client",
+        "value": "client"
+      }
+    },
+    "token": "eyJhbGciOiJSUzI1NiJ9.corpus.signature",
+    "type": "bearer"
+  },
+  "dict_by_alias": {
+    "details": {
+      "claims": {
+        "permit_client_id": "pdp-1"
+      },
+      "expired": {
+        "__datetime__": "2027-09-15T10:00:00+00:00"
+      },
+      "id": {
+        "__uuid__": "bbbbbbbb-9999-9999-9999-999999999999"
+      },
+      "type": {
+        "__enum__": "PeerType.client",
+        "value": "client"
+      }
+    },
+    "token": "eyJhbGciOiJSUzI1NiJ9.corpus.signature",
+    "type": "bearer"
+  },
+  "json": {
+    "details": {
+      "claims": {
+        "permit_client_id": "pdp-1"
+      },
+      "expired": "2027-09-15T10:00:00+00:00",
+      "id": "bbbbbbbb-9999-9999-9999-999999999999",
+      "type": "client"
+    },
+    "token": "eyJhbGciOiJSUzI1NiJ9.corpus.signature",
+    "type": "bearer"
+  },
+  "json_by_alias": {
+    "details": {
+      "claims": {
+        "permit_client_id": "pdp-1"
+      },
+      "expired": "2027-09-15T10:00:00+00:00",
+      "id": "bbbbbbbb-9999-9999-9999-999999999999",
+      "type": "client"
+    },
+    "token": "eyJhbGciOiJSUzI1NiJ9.corpus.signature",
+    "type": "bearer"
+  },
+  "json_reparsed": {
+    "details": {
+      "claims": {
+        "permit_client_id": "pdp-1"
+      },
+      "expired": "2027-09-15T10:00:00+00:00",
+      "id": "bbbbbbbb-9999-9999-9999-999999999999",
+      "type": "client"
+    },
+    "token": "eyJhbGciOiJSUzI1NiJ9.corpus.signature",
+    "type": "bearer"
+  },
+  "model": "opal_common.schemas.security:AccessToken",
+  "note": "POST /token response; details is the Optional that trap 1 hit",
+  "payload": {
+    "details": {
+      "claims": {
+        "permit_client_id": "pdp-1"
+      },
+      "expired": "2027-09-15T10:00:00+00:00",
+      "id": "bbbbbbbb-9999-9999-9999-999999999999",
+      "type": "client"
+    },
+    "token": "eyJhbGciOiJSUzI1NiJ9.corpus.signature",
+    "type": "bearer"
+  },
+  "pydantic": "1.10.26"
+}

@@ -26,11 +26,8 @@ from opal_client.policy_store.policy_store_client_factory import (
 )
 from opal_common.async_utils import TasksPool, repeated_call
 from opal_common.config import opal_common_config
-from opal_common.http_utils import (
-    is_http_error_response,
-    redact_url,
-    redact_url_in_text,
-)
+from opal_common.http_utils import is_http_error_response, redact_url
+from opal_common.logging_utils.errors import describe_error
 from opal_common.schemas.data import (
     DataEntryReport,
     DataSourceConfig,
@@ -42,7 +39,7 @@ from opal_common.schemas.store import TransactionType
 from opal_common.security.sslcontext import get_custom_ssl_context
 from opal_common.synchronization.hierarchical_lock import HierarchicalLock
 from opal_common.utils import get_authorization_header
-from pydantic.json import pydantic_encoder
+from pydantic_core import to_jsonable_python
 
 
 class DataUpdater:
@@ -191,7 +188,7 @@ class DataUpdater:
             reason = "Periodic update"
 
         logger.info("Updating policy data, reason: {reason}", reason=reason)
-        update = DataUpdate.parse_obj(data)
+        update = DataUpdate.model_validate(data)
         await self.trigger_data_update(update)
 
     async def trigger_data_update(self, update: DataUpdate):
@@ -242,7 +239,7 @@ class DataUpdater:
             ) as session:
                 response = await session.get(url, **self._ssl_context_kwargs)
                 if response.status == 200:
-                    return DataSourceConfig.parse_obj(await response.json())
+                    return DataSourceConfig.model_validate(await response.json())
                 else:
                     error_details = await response.json()
                     raise ClientError(
@@ -451,7 +448,7 @@ class DataUpdater:
         """
         try:
             if not isinstance(data, str):
-                data = json.dumps(data, default=pydantic_encoder)
+                data = json.dumps(data, default=to_jsonable_python)
             return hashlib.sha256(data.encode("utf-8")).hexdigest()
         except Exception:
             # Don't interpolate ``data`` - it may be an inline credential-bearing
@@ -564,7 +561,7 @@ class DataUpdater:
             store_transaction._update_remote_status(
                 url=redact_url(entry.url),
                 status=False,
-                error=redact_url_in_text(str(e), entry.url),
+                error=describe_error(e, entry.url),
             )
             return DataEntryReport(entry=entry, fetched=False, saved=False)
 
@@ -578,7 +575,7 @@ class DataUpdater:
                 url=redact_url(entry.url),
                 status=False,
                 error=f"Failed to save data to policy store: "
-                f"{redact_url_in_text(str(e), entry.url)}",
+                f"{describe_error(e, entry.url)}",
             )
             return DataEntryReport(
                 entry=entry, hash=self.calc_hash(result), fetched=True, saved=False
@@ -618,7 +615,7 @@ class DataUpdater:
             )
             raise Exception(
                 f"Failed to fetch data for entry {redact_url(entry.url)}: "
-                f"{redact_url_in_text(str(e), entry.url)}"
+                f"{describe_error(e, entry.url)}"
             )
 
         if result is None:
@@ -733,7 +730,7 @@ class DataUpdater:
         """
         logger.info(
             "Saving fetched data to policy-store: source url='{url}', destination path='{path}'",
-            url=url,
+            url=redact_url(url),
             path=path or "/",
         )
         if save_method == "PUT":

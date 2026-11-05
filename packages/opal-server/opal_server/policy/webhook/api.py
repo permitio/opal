@@ -4,6 +4,7 @@ from urllib.parse import SplitResult, urlparse
 from fastapi import APIRouter, Depends, Request, status
 from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
 from opal_common.authentication.deps import JWTAuthenticator
+from opal_common.http_utils import redact_url
 from opal_common.logger import logger
 from opal_common.schemas.webhook import GitWebhookRequestParams
 from opal_server.config import PolicySourceTypes, opal_server_config
@@ -111,7 +112,7 @@ def get_webhook_router(
             ):
                 logger.info(
                     "triggered webhook on repo: {repo}",
-                    repo=opal_server_config.POLICY_REPO_URL,
+                    repo=redact_url(policy_repo_url),
                     hook_event=event,
                 )
                 # Check if this it the right event (push)
@@ -121,12 +122,12 @@ def get_webhook_router(
                 return {
                     "status": "ok",
                     "event": event,
-                    "repo_url": opal_server_config.POLICY_REPO_URL,
+                    "repo_url": redact_url(policy_repo_url),
                 }
             else:
                 logger.warning(
                     "Got an unexpected webhook not matching the tracked repo ({repo}) - with these URLS: {urls} and those names: {names}.",
-                    repo=opal_server_config.POLICY_REPO_URL,
+                    repo=redact_url(policy_repo_url),
                     urls=urls,
                     names=names,
                     hook_event=event,
@@ -138,7 +139,7 @@ def get_webhook_router(
             return {
                 "status": "ok",
                 "event": "webhook_trigger",
-                "repo_url": opal_server_config.POLICY_BUNDLE_URL,
+                "repo_url": redact_url(opal_server_config.POLICY_BUNDLE_URL),
             }
 
         return {"status": "ignored", "event": event}

@@ -38,6 +38,27 @@ This example assumes that:
 * The master token of your deployment is `MY_MASTER_TOKEN`.
   * In real life, use a cryptographically secure secret. If you followed our tutorials while deploying OPAL, you probably generated one with `opal-server generate-secret`.
 
+:::warning Breaking change in OPAL 0.10: numbers are no longer coerced to strings
+OPAL 0.10 moves to pydantic v2, which **no longer converts numbers into
+strings**. The rule is general: **any string-typed field on any OPAL request
+body now rejects a numeric value**, where 0.9.x accepted it and cast it.
+
+That includes `DataUpdate.id` and `reason`, and per entry `url`, `dst_path`,
+`save_method` and each item of `topics` — but do not audit against a list. If a
+field is typed as a string, send a string.
+
+```jsonc
+// rejected from 0.10 — 422 "Input should be a valid string"
+{"id": 12345, "reason": 42, "entries": [{"url": "https://api/data", "dst_path": 7}]}
+
+// correct
+{"id": "12345", "reason": "42", "entries": [{"url": "https://api/data", "dst_path": "7"}]}
+```
+
+A numeric `reason` — a ticket or revision number — is the most likely to bite.
+Cast before sending.
+:::
+
 ## How to trigger updates
 There are a few ways to trigger updates:
 

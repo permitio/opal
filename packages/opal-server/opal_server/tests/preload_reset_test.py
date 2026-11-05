@@ -12,13 +12,23 @@ stay) empty.
 """
 import asyncio
 
+import opal_common.logger as opal_common_logger
 import opal_server.scopes.task as task_module
 import pytest
 from opal_server.config import opal_server_config
 
 
 @pytest.fixture(autouse=True)
-def _stub_redis_layer(monkeypatch):
+def _logging_already_configured(monkeypatch):
+    """scripts/gunicorn_conf.py::when_ready configures logging before it calls
+    preload_scopes(), so the preload keeps the sinks already in place. Without
+    this, the first preload in a session runs the real configure_logs(), whose
+    logger.remove() drops the capture sinks the drain-warning tests add."""
+    monkeypatch.setattr(opal_common_logger, "_logs_configured", True)
+
+
+@pytest.fixture(autouse=True)
+def _stub_redis_layer(monkeypatch, preload_sandbox):
     """preload_scopes() evaluates ``ScopeRepository(RedisDB(...))`` before the
     stubbed ScopesService ever sees the arguments, so without this stub these
     unit tests construct a REAL redis client. That is wrong in itself, and on
@@ -35,7 +45,6 @@ def _stub_redis_layer(monkeypatch):
     where each file needs it.
     """
     monkeypatch.setattr(task_module, "RedisDB", lambda url: object())
-    monkeypatch.setattr(task_module, "ScopeRepository", lambda db: object())
     yield
 
 

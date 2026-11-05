@@ -5,7 +5,7 @@ from typing import List, Optional
 
 import git
 from opal_common.security.tarsafe import TarSafe
-from pydantic.error_wrappers import ValidationError
+from pydantic import ValidationError
 
 
 class TarFileToLocalGitExtractor:

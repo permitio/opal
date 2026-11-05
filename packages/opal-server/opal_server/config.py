@@ -33,7 +33,10 @@ class OpalServerConfig(Confi):
         description="The local WebSocket URL for OPAL",
     )
     OPAL_WS_TOKEN = confi.str(
-        "WS_TOKEN", "THIS_IS_A_DEV_SECRET", description="The WebSocket token for OPAL"
+        "WS_TOKEN",
+        "THIS_IS_A_DEV_SECRET",
+        description="The WebSocket token for OPAL",
+        sensitive=True,
     )
     CLIENT_LOAD_LIMIT_NOTATION = confi.str(
         "CLIENT_LOAD_LIMIT_NOTATION",
@@ -133,6 +136,7 @@ class OpalServerConfig(Confi):
         "AUTH_PRIVATE_KEY_PASSPHRASE",
         None,
         description="The passphrase for the private key",
+        sensitive=True,
     )
 
     AUTH_PRIVATE_KEY = confi.delay(
@@ -142,6 +146,7 @@ class OpalServerConfig(Confi):
             key_format=AUTH_PRIVATE_KEY_FORMAT,
             passphrase=AUTH_PRIVATE_KEY_PASSPHRASE,
             description="The private key for authentication",
+            sensitive=True,
         )
     )
 
@@ -157,7 +162,10 @@ class OpalServerConfig(Confi):
     )
 
     AUTH_MASTER_TOKEN = confi.str(
-        "AUTH_MASTER_TOKEN", None, description="The master token for authentication"
+        "AUTH_MASTER_TOKEN",
+        None,
+        description="The master token for authentication",
+        sensitive=True,
     )
 
     # policy source watcher
@@ -199,7 +207,10 @@ class OpalServerConfig(Confi):
         description="The main branch of the policy repository",
     )
     POLICY_REPO_SSH_KEY = confi.str(
-        "POLICY_REPO_SSH_KEY", None, description="The SSH key for the policy repository"
+        "POLICY_REPO_SSH_KEY",
+        None,
+        description="The SSH key for the policy repository",
+        sensitive=True,
     )
     POLICY_REPO_MANIFEST_PATH = confi.str(
         "POLICY_REPO_MANIFEST_PATH",
@@ -224,6 +235,18 @@ class OpalServerConfig(Confi):
         "until it recovers or the process restarts); SCOPES_GIT_MAX_ZOMBIES "
         "bounds how many such threads accumulate. Either way one unreachable repo "
         "never blocks boot or other scopes (0 = no timeout).",
+    )
+    SCOPES_GIT_FETCH_PRUNE = confi.bool(
+        "SCOPES_GIT_FETCH_PRUNE",
+        False,
+        description="Whether a scope fetch prunes: a branch deleted on the remote "
+        "then leaves the clone, so a scope naming it misses instead of being "
+        "served the deleted branch's last head. Off by default: a pruned fetch "
+        "compares every local and remote ref, which on a clone with tens of "
+        "thousands of branches adds seconds per fetch under the lock every scope "
+        "on that clone shares (about 2 s on 5.5 s at 61,000 refs). Only "
+        "`refs/remotes/<remote>/*` are pruned; the scopes' "
+        "`refs/heads/scopes/*` stay.",
     )
     SCOPES_GIT_MAX_WORKERS = confi.int(
         "SCOPES_GIT_MAX_WORKERS",
@@ -251,6 +274,41 @@ class OpalServerConfig(Confi):
         "past this bound are left running on their daemon threads and their cached "
         "handles are left unfreed by the pre-fork cache reset, avoiding a use-after-free "
         "(0 = don't wait).",
+    )
+    SCOPES_GIT_RECLONE_HUNG_ON_START = confi.bool(
+        "SCOPES_GIT_RECLONE_HUNG_ON_START",
+        False,
+        description="Whether a server start clones again the scope clones on which a git "
+        "op was still hung when its server process ended. A fetch or clone "
+        "that runs past SCOPES_GIT_FETCH_TIMEOUT keeps running on its daemon "
+        "thread, and the clone is not fetched again while it lasts. With this "
+        "on (and SCOPES_GIT_FETCH_TIMEOUT positive), such an op writes a "
+        "marker file of its own, with a unique name, in a directory beside "
+        "the clone (git_sources/SOURCE_ID.hung/, SOURCE_ID being the clone's "
+        "directory name) and removes it when it returns. A marker whose "
+        "process ended first (a container restart, or a worker killed mid-op) "
+        "stays until a fetch or clone of that source succeeds within its "
+        "timeout, which removes them all; a fetch that fails quickly (revoked "
+        "credentials, a deleted repository) or succeeds only after its "
+        "timeout does not remove it. With this off a start removes them all. "
+        "A container restarted while an op was still hung (by an "
+        "orchestrator's health check, say) keeps its clones on its volume and "
+        "would otherwise go back to that clone, while a new pod (empty "
+        "volume) clones fresh. The pre-fork scope preload, which "
+        "scripts/gunicorn_conf.py runs in the gunicorn master before any "
+        "worker exists (as the Docker image does; opal-server run has no "
+        "preload), deletes every clone with a marker before its sync, so the "
+        "sync clones it fresh, as on a new pod: if that clone fails or hangs "
+        "too (the remote is still unreachable), the source has no clone, and "
+        "its scopes no policy, until a clone succeeds, again as on a new pod. "
+        "When the marked clones of the current scopes' sources span at least "
+        "two of the repositories those scopes have a clone of on disk, and at "
+        "least half of them, the hang is most likely the git provider's and "
+        "nothing is deleted, so every scope keeps its last fetched policy; "
+        "nothing is deleted either when no clone on disk is one the current "
+        "scopes use. Do not share BASE_DIR between running servers with this "
+        "on: any marker counts, whoever wrote it. Each clone deleted "
+        "increments opal_server.scopes.hung_clone_recloned.",
     )
     SCOPES_GIT_MAX_ZOMBIES = confi.int(
         "SCOPES_GIT_MAX_ZOMBIES",
@@ -285,10 +343,12 @@ class OpalServerConfig(Confi):
         "nothing else records a failure: without it every pass re-attempts every "
         "dead repo, and so does every duplicate scope sharing that repo — a "
         "handful of dead repositories can account for thousands of clone attempts "
-        "per hour. Only the periodic pass and the boot preload honour it (in "
+        "per hour. The periodic pass and the boot preload honour it (in "
         "both phases, and re-checked under the source lock, so duplicates of a "
-        "source that fails in a pass cost one attempt, not one per scope): an "
-        "explicit POST /scopes/:scope_id/refresh, POST /scopes/refresh or "
+        "source that fails in a pass cost one attempt, not one per scope), and so "
+        "does the sync GET /scopes/:scope_id/policy requests for a scope whose "
+        "branch is missing from its clone (SCOPES_POLICY_BRANCH_REFRESH_INTERVAL); "
+        "an explicit POST /scopes/:scope_id/refresh, POST /scopes/refresh or "
         "PUT /scopes attempts the source immediately, so an operator who has "
         "just repaired credentials recovers at once, and any successful clone or "
         "fetch clears both the delay and the consecutive-failure count. The state "
@@ -322,6 +382,101 @@ class OpalServerConfig(Confi):
         "the base (one pass at a time), never inert. Lowering the cap at "
         "runtime is not retroactive for delays already armed.",
     )
+    SCOPES_GIT_REPACK_PACK_LIMIT = confi.int(
+        "SCOPES_GIT_REPACK_PACK_LIMIT",
+        50,
+        description="Pack-file count at which a scope clone is repacked: once a "
+        "successful fetch leaves the clone holding at least this many pack files, "
+        "git repack -a -d -k runs on it at the end of the sync pass, after the "
+        "pass has sent its notifications, merging them into a single pack and "
+        "dropping the duplicate objects. A refresh of a single scope (POST "
+        "/scopes/:scope_id/refresh, or a PUT /scopes) repacks its clone right "
+        "after its own sync, once its notification is out, so it repacks even "
+        "when no periodic pass runs (POLICY_REFRESH_INTERVAL=0). A pass never "
+        "waits for a clone another sync or refresh is using: it leaves that clone "
+        "to the next pass or refresh. No repack starts while a sync pass runs in "
+        "the same process: the pass that ends last repacks what the others left. "
+        "Objects no branch reaches any more, those "
+        "of branches deleted upstream included, are kept in the merged pack "
+        "rather than deleted, so that a repack never removes an object a fetch in "
+        "another process is about to point a branch at; the cost is that they "
+        "stay until the clone is cloned again. It exists because the scopes git "
+        "fetcher (pygit2 on libgit2) writes one new pack file per fetch and never "
+        "consolidates them, and a fetch of a repository with many branches can "
+        "re-download history the clone already has, so without it the clone's "
+        "disk grows without bound until the volume holding the clones fills. It "
+        "only affects scopes mode (SCOPES=true): the classic policy-repo path "
+        "fetches with the git command line, which cleans up its own packs. The "
+        "git binary must be on PATH (the official images ship it). The repack "
+        "runs inside the opal-server container, one clone at a time per pod, "
+        "enforced with an flock on the directory holding the clones: that "
+        "directory must be on a local filesystem, or on NFS mounted with "
+        "local_lock=flock, since where flock fails every repack fails and is "
+        "retried once an hour. Its memory counts against the container's limit: "
+        "allow about 0.5 KB per object of the repository (measured 1.2 GB for a "
+        "61k-branch repository of 2.3 million objects, 0.8 GB for 1.6 million). On "
+        "Linux git runs with oom_score_adj 1000, so when the container runs out "
+        "of memory the kernel picks the repack before an opal-server worker. "
+        "Where the whole container is the unit of an OOM kill (Kubernetes on "
+        "cgroup v2, unless the kubelet sets singleProcessOOMKill) the container "
+        "restarts instead. The repack's attempt marker in the clone then keeps "
+        "the restarted server from repacking that clone for an hour (plus the "
+        "repack timeout), so the restarts come at most hourly rather than in a "
+        "loop, and an INFO line names the clone; they stop only once the memory "
+        "limit leaves room for the repack. Size it with that room. It needs "
+        "disk too: git "
+        "writes the merged pack before it deletes the old ones, so the volume "
+        "holding the clones needs free space for about one more copy of the "
+        "clone's packs. On a volume that fills up for real, a repack that runs "
+        "out of space fails, is logged and is not retried for an hour, and while "
+        "it writes, fetches of other clones on that volume can fail as well. On "
+        "a Kubernetes emptyDir with a sizeLimit nothing fails: the kubelet "
+        "EVICTS the pod (skipping its preStop hook) once the volume passes the "
+        "limit, so size the limit with room for one more copy of the largest "
+        "clone's packs above its usual peak. A repack that fails, or never "
+        "finishes because its process died, is not retried for an hour by any "
+        "process of the pod, a new leader included. While sync passes keep "
+        "running back to back, a due repack waits for a gap (each wait counted "
+        "as opal_server.scopes.git_op_skipped with reason pass_in_flight); once "
+        "it has waited 30 minutes, the next attempt runs it beside a pass, which "
+        "can then stall that pass for as long as the repack runs. Raise the "
+        "limit to repack less often; 0 or negative disables repacking, and 1 "
+        "counts as 2, since a clone always holds a pack after a fetch.",
+    )
+    SCOPES_GIT_REPACK_TIMEOUT = confi.float(
+        "SCOPES_GIT_REPACK_TIMEOUT",
+        120.0,
+        description="Hard timeout in seconds for one scope clone repack (see "
+        "SCOPES_GIT_REPACK_PACK_LIMIT). Unlike SCOPES_GIT_FETCH_TIMEOUT it is "
+        "HARD: when it expires git gets SIGTERM, then SIGKILL 10 seconds later, "
+        "the files it left in the pack directory are removed, and the clone keeps "
+        "the packs it already had. Stopping git can take up to 20 seconds past "
+        "the timeout, and OPAL waits for it up to 30 seconds past the timeout, so "
+        "once git starts the repack holds the clone's sync lock for at most the "
+        "timeout plus 30 seconds (150 seconds with the default). Two cases "
+        "outlive that bound: a git stuck in uninterruptible I/O survives SIGKILL, "
+        "and a git whose opal-server worker exits mid-repack keeps running with "
+        "no time limit. Either one keeps the pod-wide repack lock, so no other "
+        "repack starts in the pod until it exits. It must stay bounded because "
+        "the repack holds the clone's sync lock while it runs. Repacks run one at "
+        "a time at the end of a sync pass, after its notifications, so within one "
+        "pass a repack delays none of them, and a refresh of a single scope runs "
+        "its repack right after its own notification. No repack starts while "
+        "another sync pass runs (the boot sync next to the first periodic pass, "
+        "or a POST /scopes/refresh), whose syncs would otherwise queue on the "
+        "clone's lock while holding their SCOPES_GIT_MAX_WORKERS slots and stall "
+        "the whole pass, every other clone's scopes included; the pass that ends "
+        "last runs it. A pass that starts while a repack is already running still "
+        "waits for it in the same way, as it does for a slow fetch. The next "
+        "periodic pass starts only once the repacks are done. The default is about 7x a repack measured on a production clone "
+        "(16s for 61k branches, most of it CPU); too low a value is worse than "
+        "too high, since a repack that always times out never reclaims any disk. "
+        "Watch opal_server.scopes.git_repack with outcome:timeout and the "
+        "git_repack_seconds distribution. 0, negative, nan or inf fall back to the default of "
+        "120 seconds, and a value over 86400 (a day) is capped at 86400 with a "
+        "warning, because a wait of more than about 24 days overflows and fails "
+        "every repack; there is no way to set no limit.",
+    )
     SCOPES_POLICY_CLONE_WAIT_SECONDS = confi.float(
         "SCOPES_POLICY_CLONE_WAIT_SECONDS",
         20.0,
@@ -353,7 +508,8 @@ class OpalServerConfig(Confi):
         "loop, so it occupies no thread between polls and leaves the event loop "
         "and the gunicorn worker heartbeat unaffected; it is abandoned early if "
         "the client disconnects. 0 or negative disables the wait (answer 503 "
-        "immediately). nan, inf and -inf are treated as disabled too: unlike a "
+        "immediately), and with it the branch wait of "
+        "SCOPES_POLICY_BRANCH_REFRESH_INTERVAL. nan, inf and -inf are treated as disabled too: unlike a "
         "non-numeric value, which fails this process at startup when the "
         "environment is parsed, they parse cleanly — inf would otherwise mean "
         "the clamped maximum hold on every clone-in-progress request, and nan "
@@ -365,8 +521,9 @@ class OpalServerConfig(Confi):
         64,
         description="Maximum number of requests one worker process may hold at "
         "once inside the SCOPES_POLICY_CLONE_WAIT_SECONDS wait. Requests beyond "
-        "the cap get the immediate 503 + Retry-After 30 they would have got "
-        "before the wait existed, so the cap can never make things worse than "
+        "the cap get the immediate answer they would have got before the wait "
+        "existed (503 + Retry-After 30 for a clone in progress, 409 for a missing "
+        "branch), so the cap can never make things worse than "
         "not waiting. It exists because polling is cheap but RELEASING is not: "
         "when the clone lands, every held request builds a full bundle on the "
         "loop's DEFAULT executor: about min(32, cpu+4) threads shared by every "
@@ -386,6 +543,61 @@ class OpalServerConfig(Confi):
         "pod: a pod running N workers holds up to N times this number. 0 or "
         "negative means no cap.",
     )
+    SCOPES_POLICY_BRANCH_REFRESH_INTERVAL = confi.float(
+        "SCOPES_POLICY_BRANCH_REFRESH_INTERVAL",
+        0.0,
+        description="Off by default (0): set it, for example to 60, to enable it. "
+        "When GET /scopes/:scope_id/policy finds the scope's clone populated but "
+        "without the scope's branch, or finds no clone of the scope's repository "
+        "at all, this worker asks every server to sync that "
+        "scope and holds the request in the SCOPES_POLICY_CLONE_WAIT_SECONDS wait, "
+        "under the same in-flight cap, polling that one branch ref and serving the "
+        "bundle as soon as the branch is there. The sync is not forced: a server "
+        "fetches only when its own clone "
+        "lacks the branch. A branch pushed after a server's last fetch is not a "
+        "misconfiguration: right after a PUT /scopes that moves a scope to another "
+        "repository, every pod answers this way until its own fetch of that "
+        "repository lands, and a pod that missed the PUT's broadcast, or whose "
+        "fetch failed, keeps answering it until something else syncs that clone. An "
+        "opal-client that starts in that window makes five attempts, then waits for "
+        "the next policy message, with no policy loaded. Each worker process "
+        "requests that sync at most once per this many seconds per scope and "
+        "branch (a scope that a PUT moves to another repository or branch asks "
+        "again), and, for a clone it finds missing, once per clone, whichever of "
+        "the clone's scopes ask: one sync clones it for all of them. Further "
+        "misses on that worker while its request is younger than the "
+        "clone wait are held too, without asking again, until the first hold's "
+        "deadline; after that, for the rest of the interval, a miss gets the "
+        "immediate 409 (503 with no clone) it got before. A request shed at the "
+        "in-flight cap requests nothing; a request that requests the sync holds "
+        "its slot while it does. So a branch that really does not "
+        "exist costs, per interval, at most one clone-wait budget of held requests "
+        "on each worker that sees a miss (bounded by the in-flight cap), and one "
+        "sync request from each of those workers to every server. Every server's "
+        "clone lacks a branch that does not exist, so each server fetches once per "
+        "sync request, except that requests reaching a server before its next "
+        "fetch of that repository starts share that fetch: requests that arrive "
+        "together cost one or two fetches, while requests spread over the interval "
+        "(one client's retries usually reach different workers seconds apart) cost "
+        "one each, under the lock every scope on that clone shares; a server whose "
+        "clone has the branch does not fetch. Weigh that before turning this on for a clone with tens of "
+        "thousands of branches. These syncs honour the source's failure backoff, so they do not "
+        "retry a repository whose fetches keep failing; a server whose fetch has "
+        "just failed fetches the branch only for a request that arrives after that "
+        "backoff (SCOPES_GIT_BACKOFF_BASE_SECONDS) has passed. A branch pushed "
+        "after the fetch a request asked for is not fetched for that scope until "
+        "a miss after the interval asks again, or something else syncs it: a "
+        "writer that pushes a scope's branch after its PUT /scopes should refresh "
+        "the scope (POST /scopes/:scope_id/refresh) after the push. An interval no "
+        "longer than SCOPES_POLICY_CLONE_WAIT_SECONDS asks again at the first miss "
+        "after each hold. When "
+        "the wait runs out with the branch still missing, the answer is that same "
+        "409 (a 503 + Retry-After 5 when there is still no clone). 0 or negative "
+        "disables it (409 or 503 immediately, as before); nan, inf and "
+        "-inf are treated as disabled too. Requires "
+        "SCOPES_POLICY_CLONE_WAIT_SECONDS > 0: with that wait disabled, no sync is "
+        "requested either.",
+    )
     LEADER_LOCK_FILE_PATH = confi.str(
         "LEADER_LOCK_FILE_PATH",
         "/tmp/opal_server_leader.lock",
@@ -401,11 +613,13 @@ class OpalServerConfig(Confi):
         "POLICY_BUNDLE_SERVER_TOKEN",
         None,
         description="Secret token to be sent to API bundle server",
+        sensitive=True,
     )
     POLICY_BUNDLE_SERVER_TOKEN_ID = confi.str(
         "POLICY_BUNDLE_SERVER_TOKEN_ID",
         None,
         description="The id of the secret token to be sent to API bundle server",
+        sensitive=True,
     )
     POLICY_BUNDLE_SERVER_AWS_REGION = confi.str(
         "POLICY_BUNDLE_SERVER_AWS_REGION",
@@ -537,6 +751,7 @@ class OpalServerConfig(Confi):
         "POLICY_REPO_WEBHOOK_SECRET",
         None,
         description="The secret for the policy repository webhook",
+        sensitive=True,
     )
     # The topic the event of the webhook will publish
     POLICY_REPO_WEBHOOK_TOPIC = "webhook"
@@ -579,7 +794,14 @@ class OpalServerConfig(Confi):
         "BUNDLE_IGNORE", [], description="List of patterns to ignore in the bundle"
     )
 
-    NO_RPC_LOGS = confi.bool("NO_RPC_LOGS", True, description="Disable RPC logs")
+    NO_RPC_LOGS = confi.bool(
+        "NO_RPC_LOGS",
+        True,
+        description=(
+            "Suppress DEBUG logs of the websocket RPC/pub-sub libraries, which "
+            "include message payloads (INFO and above are kept)"
+        ),
+    )
 
     # client-api server
     SERVER_WORKER_COUNT = confi.int(

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import signal
 import sys
@@ -53,6 +54,27 @@ from opal_server.statistics import OpalStatistics, init_statistics_router
 # stop() runs while k8s's terminationGracePeriodSeconds (30s default) is
 # counting down, so blocking longer just converts a clean exit into a SIGKILL.
 _SCOPES_DRAIN_TIMEOUT = 5.0
+
+# Parent of every stdlib logger fastapi_websocket_rpc and fastapi_websocket_pubsub
+# create (e.g. ``fastapi_ws_rpc.RPC_CHANNEL``, ``fastapi_ws_rpc.pubsub.EventNotifier``).
+RPC_LIBRARY_LOGGER_NAME = "fastapi_ws_rpc"
+
+
+def configure_rpc_library_logs() -> None:
+    """Apply OPAL_NO_RPC_LOGS to the RPC/pub-sub libraries' loggers.
+
+    At DEBUG those libraries log every RPC message they handle, including
+    the published payload (e.g. a DataUpdate's fetcher config headers), and
+    configure_logs() forwards stdlib records to loguru at any level. When
+    NO_RPC_LOGS is on, their loggers are raised to INFO; their INFO and
+    above records are connection lifecycle events and carry no payloads.
+
+    This covers the libraries' default (stdlib) logging mode. With
+    ``WS_RPC_LOGGING=LOGURU`` they log through loguru directly and are not
+    affected.
+    """
+    if opal_server_config.NO_RPC_LOGS:
+        logging.getLogger(RPC_LIBRARY_LOGGER_NAME).setLevel(logging.INFO)
 
 
 class OpalServer:
@@ -287,6 +309,7 @@ class OpalServer:
 
     def _configure_monitoring(self):
         configure_logs()
+        configure_rpc_library_logs()
 
         apm.configure_apm(opal_server_config.ENABLE_DATADOG_APM, "opal-server")
 

@@ -28,7 +28,7 @@ class BasePolicyWatcherTask:
         await self.stop()
 
     async def _on_webhook(self, topic: Topic, data: Any):
-        logger.info(f"Webhook listener triggered ({len(self._webhook_tasks)})")
+        logger.debug(f"Webhook listener triggered ({len(self._webhook_tasks)})")
         # Rebuild rather than remove-while-iterating: list.remove() inside a
         # `for t in self._webhook_tasks` loop skips the element after each removal,
         # so finished tasks accumulate. Retrieve exceptions before dropping the
@@ -109,7 +109,12 @@ class BasePolicyWatcherTask:
 
     async def _fail(self, exc: Exception):
         """Called when the watcher fails, and stops all tasks gracefully."""
-        logger.error("policy watcher failed with exception: {err}", err=repr(exc))
+        # Same as _on_webhook: bound kwargs land in record["extra"] verbatim,
+        # which the message-only patcher never sees.
+        logger.error(
+            "policy watcher failed with exception: {err}",
+            err=redact_url_in_text(repr(exc)),
+        )
         self.signal_stop()
         # trigger uvicorn graceful shutdown
         os.kill(os.getpid(), signal.SIGTERM)

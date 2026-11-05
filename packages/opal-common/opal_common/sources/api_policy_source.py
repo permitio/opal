@@ -11,6 +11,7 @@ from opal_common.git_utils.tar_file_to_local_git_extractor import (
 )
 from opal_common.http_utils import redact_url
 from opal_common.logger import logger
+from opal_common.logging_utils.errors import describe_error
 from opal_common.sources.base_policy_source import BasePolicySource
 from opal_common.utils import (
     build_aws_rest_auth_headers,
@@ -250,10 +251,12 @@ class ApiPolicySource(BasePolicySource):
                         return tmp_file_path, prev_etag, current_etag
 
             except (aiohttp.ClientError, HTTPException) as e:
-                logger.warning("server connection error: {err}", err=repr(e))
+                logger.warning("server connection error: {err}", err=describe_error(e))
                 raise
             except Exception as e:
-                logger.error("unexpected server connection error: {err}", err=repr(e))
+                logger.error(
+                    "unexpected server connection error: {err}", err=describe_error(e)
+                )
                 raise
 
     async def check_for_changes(self):

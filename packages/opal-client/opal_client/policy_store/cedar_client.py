@@ -21,6 +21,7 @@ from opal_client.policy_store.opa_client import (
     should_ignore_path,
 )
 from opal_client.policy_store.schemas import PolicyStoreAuth
+from opal_common.logging_utils.errors import describe_error
 from opal_common.schemas.policy import PolicyBundle
 from opal_common.schemas.store import StoreTransaction, TransactionType
 from tenacity import retry
@@ -102,7 +103,9 @@ class CedarClient(LivenessProbeMixin, BasePolicyStoreClient):
                         ],
                     )
             except aiohttp.ClientError as e:
-                logger.warning("Cedar Agent connection error: {err}", err=repr(e))
+                logger.warning(
+                    "Cedar Agent connection error: {err}", err=describe_error(e)
+                )
                 raise
 
     @fail_silently()
@@ -121,7 +124,9 @@ class CedarClient(LivenessProbeMixin, BasePolicyStoreClient):
                     result = await cedar_response.json()
                     return result.get("result", {}).get("raw", None)
             except aiohttp.ClientError as e:
-                logger.warning("Cedar Agent connection error: {err}", err=repr(e))
+                logger.warning(
+                    "Cedar Agent connection error: {err}", err=describe_error(e)
+                )
                 raise
 
     @fail_silently()
@@ -139,7 +144,9 @@ class CedarClient(LivenessProbeMixin, BasePolicyStoreClient):
                     result = await cedar_response.json()
                     return {policy["id"]: policy["content"] for policy in result}
             except aiohttp.ClientError as e:
-                logger.warning("Cedar Agent connection error: {err}", err=repr(e))
+                logger.warning(
+                    "Cedar Agent connection error: {err}", err=describe_error(e)
+                )
                 raise
 
     @affects_transaction
@@ -172,7 +179,9 @@ class CedarClient(LivenessProbeMixin, BasePolicyStoreClient):
                         ],
                     )
             except aiohttp.ClientError as e:
-                logger.warning("Cedar Agent connection error: {err}", err=repr(e))
+                logger.warning(
+                    "Cedar Agent connection error: {err}", err=describe_error(e)
+                )
                 raise
 
     @affects_transaction
@@ -211,7 +220,9 @@ class CedarClient(LivenessProbeMixin, BasePolicyStoreClient):
                     )
                     return response
             except aiohttp.ClientError as e:
-                logger.warning("Cedar Agent connection error: {err}", err=repr(e))
+                logger.warning(
+                    "Cedar Agent connection error: {err}", err=describe_error(e)
+                )
                 raise
 
     @affects_transaction
@@ -240,7 +251,9 @@ class CedarClient(LivenessProbeMixin, BasePolicyStoreClient):
                     )
                     return response
             except aiohttp.ClientError as e:
-                logger.warning("Cedar Agent connection error: {err}", err=repr(e))
+                logger.warning(
+                    "Cedar Agent connection error: {err}", err=describe_error(e)
+                )
                 raise
 
     @fail_silently()
@@ -266,7 +279,7 @@ class CedarClient(LivenessProbeMixin, BasePolicyStoreClient):
                     json_response = await cedar_response.json()
                     return json_response
         except aiohttp.ClientError as e:
-            logger.warning("Cedar Agent connection error: {err}", err=repr(e))
+            logger.warning("Cedar Agent connection error: {err}", err=describe_error(e))
             raise
 
     async def log_transaction(self, transaction: StoreTransaction):

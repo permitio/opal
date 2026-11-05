@@ -18,6 +18,7 @@ from opal_client.policy_store.policy_store_client_factory import (
 )
 from opal_common.async_utils import TakeANumberQueue, TasksPool
 from opal_common.config import opal_common_config
+from opal_common.logging_utils.errors import describe_error
 from opal_common.schemas.data import DataUpdateReport
 from opal_common.schemas.policy import PolicyBundle, PolicyUpdateMessage
 from opal_common.schemas.store import TransactionType
@@ -135,13 +136,16 @@ class PolicyUpdater:
         try:
             message = PolicyUpdateMessage(**data)
         except pydantic.ValidationError as e:
-            logger.warning(f"Got invalid policy update message from server: {repr(e)}")
+            logger.warning(
+                "Got invalid policy update message from server: {err}",
+                err=describe_error(e),
+            )
             return
 
         logger.info(
             "Received policy update: topic={topic}, message={message}",
             topic=topic,
-            message=message.dict(),
+            message=message.model_dump(),
         )
 
         directories = list(
@@ -319,7 +323,7 @@ class PolicyUpdater:
                     deleted_files = (
                         None
                         if bundle.deleted_files is None
-                        else bundle.deleted_files.dict()
+                        else bundle.deleted_files.model_dump()
                     )
                     logger.info(
                         "got policy bundle (delta): '{diff_against_hash}' -> '{commit_hash}', manifest: {manifest}, deleted: {deleted}",
@@ -329,7 +333,7 @@ class PolicyUpdater:
                         deleted=deleted_files,
                     )
         except Exception as err:
-            bundle_error = repr(err)
+            bundle_error = describe_error(err)
             bundle_succeeded = False
 
         bundle_hash = None if bundle is None else bundle.hash

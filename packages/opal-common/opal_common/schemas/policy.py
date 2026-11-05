@@ -1,12 +1,11 @@
 from pathlib import Path
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class BaseSchema(BaseModel):
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DataModule(BaseSchema):
@@ -31,6 +30,9 @@ class DeletedFiles(BaseSchema):
 
 
 class PolicyBundle(BaseSchema):
+    # Keep policy and data contents out of ValidationError text.
+    model_config = ConfigDict(hide_input_in_errors=True)
+
     manifest: List[str]
     hash: str = Field(..., description="commit hash (debug version)")
     old_hash: Optional[str] = Field(
@@ -38,7 +40,7 @@ class PolicyBundle(BaseSchema):
     )
     data_modules: List[DataModule]
     policy_modules: List[RegoModule]
-    deleted_files: Optional[DeletedFiles]
+    deleted_files: Optional[DeletedFiles] = None
 
 
 class PolicyUpdateMessage(BaseSchema):

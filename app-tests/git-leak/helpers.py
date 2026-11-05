@@ -226,6 +226,12 @@ class OpalServerClient:
         resp = requests.post(f"{self.base_url}/scopes/refresh", timeout=30)
         resp.raise_for_status()
 
+    def refresh_scope(self, scope_id: str) -> None:
+        # POST /scopes/{id}/refresh: the leader syncs that one scope (a forced
+        # fetch, since no hinted hash is passed) outside any sync pass.
+        resp = requests.post(f"{self.base_url}/scopes/{scope_id}/refresh", timeout=30)
+        resp.raise_for_status()
+
 
 class GiteaAdmin:
     """Host-side admin client for the test bed's Gitea.
@@ -330,6 +336,16 @@ class RepoMutator:
 
     def delete_remote_branch(self, branch: str) -> None:
         self._clone.git.push("origin", f":{branch}")
+
+    def push_file(self, filename: str, content: str, branch: str = "main") -> str:
+        """Commit ``content`` as ``filename`` on ``branch``, push it, and
+        return the new commit's sha."""
+        self._clone.git.checkout(branch)
+        (Path(self._clone.working_tree_dir) / filename).write_text(content)
+        self._clone.git.add(filename)
+        self._clone.git.commit("-m", f"update {filename}")
+        self._clone.git.push("origin", branch)
+        return self._clone.head.commit.hexsha
 
 
 def gitea_repo_url(name: str) -> str:

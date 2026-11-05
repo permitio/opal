@@ -1,6 +1,6 @@
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import partial
 from inspect import signature
 from typing import Any, Dict, List, Optional, Union
@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Union
 from aiofiles.threadpool.text import AsyncTextIOWrapper
 from opal_client.config import opal_client_config
 from opal_client.logger import logger
+from opal_common.logging_utils.errors import describe_error
 from opal_common.schemas.data import JsonableValue
 from opal_common.schemas.policy import PolicyBundle
 from opal_common.schemas.store import RemoteStatus, StoreTransaction
@@ -109,7 +110,9 @@ class PolicyStoreTransactionContextManager(AbstractPolicyStore):
         self._actions = []
         self._remotes_status: List[RemoteStatus] = []
         self._transaction_type = transaction_type
-        self._creation_time = datetime.utcnow().isoformat()
+        self._creation_time = (
+            datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+        )
 
     def __getattribute__(self, name: str) -> Any:
         # internal members are prefixed with '-'
@@ -204,11 +207,11 @@ class BasePolicyStoreClient(AbstractPolicyStore):
         elif transaction_id is None or not actions:
             return  # skip, nothing to do if we have no data to log
 
-        end_time = datetime.utcnow().isoformat()
+        end_time = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         if exc is not None or exception_fetching_transaction:
             try:
                 if exc is not None:
-                    error_message = repr(exc)
+                    error_message = describe_error(exc)
                 elif exception_fetching_transaction:
                     network_errors = [
                         remote.get("error", None)

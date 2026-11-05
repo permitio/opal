@@ -2,6 +2,7 @@ import aiohttp
 from fastapi import HTTPException, status
 from opal_client.config import opal_client_config
 from opal_client.logger import logger
+from opal_common.logging_utils.errors import describe_error
 from opal_common.security.sslcontext import get_custom_ssl_context
 from opal_common.utils import get_authorization_header, tuple_to_dict
 from tenacity import retry, stop, wait_random_exponential
@@ -44,7 +45,7 @@ class StartupLoadLimiter:
                         )
                         raise HTTPException(response.status)
             except aiohttp.ClientError as e:
-                logger.warning("server connection error: {err}", err=repr(e))
+                logger.warning("server connection error: {err}", err=describe_error(e))
                 raise
 
     def __call__(self):

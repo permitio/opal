@@ -1,0 +1,35 @@
+{
+  "builder": null,
+  "case": "access_token_no_details",
+  "dict": {
+    "details": null,
+    "token": "eyJhbGciOiJSUzI1NiJ9.corpus.signature",
+    "type": "bearer"
+  },
+  "dict_by_alias": {
+    "details": null,
+    "token": "eyJhbGciOiJSUzI1NiJ9.corpus.signature",
+    "type": "bearer"
+  },
+  "json": {
+    "details": null,
+    "token": "eyJhbGciOiJSUzI1NiJ9.corpus.signature",
+    "type": "bearer"
+  },
+  "json_by_alias": {
+    "details": null,
+    "token": "eyJhbGciOiJSUzI1NiJ9.corpus.signature",
+    "type": "bearer"
+  },
+  "json_reparsed": {
+    "details": null,
+    "token": "eyJhbGciOiJSUzI1NiJ9.corpus.signature",
+    "type": "bearer"
+  },
+  "model": "opal_common.schemas.security:AccessToken",
+  "note": "details omitted - must stay optional",
+  "payload": {
+    "token": "eyJhbGciOiJSUzI1NiJ9.corpus.signature"
+  },
+  "pydantic": "1.10.26"
+}
