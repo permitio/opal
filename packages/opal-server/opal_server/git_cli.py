@@ -707,20 +707,21 @@ def _sweep_clone(repo_path: Path) -> None:
         return
     try:
         # A record of a dead op stays until what it left is all gone.
-        if remove_dead_op_leftovers(repo_path):
+        if remove_dead_op_leftovers(repo_path, pre_fork=True):
             mark_op_finished(fd)
     finally:
         drop_clone_lock(fd)
 
 
-def remove_dead_op_leftovers(repo_path: Path) -> bool:
+def remove_dead_op_leftovers(repo_path: Path, *, pre_fork: bool = False) -> bool:
     """Remove what any git op of ``repo_path`` whose process died can have
-    left: what a killed fetch leaves in the clone (remove_kill_leftovers)
-    and the directories its clones were being made in (_remove_clone_dirs);
-    whether all of it is gone. For the holder of the clone's lock."""
+    left: what a killed fetch leaves in the clone (remove_kill_leftovers,
+    given ``pre_fork``) and the directories its clones were being made in
+    (_remove_clone_dirs); whether all of it is gone. For the holder of the
+    clone's lock."""
     complete = True
     if (repo_path / ".git").is_dir():
-        complete = remove_kill_leftovers(repo_path)
+        complete = remove_kill_leftovers(repo_path, pre_fork=pre_fork)
     return _remove_clone_dirs(repo_path) and complete
 
 
@@ -1478,7 +1479,7 @@ def killed_by_signal(status: Optional[int]) -> bool:
     return 128 < status <= 128 + _MAX_SIGNAL
 
 
-def remove_kill_leftovers(repo_path: Path) -> bool:
+def remove_kill_leftovers(repo_path: Path, *, pre_fork: bool = False) -> bool:
     """Remove what a git fetch, or a repack's git config or git pack-refs,
     killed by a signal can leave in a clone; whether all of it is gone (False:
     some of it could not be listed or removed, each logged).
@@ -1494,6 +1495,13 @@ def remove_kill_leftovers(repo_path: Path) -> bool:
     or packed-refs.new
     fails every later fetch that has to write them, and a pack with a
     ``.keep`` is never merged by a repack. Never raises.
+
+    ``pre_fork``: for the pre-fork preload, before any git runs in this
+    container: the fetch of such a ``.keep`` is a dead one, whatever
+    process its pid names now. After a container restart in the same pod
+    the host name is the same and the old pids are handed out again, the
+    preload's own included. (A git op of any other process holds the
+    clone's lock, which the caller has.)
     """
     git_dir = repo_path / ".git"
     doomed: List[Path] = [git_dir / name for name in _GIT_DIR_LOCKS]
@@ -1513,7 +1521,7 @@ def remove_kill_leftovers(repo_path: Path) -> bool:
         if name.startswith(_PACK_TEMP_PREFIX) or (
             name.startswith("pack-")
             and name.endswith(".keep")
-            and _keep_of_dead_fetch(pack_dir / name)
+            and _keep_of_dead_fetch(pack_dir / name, pre_fork)
         ):
             doomed.append(pack_dir / name)
     for path in doomed:
@@ -1557,7 +1565,7 @@ def _ref_locks(refs_dir: Path) -> Tuple[List[Path], bool]:
     return locks, complete
 
 
-def _keep_of_dead_fetch(keep: Path) -> bool:
+def _keep_of_dead_fetch(keep: Path, pre_fork: bool) -> bool:
     try:
         with open(keep, encoding="utf-8", errors="replace") as f:
             text = f.read(4096).strip()
@@ -1566,7 +1574,7 @@ def _keep_of_dead_fetch(keep: Path) -> bool:
     match = _FETCH_KEEP_RE.match(text)
     if match is None or match.group(2) != socket.gethostname():
         return False  # not a fetch's, or not this host's: someone else's to judge
-    return not _pid_alive(match.group(1))
+    return pre_fork or not _pid_alive(match.group(1))
 
 
 def _pid_alive(pid: str) -> bool:

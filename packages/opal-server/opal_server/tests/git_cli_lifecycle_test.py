@@ -16,6 +16,7 @@ import logging
 import os
 import shlex
 import shutil
+import socket
 import stat
 import subprocess
 import sys
@@ -1214,6 +1215,37 @@ def test_the_pre_fork_sweep_clears_a_dead_op_s_record_once_all_it_left_is_gone(
     assert not lock.exists()
     assert new_packed_refs.exists() is stuck
     assert (clone_lock_path(clone).read_bytes() != b"") is stuck
+
+
+def test_the_pre_fork_sweep_removes_this_host_s_fetch_keep_whatever_pid_it_names(
+    git_origin, tmp_path
+):
+    """No git runs yet in the preload's container, and a git op of any other
+    process holds its clone's lock, which the sweep has: a .keep of a fetch on
+    this host is a dead fetch's, even when its pid names a live process now (a
+    restart in the same pod keeps the host name, and hands the old pids out
+    again).
+
+    One of another host, or not a fetch's, stays.
+    """
+    clones = tmp_path / "git_sources"
+    clone = clones / "src"
+    _clone_at(clone, git_origin.url, git_origin.url)
+    pack_dir = clone / ".git" / "objects" / "pack"
+    pack_dir.mkdir(parents=True, exist_ok=True)
+    host = socket.gethostname()
+    reused = [pack_dir / "pack-1111.keep", pack_dir / "pack-2222.keep"]
+    for keep, pid in zip(reused, (os.getpid(), 1)):
+        keep.write_text(f"fetch-pack {pid} on {host}\n")
+    other_host = pack_dir / "pack-4444.keep"
+    other_host.write_text(f"fetch-pack {os.getpid()} on not-{host}\n")
+    kept = pack_dir / "pack-3333.keep"
+    kept.write_text("keep this one\n")
+
+    sweep_clone_leftovers(clones)
+
+    assert [k for k in reused if k.exists()] == []
+    assert other_host.exists() and kept.exists()
 
 
 def test_the_sweep_removes_a_key_dir_no_process_holds_whatever_pid_it_names(
