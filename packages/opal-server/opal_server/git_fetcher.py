@@ -724,23 +724,12 @@ def sweep_scope_clone_leftovers(base_dir: Path) -> None:
     """git_cli.sweep_clone_leftovers for the scope clones under BASE_DIR: for
     the pre-fork preload, with the git command-line fetch on or off.
 
-    Then the reflogs a repack set aside and did not remove before its
-    process ended (see _set_reflogs_aside), which no other process uses.
+    Not the reflogs a repack set aside and did not remove before its
+    process ended (see _set_reflogs_aside): tens of thousands of files
+    per clone, removed here, would hold up the start of every worker.
+    The clone's next repack removes them (_remove_reflogs_set_aside).
     """
-    clones_dir = GitPolicyFetcher.base_dir(base_dir)
-    git_cli.sweep_clone_leftovers(clones_dir)
-    try:
-        with os.scandir(clones_dir) as entries:
-            git_dirs = [Path(e.path) / ".git" for e in entries if "." not in e.name]
-    except OSError:
-        return  # no clones (a new pod)
-    for git_dir in git_dirs:
-        for aside in _reflogs_set_aside(git_dir):
-            logger.info(
-                "Removing {path}, reflogs a repack set aside and did not remove",
-                path=aside,
-            )
-            _remove_reflogs([aside])
+    git_cli.sweep_clone_leftovers(GitPolicyFetcher.base_dir(base_dir))
 
 
 def reclone_hung_scope_clones(
@@ -2356,8 +2345,9 @@ def _remove_reflogs_set_aside(git_dir: Path) -> None:
     its own, so that it delays neither the clone's next op nor the repack's
     caller.
 
-    Those of a process that died first are removed with them, and by the
-    pre-fork preload (sweep_scope_clone_leftovers). Never raises.
+    Those of a process that died first are removed with them, here only:
+    the pre-fork preload leaves them (sweep_scope_clone_leftovers).
+    Never raises.
     """
     asides = _reflogs_set_aside(git_dir)
     if not asides:

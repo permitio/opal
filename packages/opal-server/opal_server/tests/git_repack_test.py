@@ -4155,15 +4155,18 @@ def test_reflogs_are_removed_once_the_clone_lock_is_released(tmp_path, monkeypat
     assert _wait_for(lambda: not _asides(clone_path))
 
 
-@pytest.mark.parametrize("by", ["repack", "preload"])
-def test_reflogs_left_set_aside_are_removed(tmp_path, by):
+def test_reflogs_left_set_aside_are_removed_by_the_next_repack_not_the_preload(
+    tmp_path,
+):
     """A process that died between the rename and the end of the removal leaves
-    the reflogs set aside, with no record of an op: the next repack of the
-    clone removes them with its own, once it has let go of the clone, and the
-    pre-fork preload's sweep removes them too.
+    the reflogs set aside, with no record of an op. The pre-fork preload's
+    sweep leaves them: it runs in the gunicorn master before any worker
+    exists, and tens of thousands of files per clone would hold up the start.
+    The next repack of the clone removes them with its own, once it has let
+    go of the clone.
 
-    Mutation: removing only the dir this repack set aside, or leaving them out
-    of the preload's sweep, fails it.
+    Mutation: removing them in the preload's sweep, or removing only the dir
+    this repack set aside, fails it.
     """
     clone_path, _ = _clone_with_fetch_packs(tmp_path, fetches=2)
     clones = GitPolicyFetcher.base_dir(tmp_path / "base")
@@ -4173,11 +4176,10 @@ def test_reflogs_left_set_aside_are_removed(tmp_path, by):
     left = git_dir / f"{git_cli.REFLOGS_SET_ASIDE}dead"
     shutil.copytree(git_dir / "logs", left)
 
-    if by == "repack":
-        assert _repack_clone(clone_path, timeout=60) is True
-    else:
-        git_fetcher.sweep_scope_clone_leftovers(tmp_path / "base")
+    git_fetcher.sweep_scope_clone_leftovers(tmp_path / "base")
 
+    assert left.exists()
+    assert _repack_clone(clone_path, timeout=60) is True
     assert _wait_for(lambda: not left.exists())
 
 
