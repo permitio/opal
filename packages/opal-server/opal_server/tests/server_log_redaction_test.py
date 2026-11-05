@@ -1,11 +1,12 @@
 """Log sites in opal-server must redact auth.
 
 Covers auth carried in URLs, client reports, git errors and RPC payloads.
-Tests that log check a text sink and a ``serialize=True`` sink: loguru keeps
+The log-site tests check a text sink and a ``serialize=True`` sink: loguru keeps
 bound kwargs in ``record["extra"]``, which the JSON sink prints verbatim. They
 capture with the patcher ``configure_logs`` installs disabled, so they see what
 the call site itself emits; the data-router route tests also run with it on. The
-``_report_for_log`` tests call that helper directly.
+``_report_for_log`` tests call that helper directly. The checks on the test
+helpers and the RPC inverse test read fewer sinks, or none.
 """
 
 import json
@@ -195,7 +196,9 @@ def test_data_config_redirect_log_masks_external_source_url(capfd, scrub):
         == "https://***@config.example.com/sources?api_key=***"
     )
     _assert_absent(
-        [FAKE_USER, FAKE_PASSWORD, FAKE_KEY, CLIENT_JWT], logs.text, logs.serialized
+        [FAKE_USER, FAKE_PASSWORD, FAKE_KEY, CLIENT_JWT, CLIENT_JWT[5:-5]],
+        logs.text,
+        logs.serialized,
     )
     _assert_sinks_healthy(capfd, logs.sink_ids)
 
@@ -287,8 +290,8 @@ def test_sink_health_check_detects_a_failing_sink(capfd):
     finally:
         logger.remove(sink_id)
 
-    with pytest.raises(AssertionError):
-        _assert_sinks_healthy(capfd, [sink_id])
+    with pytest.raises(AssertionError, match=f"Handler #{sink_id} ---"):
+        _assert_sinks_healthy(capfd, [sink_id - 1, sink_id])
 
 
 # --- _report_for_log ---------------------------------------------------------
@@ -311,10 +314,11 @@ def test_report_for_log_redacts_every_entry():
     [
         "https://data.example.com/v1?region=eu&page=2",
         "https://data.example.com/a%20b?q=%2F",
+        "https://data.example.com/v1?",
         "http://[bad",
         "",
     ],
-    ids=["plain-params", "percent-encoded", "unparsable", "empty"],
+    ids=["plain-params", "percent-encoded", "empty-query", "unparsable", "empty"],
 )
 def test_report_for_log_leaves_urls_without_auth_unchanged(url):
     assert _rendered_urls(url) == [url]
@@ -346,6 +350,16 @@ def test_report_for_log_drops_config_and_data_keeps_the_rest():
     assert rendered["policy_hash"] == "fake-policy-hash"
     assert rendered["user_data"] == {"tenant": "t-1"}
     assert report == snapshot
+
+
+def test_report_for_log_drops_config_and_data_from_every_entry():
+    report = DataUpdateReport.model_validate(_report_payload(REPORT_URL, REPORT_URL))
+
+    rendered = data_api._report_for_log(report)
+
+    assert len(rendered["reports"]) == 2
+    for entry_report in rendered["reports"]:
+        assert not {"config", "data"} & set(entry_report["entry"])
 
 
 # --- policy watcher failure log (L8) ----------------------------------------

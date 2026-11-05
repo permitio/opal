@@ -31,3 +31,10 @@ def test_capture_logs_bypasses_and_restores_the_global_patcher(
     assert FAKE_KEY in "\n".join(logs.text)
     assert FAKE_KEY in "\n".join(logs.serialized)
     assert logger._core.patcher is installed
+
+
+def test_capture_logs_tracks_and_removes_both_sinks():
+    with capture_logs() as logs:
+        assert len(set(logs.sink_ids) & set(logger._core.handlers)) == 2
+
+    assert not set(logs.sink_ids) & set(logger._core.handlers)
