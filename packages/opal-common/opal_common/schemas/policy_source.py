@@ -1,10 +1,4 @@
-from typing import ClassVar, List, Optional, Set, Union
-
-try:
-    from typing import Literal
-except ImportError:
-    # Py<3.8
-    from typing_extensions import Literal
+from typing import ClassVar, List, Literal, Optional, Set, Union
 
 from opal_common.logging_utils.redaction import RedactedReprMixin
 from opal_common.schemas.policy import BaseSchema
