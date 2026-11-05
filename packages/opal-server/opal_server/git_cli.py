@@ -21,16 +21,19 @@ FETCH_HEAD, which, as with libgit2, only a fetch that succeeded rewrites. So
 the fetcher reads it with pygit2 as before, and the setting can be switched
 either way over existing clones.
 
-git is isolated from the system's and the user's git config, which libgit2
-does not read either, runs no hooks and speaks only http(s), ssh, git and
-file. Credentials never reach a command line. git hands the URL it fetches
-from to its remote helper (git-remote-https) as an argument, so git is given
-the remote's URL without the user and password in it, and, for a fetch, the
-refspecs to fetch instead of the remote's name. The user and password go in
-through git's environment, to a credential helper configured there
-(GIT_CONFIG_COUNT) that answers only for the source's own host, as libgit2's
-credentials callback is asked per host; an SSH key goes in a file only this
-user can read, in a directory of its own, removed when the op ends.
+git reads neither the system's nor the user's git config, which would bring
+hooks, credential helpers, headers and proxies to every op, and is given only
+their safe.directory. libgit2 does read them (a url.insteadOf there, say), so
+whatever else they set is lost when the setting goes on. git runs no hooks,
+reads no ~/.netrc and speaks only http(s), ssh, git and file. Credentials
+never reach a command line. git hands the URL it fetches from to its remote
+helper (git-remote-https) as an argument, so git is given the remote's URL
+without the user and password in it, and, for a fetch, the refspecs to fetch
+instead of the remote's name. The user and password go in through git's
+environment, to a credential helper configured there (GIT_CONFIG_COUNT) that
+answers only for the source's own host, as libgit2's credentials callback is
+asked per host; an SSH key goes in a file only this user can read, in a
+directory of its own, removed when the op ends.
 """
 
 import asyncio
@@ -127,8 +130,9 @@ MIN_GIT_VERSION = (2, 32)
 # The only variables git inherits, as for the repack: OPAL's own secrets have no
 # business in git's environment, and an inherited GIT_DIR or GIT_WORK_TREE
 # would point git at some other repository. Proxy variables are dropped, as
-# libgit2 (through pygit2) uses no proxy.
-_ENV_ALLOWLIST = ("PATH", "HOME", "GIT_SSL_CAINFO", "GIT_SSL_CAPATH")
+# libgit2 (through pygit2) uses no proxy. HOME is not passed on (see
+# _isolated_env).
+_ENV_ALLOWLIST = ("PATH", "GIT_SSL_CAINFO", "GIT_SSL_CAPATH")
 # Where OpenSSL, which libgit2 uses, looks for CA certificates, and where git's
 # own TLS library is told to.
 _CA_ENV = (("SSL_CERT_FILE", "GIT_SSL_CAINFO"), ("SSL_CERT_DIR", "GIT_SSL_CAPATH"))
@@ -1634,17 +1638,45 @@ def _ssh_host_key_options(remote: _Remote) -> List[str]:
     ]
 
 
+def _safe_directories() -> List[str]:
+    """safe.directory in the system, XDG and global git config, in that order,
+    as libgit2 reads them for its own check of a clone's owner (pygit2's search
+    paths: /etc, ~/.config/git and ~).
+
+    git here reads none of those configs, so these values are given to
+    it with the op's own config, where git 2.38 and later honour them. A
+    config that is not there or cannot be read gives none.
+    """
+    found: List[str] = []
+    for open_config in (
+        pygit2.Config.get_system_config,
+        pygit2.Config.get_xdg_config,
+        pygit2.Config.get_global_config,
+    ):
+        try:
+            found += open_config().get_multivar("safe.directory")
+        except (OSError, pygit2.GitError):
+            continue
+    return found
+
+
 def _isolated_env() -> Dict[str, str]:
     """The environment git gets whatever the op: no system or global git
-    config (libgit2 reads neither, and they would bring hooks, helpers,
-    headers and proxies to every op), only the transports libgit2 speaks,
-    the CA settings libgit2's OpenSSL would use, and no prompt."""
+    config (libgit2 reads them, but they would bring hooks, helpers, headers
+    and proxies to every op; their safe.directory is given to git in
+    _git_env), only the transports libgit2 speaks, the CA settings libgit2's
+    OpenSSL would use, and no prompt."""
     env = {k: os.environ[k] for k in _ENV_ALLOWLIST if k in os.environ}
     for openssl, git in _CA_ENV:
         if git not in env and os.environ.get(openssl):
             env[git] = os.environ[openssl]
     env["GIT_CONFIG_NOSYSTEM"] = "1"
     env["GIT_CONFIG_GLOBAL"] = os.devnull
+    # A HOME with nothing in it: libcurl, under git's HTTP transport, would
+    # send the credentials ~/.netrc has for the host, which libgit2 never
+    # reads. ssh takes its home from the user database, not from HOME, and
+    # its known_hosts and config here come from settings or flags.
+    env["HOME"] = os.devnull
     env["GIT_ALLOW_PROTOCOL"] = _ALLOWED_PROTOCOLS
     env["GIT_TERMINAL_PROMPT"] = "0"
     env["GIT_ASKPASS"] = shutil.which("false", path=env.get("PATH")) or "/bin/false"
@@ -1679,6 +1711,7 @@ def _git_env(
         ("core.hooksPath", os.devnull),
         ("core.fsmonitor", "false"),
     ]
+    config += [("safe.directory", path) for path in _safe_directories()]
     if remote.credential is not None:
         if any("\n" in part or "\0" in part for part in remote.credential):
             raise GitCliRefusedSourceError(
