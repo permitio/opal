@@ -37,20 +37,15 @@ def _logging_already_configured(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _stub_redis_layer(no_redis, preload_sandbox):
-    """preload_scopes() evaluates ``ScopeRepository(RedisDB(...))`` before the
-    stubbed ScopesService ever sees the arguments, so without this stub these
-    unit tests construct a REAL redis client. That is wrong in itself, and on
-    Python 3.9 it is the CI failure this fixture pins: redis.asyncio's
-    ConnectionPool builds an ``asyncio.Lock()`` in ``__init__``, which on 3.9
-    (and only 3.9) calls ``get_event_loop()`` — and an earlier test's
-    ``asyncio.run()`` (e.g. preload_metrics_namespace_test.py, which sorts
-    right before this file) leaves the main thread with no current loop.
+    """Every test here runs preload_scopes(), which evaluates
+    ``ScopeRepository(RedisDB(...))`` before the stubbed ScopesService sees
+    the arguments: without no_redis each would build a real Redis client.
+    preload_sandbox gives the preload no scopes and a BASE_DIR under
+    tmp_path, so its hung-clone sweep never touches the BASE_DIR of whoever
+    runs the tests.
 
-    NOTE this stub is load-bearing ONLY on 3.9: on 3.10+ asyncio
-    primitives don't grab a loop at construction, so removing it keeps
-    3.10+ green and breaks the 3.9 CI matrix job. The sibling file stubs
-    RedisDB per-test in its arrange instead — same mechanism, applied
-    where each file needs it.
+    The tests about the preload's Redis client replace RedisDB and
+    ScopeRepository over these stubs.
     """
     yield
 
@@ -80,16 +75,7 @@ def test_preload_scopes_resets_fetcher_caches_after_shutdown(monkeypatch):
     monkeypatch.setattr(task_module, "GitPolicyFetcher", _StubGitPolicyFetcher)
     monkeypatch.setattr(opal_server_config, "SCOPES", True)
 
-    try:
-        task_module.ScopesPolicyWatcherTask.preload_scopes()
-    finally:
-        # preload_scopes runs asyncio.run(), which closes its loop and leaves
-        # the main thread with no current event loop. On Python 3.9 a later
-        # sync test that constructs an asyncio primitive (e.g. asyncio.Lock())
-        # then raises "no current event loop" — a cross-test poisoning that
-        # only bites 3.9 (3.10+ primitives don't grab the loop at __init__).
-        # Restore a fresh loop so test isolation holds.
-        asyncio.set_event_loop(asyncio.new_event_loop())
+    task_module.ScopesPolicyWatcherTask.preload_scopes()
 
     assert events == ["sync_scopes", "shutdown_git_executor", "reset_caches"], events
 
@@ -139,10 +125,7 @@ def test_preload_scopes_drains_before_teardown(monkeypatch):
     )
     monkeypatch.setattr(task_module, "GitPolicyFetcher", _StubGPF)
     monkeypatch.setattr(opal_server_config, "SCOPES", True)
-    try:
-        task_module.ScopesPolicyWatcherTask.preload_scopes()
-    finally:
-        asyncio.set_event_loop(asyncio.new_event_loop())
+    task_module.ScopesPolicyWatcherTask.preload_scopes()
     assert events == ["sync_scopes", "drain", "shutdown", "reset_caches"], events
 
 
@@ -182,7 +165,6 @@ def test_preload_warns_when_the_drain_times_out_with_ops_still_in_flight(monkeyp
         task_module.ScopesPolicyWatcherTask.preload_scopes()
     finally:
         opal_logger.remove(sink)
-        asyncio.set_event_loop(asyncio.new_event_loop())
 
     warned = [r for r in records if "Preload drain timed out" in r]
     assert warned, f"a timed-out drain was not reported at all: {records}"
@@ -222,7 +204,6 @@ def test_preload_does_not_warn_when_the_drain_succeeds(monkeypatch):
         task_module.ScopesPolicyWatcherTask.preload_scopes()
     finally:
         opal_logger.remove(sink)
-        asyncio.set_event_loop(asyncio.new_event_loop())
 
     assert not [
         r for r in records if "Preload drain timed out" in r
@@ -345,7 +326,6 @@ def test_preload_closes_its_redis_pool_before_it_returns(monkeypatch):
     finally:
         gc.enable()
         server.stop()
-        asyncio.set_event_loop(asyncio.new_event_loop())
 
 
 class _CloseFails:
@@ -398,7 +378,6 @@ def test_a_failed_close_of_the_preloads_redis_client_is_logged_and_left(
             task_module.ScopesPolicyWatcherTask.preload_scopes()
     finally:
         opal_logger.remove(sink)
-        asyncio.set_event_loop(asyncio.new_event_loop())
 
     warned = [r for r in records if "closing its Redis client failed" in r]
     assert warned, f"the failed close was not logged: {records}"

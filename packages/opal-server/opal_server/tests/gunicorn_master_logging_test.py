@@ -10,7 +10,6 @@ the stand-in, so whatever it recorded reached the default handler before
 logging was configured.
 """
 
-import asyncio
 import contextlib
 import importlib.abc
 import importlib.util
@@ -203,11 +202,6 @@ def stub_preload(monkeypatch, preload_sandbox):
     monkeypatch.setattr(
         task_module.GitPolicyFetcher, "reset_caches", staticmethod(lambda: None)
     )
-    yield
-    # preload_scopes' asyncio.run() leaves the main thread without a current
-    # loop; give it one back for later tests (same as the preload_*_test.py
-    # files).
-    asyncio.set_event_loop(asyncio.new_event_loop())
 
 
 def _run_when_ready(gunicorn_conf, master_logs, monkeypatch, scopes):
