@@ -934,6 +934,38 @@ async def test_a_dead_op_s_record_stays_until_all_it_left_is_removed(
 
 
 @pytest.mark.asyncio
+async def test_an_op_that_cannot_record_itself_keeps_a_dead_op_s_record(
+    git_origin, tmp_path, monkeypatch
+):
+    """The lock file holds a dead op's record, and the next op cannot write its
+    own (a full disk: ENOSPC).
+
+    That op fails without running git, and the dead op stays recorded,
+    so the op after it still removes what it left (here a stale packed-
+    refs.lock).
+    """
+    clone = tmp_path / "cli"
+    await _clone(git_origin.url, clone)
+    stale = clone / ".git" / "packed-refs.lock"
+    stale.write_text("")
+    clone_lock_path(clone).write_text("4194303\n")
+
+    def _full(fd, data, offset):
+        raise OSError(errno.ENOSPC, os.strerror(errno.ENOSPC))
+
+    with monkeypatch.context() as full_disk:
+        full_disk.setattr(git_cli.os, "pwrite", _full)
+        with pytest.raises(GitCliLocalError, match="cannot record the op"):
+            await _fetch(clone, _source(git_origin.url))
+    kept = clone_lock_path(clone).read_bytes()
+    await _fetch(clone, _source(git_origin.url))
+
+    assert kept != b""
+    assert not stale.exists()
+    assert clone_lock_path(clone).read_bytes() == b""
+
+
+@pytest.mark.asyncio
 async def test_a_killed_git_s_leftover_that_cannot_be_removed_keeps_its_op_recorded(
     git_origin, tmp_path, monkeypatch
 ):

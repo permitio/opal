@@ -555,10 +555,16 @@ def close_leftover_lock_fds() -> int:
 
 def mark_op_started(fd: int) -> bool:
     """Record this op in the lock file; whether the one before it never
-    finished."""
+    finished.
+
+    Written over the record there, then cut to its length: a write that
+    fails (a full disk) does not leave the file empty, so the op before
+    stays recorded.
+    """
     unfinished = os.fstat(fd).st_size > 0
-    os.ftruncate(fd, 0)
-    os.pwrite(fd, f"{os.getpid()}\n".encode(), 0)
+    record = f"{os.getpid()}\n".encode()
+    os.pwrite(fd, record, 0)
+    os.ftruncate(fd, len(record))
     return unfinished
 
 
