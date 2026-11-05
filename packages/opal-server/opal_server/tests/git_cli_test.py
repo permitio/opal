@@ -708,6 +708,7 @@ async def test_a_clone_whose_parent_cannot_be_made_is_a_local_error(
         ("https://127.0.0.1/{marker}.git?private_token=abc", "token auth"),
         ("https://127.0.0.1/{marker}.git?x=1&Access_Token=abc", "token auth"),
         ("https://127.0.0.1/{marker}.git?token=abc", "token auth"),
+        ("ssh://pw:pw@127.0.0.1/{marker}.git", "cannot be taken out"),
     ],
     ids=[
         "scp-password",
@@ -716,6 +717,7 @@ async def test_a_clone_whose_parent_cannot_be_made_is_a_local_error(
         "private_token",
         "access_token",
         "token",
+        "ssh-user-is-the-password",
     ],
 )
 @pytest.mark.asyncio
@@ -1939,6 +1941,143 @@ async def test_what_the_server_says_back_is_redacted_from_git_s_errors(
     for text in (tail, str(info.value)):
         assert secret not in text
         assert header.split()[1] not in text
+
+
+def _failing_git(tmp_path: Path, monkeypatch, stderr: str) -> None:
+    """Put a git first on PATH that writes ``stderr`` and exits 128."""
+    text = tmp_path / "stderr.txt"
+    text.write_text(stderr)
+    _shim(tmp_path, monkeypatch, "git", f"cat '{text}' >&2\nexit 128")
+
+
+def _shows_part_of(secret: str, text: str) -> bool:
+    return any(secret[i : i + 8] in text for i in range(len(secret) - 7))
+
+
+@pytest.mark.parametrize(
+    "url, token, stderr, shown",
+    [
+        (
+            "ssh://git@github.com/acme/repo.git",
+            None,
+            "ssh: connect to host github.com port 22: Connection refused\n"
+            "fatal: 'acme/repo.git' does not appear to be a git repository",
+            "ssh: connect to host github.com port 22: Connection refused\n"
+            "fatal: 'acme/repo.git' does not appear to be a git repository",
+        ),
+        (
+            "https://git:mygitpass@127.0.0.1/r.git",
+            None,
+            "fatal: git was refused mygitpass",
+            "fatal: git was refused ***",
+        ),
+        (
+            "https://alice:s3cret@127.0.0.1/r.git",
+            None,
+            "fatal: alice was refused s3cret",
+            "fatal: alice was refused ***",
+        ),
+        (
+            "https://t0ken@127.0.0.1/r.git",
+            None,
+            "fatal: t0ken was refused",
+            "fatal: *** was refused",
+        ),
+        (
+            "https://tok@127.0.0.1/r.git",
+            "tok-and-more",
+            "fatal: tok-and-more was refused",
+            "fatal: *** was refused",
+        ),
+        (
+            "https://git@127.0.0.1/r.git",
+            None,
+            "fatal: 'r.git' does not appear to be a git repository",
+            "fatal: 'r.git' does not appear to be a git repository",
+        ),
+    ],
+    ids=[
+        "ssh-user-git",
+        "git-and-password",
+        "user-and-password",
+        "user-alone",
+        "longest",
+        "git-alone",
+    ],
+)
+@pytest.mark.asyncio
+async def test_what_can_be_a_credential_is_redacted_from_git_s_errors_and_no_more(
+    url, token, stderr, shown, tmp_path, monkeypatch
+):
+    """A URL's password and a source's token, and a user alone in an HTTP URL
+    (which can be a token), longest first, so that no part of one is left.
+
+    Not the user of a URL with a password, nor ``git`` (the user of
+    every SSH URL to GitHub, and a word of git's errors and of its
+    hosts' names).
+    """
+    _failing_git(tmp_path, monkeypatch, stderr)
+    auth = GitHubTokenAuthData(token=token) if token else None
+
+    with pytest.raises(GitCliError) as info:
+        await _clone(url, tmp_path / "cli", _source(url, auth))
+
+    assert info.value.stderr_tail == shown
+
+
+@pytest.mark.parametrize("cut", ["tail", "kept"])
+@pytest.mark.asyncio
+async def test_no_part_of_a_secret_cut_by_the_error_s_length_limits_shows(
+    cut, tmp_path, monkeypatch
+):
+    """An error quotes the last _STDERR_TAIL_CHARS characters of git's stderr,
+    of which only the last four times that many bytes are kept.
+
+    A password that either cut goes through shows no part of itself:
+    redacted before the tail is cut, and, where the kept bytes start in
+    the middle of a line, that line is dropped (here the password fills
+    every line, so what is kept is far shorter than the tail once
+    redacted).
+    """
+    secret = f"s3cr3t{uuid.uuid4().hex}"
+    url = f"https://alice:{secret}@127.0.0.1/r.git"
+    tail = git_cli._STDERR_TAIL_CHARS
+    if cut == "tail":
+        stderr = "x" * 100 + secret + "y" * (tail - len(secret) // 2)
+    else:
+        line, kept = secret + "\n", 4 * tail
+        lines = 2 * kept // len(line)
+        pad = (len(line) // 2 - (lines * len(line) - kept)) % len(line)
+        stderr = line * lines + "p" * pad
+    _failing_git(tmp_path, monkeypatch, stderr)
+
+    with pytest.raises(GitCliError) as info:
+        await _clone(url, tmp_path / "cli", _source(url))
+
+    assert "***" in info.value.stderr_tail
+    for text in (info.value.stderr_tail, str(info.value)):
+        assert not _shows_part_of(secret, text), text
+
+
+@pytest.mark.parametrize(
+    "password, repo",
+    [("x", "policy-x.git"), ("127", "repo.git")],
+    ids=["in-the-path", "in-the-host"],
+)
+@pytest.mark.asyncio
+async def test_a_password_whose_text_is_elsewhere_in_the_url_is_still_used(
+    password, repo, git_http, make_origin, tmp_path
+):
+    """The URL given to git keeps no password, whatever its path or host
+    holds: a password whose text appears there is not refused, and the
+    server gets it, as libgit2 sends it."""
+    make_origin(git_http.root / repo)
+    url = git_http.url(repo, userinfo=f"tok:{password}")
+    git_http.authorization = _basic("tok", password)
+
+    await _clone(url, tmp_path / "cli", _source(url))
+
+    assert "refs/remotes/origin/master" in _refs(tmp_path / "cli")
 
 
 @pytest.mark.asyncio

@@ -1530,11 +1530,16 @@ def _remote_for_git(url: str, source: GitPolicyScopeSource) -> _Remote:
     password in an HTTP URL first, else the source's token as user ``git``
     (GitCallback's UserPass), else the URL's user alone with an empty password.
 
+    The password and the token are secrets to redact, and so is the user of
+    an HTTP URL with no password, which can be a token; not the user of a
+    URL with a password, nor ``git``.
+
     Raises:
         GitCliRefusedSourceError: a URL git cannot be given without a
             credential on its command line: one that does not parse, an
-            scp-like one with a password, or one with a credential in its
-            query string.
+            scp-like one with a password, one with a credential in its
+            query string, or a non-HTTP one whose user, which stays in it,
+            holds the password.
     """
     if "://" not in url and "@" in url:
         userinfo = url.split("@", 1)[0]
@@ -1563,20 +1568,25 @@ def _remote_for_git(url: str, source: GitPolicyScopeSource) -> _Remote:
     host = parts.netloc.rpartition("@")[2]
     username_password: Optional[Tuple[str, str]] = None
     if user is not None or password is not None:
-        remote.secrets += [s for s in (user, password) if s]
-        remote.secrets += [unquote(s) for s in (user, password) if s]
+        passwords = {password, unquote(password)} if password else set()
+        remote.secrets += passwords
+        if scheme in _HTTP_SCHEMES and not password and user and unquote(user) != "git":
+            remote.secrets += {user, unquote(user)}
         if scheme in _HTTP_SCHEMES:
             remote.url = urlunsplit(parts._replace(netloc=host))
             if password is not None:
                 username_password = (unquote(user or ""), unquote(password))
         elif password is not None:
-            # An SSH URL's password is no use to ssh: keep only the user.
+            # An SSH URL's password is no use to ssh: keep only the user,
+            # unless it holds the password.
             netloc = f"{user}@{host}" if user else host
             remote.url = urlunsplit(parts._replace(netloc=netloc))
-        if password and (password in remote.url or unquote(password) in remote.url):
-            raise GitCliRefusedSourceError(
-                128, "fatal: the password cannot be taken out of the source's URL"
-            )
+            users = {user, unquote(user)} if user else set()
+            if any(p in u for p in passwords for u in users):
+                raise GitCliRefusedSourceError(
+                    128,
+                    "fatal: the password cannot be taken out of the source's URL",
+                )
     if (
         username_password is None
         and scheme in _HTTP_SCHEMES
@@ -1680,7 +1690,8 @@ def _git_env(
     for i, (key, value) in enumerate(config):
         env[f"GIT_CONFIG_KEY_{i}"] = key
         env[f"GIT_CONFIG_VALUE_{i}"] = value
-    hidden = [s for s in remote.secrets if s]
+    # Longest first: a secret inside another one would leave the rest of it.
+    hidden = sorted({s for s in remote.secrets if s}, key=len, reverse=True)
 
     def redact(text: str) -> str:
         for secret in hidden:
@@ -1816,7 +1827,7 @@ class _PipeReader:
     The read end (``fd``, this module's own) is the reader's once it is
     made (the caller's still, should making it raise), and is closed once
     read, or by ``close``; ``done`` then holds what was read, only its last
-    ``keep`` bytes when given.
+    ``keep`` bytes when given (``trimmed``: some came before them).
     """
 
     def __init__(self, fd: int, keep: Optional[int] = None) -> None:
@@ -1824,6 +1835,7 @@ class _PipeReader:
         self._fd: Optional[int] = fd
         self._keep = keep
         self._data = bytearray()
+        self.trimmed = False
         self.done: "asyncio.Future[bytes]" = self._loop.create_future()
         os.set_blocking(fd, False)
         self._loop.add_reader(fd, self._read)
@@ -1843,6 +1855,7 @@ class _PipeReader:
         self._data += chunk
         if self._keep is not None and len(self._data) > self._keep:
             del self._data[: -self._keep]
+            self.trimmed = True
 
     def close(self) -> None:
         """Stop reading and close the fd; ``done`` gets what was read so far,
@@ -1969,12 +1982,19 @@ class _Group:
         except (asyncio.CancelledError, Exception):
             return None
 
-    def stderr_tail(self) -> str:
+    def stderr_tail(self, redact: Callable[[str], str]) -> str:
+        """The end of git's stderr, ``redact``-ed before it is cut, so that no
+        part of a secret the cut goes through is left."""
         try:
             raw = self._stderr.done.result()
         except (asyncio.CancelledError, Exception):
             return ""
-        return raw.decode("utf-8", "replace").strip()[-_STDERR_TAIL_CHARS:]
+        text = redact(raw.decode("utf-8", "replace"))
+        if self._stderr.trimmed:
+            # What was kept starts in the middle of a line, maybe of a secret
+            # (git is given none with a newline): that line goes.
+            text = text.partition("\n")[2]
+        return text.strip()[-_STDERR_TAIL_CHARS:]
 
 
 def _readers(status_read: int, stderr_read: int) -> Tuple[_PipeReader, _PipeReader]:
@@ -2096,12 +2116,10 @@ async def _run_git(
     if status is None:
         raise GitCliError(
             -1,
-            redact(
-                "the sh git ran under was killed before it reported git's exit "
-                f"status. {group.stderr_tail()}"
-            ).strip(),
+            "the sh git ran under was killed before it reported git's exit "
+            f"status. {group.stderr_tail(redact)}".strip(),
         )
-    raise GitCliError(status, redact(group.stderr_tail()))
+    raise GitCliError(status, group.stderr_tail(redact))
 
 
 def _background_stop(group: _Group, op: _Op) -> "asyncio.Future[bool]":
