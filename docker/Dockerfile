@@ -5,7 +5,8 @@
 # Python 3.12 in every image (all four FROM lines, and the site-packages paths below). 3.10 reached
 # end of life on 2026-10-01 and gets no more security fixes; CPython fixes such as CVE-2026-115557
 # ship for 3.11 and later only, and dnspython 2.9 (CVE-2026-114605) needs 3.11. opal-server's
-# python_requires (<3.13, for pygit2<1.15's wheels) rules out 3.13. The packages still support 3.10.
+# python_requires (<3.13, for pygit2<1.15's wheels) rules out 3.13. The packages support 3.11 and
+# later; 0.10 dropped 3.10.
 # BUILD STAGE ---------------------------------------
 # split this stage to save time and reduce image size
 # ---------------------------------------------------

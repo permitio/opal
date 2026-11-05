@@ -41,7 +41,7 @@ jobs:
       # cancels the others and hides whether they pass.
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.11", "3.12"]
         # 3.13 leg: opal-common and opal-client only. Their python_requires
         # admits 3.13; opal-server's does not, because its pinned pygit2<1.15
         # ships no cp313 wheel and the sdist needs libgit2 1.7 headers. So this
@@ -183,7 +183,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
-          python-version: "3.10"
+          python-version: "3.11"
 
       - name: Install opal packages
         run: |

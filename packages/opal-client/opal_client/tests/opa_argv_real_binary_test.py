@@ -7,7 +7,7 @@ fooled is handing the argv to ``opa`` and seeing whether it parses.
 
 This is the check that would have caught the inline-OPA regression directly.
 It renders differently per python version (``Enum.__format__`` changed in 3.11)
-and the CI unit matrix already runs 3.10 / 3.11 / 3.12, so this test inherits
+and the CI unit matrix already runs 3.11 / 3.12, so this test inherits
 the version matrix for free - which the 3.12-only images and E2E leg do not.
 
 The binary is located from, in order:

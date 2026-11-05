@@ -687,7 +687,7 @@ def clear_hung_markers(markers: Path) -> None:
         except FileNotFoundError as e:
             if not os.path.lexists(markers):
                 return  # gone: nothing hung, or another process removed it
-            # On Python 3.10-3.12 rmtree stops when an entry it listed is
+            # On Python 3.11-3.12 rmtree stops when an entry it listed is
             # removed before it gets there (another process's op returning
             # and removing its own marker), leaving the rest: once more.
             err: OSError = e
@@ -886,7 +886,7 @@ def _reclone_one(clone: Path) -> bool:
     """Delete one hung clone, then its markers; True when it deleted it.
 
     Never raises: the stat calls are inside the try too, since on Python
-    3.10-3.12 they re-raise e.g. EIO or EACCES, and a raise here would
+    3.11-3.12 they re-raise e.g. EIO or EACCES, and a raise here would
     stop the server from starting.
     """
     try:
@@ -2740,7 +2740,7 @@ def _lock_is_busy(lock: asyncio.Lock) -> bool:
     it wakes taking the lock, locked() is False, and an acquire then
     queues behind that task's whole hold. asyncio.Lock has no public way
     to ask, nor a non-blocking acquire. Its queue is ``_waiters`` on every
-    CPython this package supports (3.10 to 3.12); without one this falls
+    CPython this package supports (3.11 to 3.12); without one this falls
     back to locked() alone. A cancelled waiter does not count, as it does
     not for the lock's own acquire.
     """
