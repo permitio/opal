@@ -2452,12 +2452,18 @@ class _SyncPass:
     # (source id, branch) of every "Did not find target branch" this pass
     # logged, so that the scopes sharing a missing branch log it once.
     missing_branches_logged: set[tuple[str, str]] = field(default_factory=set)
-    # Sources a sync of this pass already fetched or cloned, or tried to,
-    # whatever came of it: the pass's other syncs of them neither fetch nor
-    # clone them again. A clone's scopes whose branch it lacks would each
-    # fetch it once more (with the backoff off, a refresh-all pass's, every
-    # one to its timeout), and with no clone on disk each would clone it.
-    tried_sources: set[str] = field(default_factory=set)
+    # Sources a sync of this pass already fetched, or tried to, whatever came
+    # of it: the pass's other syncs of them do not fetch them again. A
+    # clone's scopes whose branch it lacks would each fetch it once more
+    # (with the backoff off, a refresh-all pass's, every one to its timeout).
+    fetched_sources: set[str] = field(default_factory=set)
+    # Sources a sync of this pass already cloned, or tried to (the delete
+    # before the clone included): the pass's other syncs of them neither
+    # fetch nor clone them again. With no clone on disk each of the source's
+    # scopes would clone it. Kept apart from the fetches: a scope whose branch
+    # head cannot be read finds the clone invalid after a phase-1 fetch whose
+    # own scope read its branch fine, and must still delete and clone it.
+    cloned_sources: set[str] = field(default_factory=set)
     # Set when sync_pass() exits. A task the pass started can outlive it with
     # the pass still in its context; an ended pass counts as none.
     ended: bool = False
@@ -3008,10 +3014,19 @@ class GitPolicyFetcher(PolicyFetcher):
             self._record_source_failure(err)
 
     def _tried_earlier_in_pass(self, op: str) -> bool:
-        """Whether a sync of the sync pass this sync runs in already fetched or
-        cloned this source, or tried to: the pass tries each clone once."""
+        """Whether a sync of the sync pass this sync runs in already did ``op``
+        ("fetch" or "clone") on this source, or tried to: the pass tries each
+        clone once.
+
+        A clone counts as a fetch too, since it brings every branch; a
+        fetch is no clone, since it leaves an invalid clone as it was.
+        """
         sync_pass = _running_sync_pass()
-        if sync_pass is None or self._source_id not in sync_pass.tried_sources:
+        if sync_pass is None:
+            return False
+        if self._source_id not in sync_pass.cloned_sources and (
+            op != "fetch" or self._source_id not in sync_pass.fetched_sources
+        ):
             return False
         logger.debug(
             "Not trying to {op} {url} for scope {scope}: a sync earlier in this "
@@ -3022,10 +3037,14 @@ class GitPolicyFetcher(PolicyFetcher):
         )
         return True
 
-    def _tried_in_this_pass(self) -> None:
+    def _tried_in_this_pass(self, op: str) -> None:
         sync_pass = _running_sync_pass()
-        if sync_pass is not None:
-            sync_pass.tried_sources.add(self._source_id)
+        if sync_pass is None:
+            return
+        if op == "fetch":
+            sync_pass.fetched_sources.add(self._source_id)
+        else:
+            sync_pass.cloned_sources.add(self._source_id)
 
     def _clear_source_backoff(self) -> None:
         """A git op against this source succeeded — drop its failure
@@ -3162,7 +3181,7 @@ class GitPolicyFetcher(PolicyFetcher):
                         )
                         fetched = False
                         if should_fetch and not self._tried_earlier_in_pass("fetch"):
-                            self._tried_in_this_pass()
+                            self._tried_in_this_pass("fetch")
                             logger.debug(
                                 f"Fetching remote (force_fetch={force_fetch}): {self._remote} ({redact_url(self._source.url)})"
                             )
@@ -3278,7 +3297,7 @@ class GitPolicyFetcher(PolicyFetcher):
                                 f"{self._repo_path}: {e!r}"
                             )
                         if not removed:
-                            self._tried_in_this_pass()
+                            self._tried_in_this_pass("clone")
                             self._skip_locked_delete()
                             return
                 else:
@@ -3922,7 +3941,7 @@ class GitPolicyFetcher(PolicyFetcher):
     async def _clone(self):
         if self._tried_earlier_in_pass("clone"):
             return
-        self._tried_in_this_pass()
+        self._tried_in_this_pass("clone")
         if self._repo_path.exists():
             # A failed/interrupted clone leaves a partial dir;
             # clone_repository refuses a non-empty destination, which would

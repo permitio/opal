@@ -2,16 +2,18 @@
 pass: the lanes of a clone's scopes, two passes side by side and the refreshes
 asked for meanwhile never find a clone's lock held by one another; a pass
 fetches or clones each clone once, whatever the op ends in and whether the
-pass honours the backoff or not; a fetch that fails on this server still lets
-the scope be checked against what its clone holds; a scope whose branch did
-not move gets no ref write; and a git that hangs ends phase 1 at its timeout
-plus the kill grace.
+pass honours the backoff or not, and its fetch of a clone does not stand in for
+the clone a phase-2 scope that finds it invalid makes (with libgit2 too); a
+fetch that fails on this server still lets the scope be checked against what
+its clone holds; a scope whose branch did not move gets no ref write; and a
+git that hangs ends phase 1 at its timeout plus the kill grace.
 
 Real git against local origins (see git_cli_test).
 """
 
 import asyncio
 import shutil
+import subprocess
 import time
 import uuid
 from pathlib import Path
@@ -331,6 +333,78 @@ async def test_a_pass_tries_once_to_delete_a_clone_a_git_op_holds(
     ] == [
         f"Not deleting {clone} for scope m0: a git op of another process holds its lock"
     ]
+
+
+def _overwrite_object(clone: Path, oid: str, with_oid: str) -> None:
+    """Put ``with_oid``'s object file in place of ``oid``'s, once the clone's
+    packs are unpacked into object files: ``oid`` is still in the clone, so a
+    fetch does not download it again, but it reads as another object.
+
+    Replaced, not written to: a clone of a local origin hard-links the
+    origin's object files.
+    """
+    objects = clone / ".git" / "objects"
+    for pack in sorted((objects / "pack").glob("*.pack")):
+        data = pack.read_bytes()
+        for part in (objects / "pack").glob(f"{pack.stem}.*"):
+            part.unlink()
+        subprocess.run(
+            ["git", "-C", str(clone), "unpack-objects", "-q"], input=data, check=True
+        )
+    target = objects / oid[:2] / oid[2:]
+    target.unlink()
+    target.write_bytes((objects / with_oid[:2] / with_oid[2:]).read_bytes())
+
+
+def _readable(clone: Path, oid: str) -> bool:
+    repo = pygit2.Repository(str(clone))
+    try:
+        return repo.get(oid) is not None
+    except pygit2.GitError:
+        return False
+    finally:
+        repo.free()
+
+
+@pytest.mark.parametrize("cli", [False, True], ids=["libgit2", "cli"])
+@pytest.mark.asyncio
+async def test_a_pass_re_clones_a_clone_only_a_phase_2_scope_finds_invalid(
+    cli, tmp_path, monkeypatch
+):
+    """Phase 1's scope of the clone reads its branch, and phase 1 fetches the
+    clone; the phase-2 scope whose branch head cannot be read finds the clone
+    invalid. That fetch is not the pass's clone of it: the scope deletes the
+    clone and clones it again, in the same pass.
+
+    Mutation: one record of the sources a pass fetched or cloned, as
+    before, leaves the clone invalid pass after pass.
+    """
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", cli)
+    origin = _origin(tmp_path / "origin")
+    on_main = origin.head.commit.hexsha
+    origin.create_head("other").checkout()
+    _commit(origin, "package other\n")
+    on_other = origin.head.commit.hexsha
+    origin.heads.main.checkout()
+    url = origin.working_tree_dir
+    svc = _service(tmp_path, [_scope("m0", url), _scope("o0", url, "other")])
+    await svc.sync_scopes()
+    clone = GitPolicyFetcher.repo_clone_path(
+        tmp_path / "opal", _scope("m0", url).policy
+    )
+    GitPolicyFetcher.reset_caches()
+    _overwrite_object(clone, on_other, on_main)
+    # The premise: the origin is intact, the clone reads one branch only.
+    assert _readable(Path(url), on_other)
+    assert _readable(clone, on_main) and not _readable(clone, on_other)
+
+    with capture_records() as records:
+        await svc.sync_scopes()
+
+    assert _readable(clone, on_other)
+    assert [
+        r["message"] for r in records.deployed if r["message"].startswith("Deleting")
+    ] == [f"Deleting invalid repo: {clone}"]
 
 
 @pytest.mark.asyncio
