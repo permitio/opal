@@ -1389,6 +1389,66 @@ async def test_a_member_that_outlives_sigkill_keeps_the_clone_until_it_exits(
     assert clone_lock_path(clone).read_bytes() == b""
 
 
+@pytest.mark.parametrize("where", ["live_members", "kill_grace_seconds"])
+@pytest.mark.asyncio
+async def test_a_stop_that_fails_still_kills_git_and_finishes_the_op(
+    where, hung_clone, blackhole, monkeypatch, processes_with
+):
+    """Something other than a cancellation goes wrong in a stop: an OSError
+    out of the check for the group's members once git has ended on SIGTERM,
+    or out of the stop's first step, while git still runs.
+
+    The op is not left waiting for good with its clone's lock held: its
+    group gets SIGKILL, the op finishes (on_gone, the lock released) and
+    the fetch raises its timeout.
+    """
+
+    def _broken(*args) -> bool:
+        raise OSError(errno.EMFILE, os.strerror(errno.EMFILE))
+
+    monkeypatch.setattr(git_cli, where, _broken)
+    clone, point = hung_clone
+    url, marker = point(f"http://127.0.0.1:{blackhole}/{{marker}}.git")
+    gone = _Gone()
+
+    with pytest.raises(GitCliTimeoutError):
+        await asyncio.wait_for(
+            _fetch(clone, _source(url), timeout=_TIMEOUT, on_gone=gone), 15
+        )
+
+    await gone.wait()
+    assert gone.calls == [False]
+    assert clone_lock_path(clone).read_bytes() == b""
+    assert await git_cli.wait_for_background_ops(5)
+    deadline = time.monotonic() + 10
+    while processes_with(marker):
+        assert time.monotonic() < deadline, processes_with(marker)
+        await asyncio.sleep(0.05)
+
+
+@pytest.mark.skipif(not os.path.isdir("/proc/self"), reason="the filter reads /proc")
+def test_a_group_whose_processes_cannot_be_listed_counts_as_having_members(
+    monkeypatch,
+):
+    """An error listing /proc (EMFILE, say) says nothing of the group: its
+    members are taken to be there, as without /proc, and the stop goes on to
+    SIGKILL rather than fail."""
+    live = subprocess.Popen(["sleep", "30"], start_new_session=True)
+
+    def _emfile(path):
+        raise OSError(errno.EMFILE, os.strerror(errno.EMFILE))
+
+    try:
+        with monkeypatch.context() as patched:
+            patched.setattr(git_cli.os, "listdir", _emfile)
+            members = git_cli.live_members(live.pid)
+    finally:
+        live.kill()
+        live.wait()
+
+    assert members is True
+
+
 @pytest.fixture
 def reaped_elsewhere(monkeypatch):
     """Every child asyncio reaps was already reaped by someone else, as when

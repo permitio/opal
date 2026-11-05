@@ -1781,7 +1781,8 @@ def live_members(pgid: int) -> bool:
 
     A zombie is dead, and whether it is ever reaped is up to its parent
     (pid 1, once git that started it is gone), not to this op. Without
-    /proc any member counts, but on macOS kill() tells zombies apart.
+    /proc, or when it cannot be listed (EMFILE, say), any member counts,
+    but on macOS kill() tells zombies apart.
     """
     try:
         os.killpg(pgid, 0)
@@ -1791,7 +1792,11 @@ def live_members(pgid: int) -> bool:
         return not EPERM_MEANS_NO_LIVE_MEMBER
     if not os.path.isdir("/proc/self"):
         return True
-    for name in os.listdir("/proc"):
+    try:
+        names = os.listdir("/proc")
+    except OSError:
+        return True
+    for name in names:
         if not name.isdigit():
             continue
         try:
@@ -2142,6 +2147,25 @@ async def _stop_then_finish(
         if not stopped.done():
             stopped.cancel()
         raise
+    except Exception as e:
+        # Anything else that broke the stop would leave the op, its clone's
+        # lock and its caller waiting for good: SIGKILL the group (and close
+        # sh's stdin, which nothing else closes now) and finish the op
+        # without waiting for the group.
+        logger.error(
+            "Stopping git {what} (pid {pid}) failed: {err!r}; sending SIGKILL "
+            "and finishing the op without waiting for its process group",
+            what=op.what,
+            pid=group.pid,
+            err=e,
+        )
+        try:
+            group.signal(signal.SIGKILL)
+            group.close_stdin()
+            await op.finish(succeeded=False, status=None)
+        finally:
+            if not stopped.done():
+                stopped.set_result(True)
 
 
 async def _stop(group: _Group, what: str, grace: float) -> bool:
