@@ -4132,6 +4132,11 @@ class GitPolicyFetcher(PolicyFetcher):
                     "was fetched in this sync pass; not fetching again"
                 )
                 return False
+            if self._tried_earlier_in_pass("fetch"):
+                # A fetch of this pass that failed on this server (busy, a
+                # local error, the zombie cap) left neither a fetch time nor
+                # a backoff, and the pass tries each clone once.
+                return False
             logger.info(
                 "Target branch was not found in local clone, re-fetching the remote"
             )
@@ -4204,7 +4209,11 @@ class GitPolicyFetcher(PolicyFetcher):
                 )
                 return
             sync_pass.missing_branches_logged.add(key)
-        logger.error(f"Did not find target branch on remote: {self._source.branch}")
+        logger.error(
+            "Did not find target branch on remote: {branch} ({url})",
+            branch=self._source.branch,
+            url=redact_url(self._source.url),
+        )
 
     def _get_current_branch_head(self) -> str:
         # Opened fresh per call instead of using the shared cached handle:

@@ -374,6 +374,24 @@ async def test_a_coalesced_sync_of_a_missing_branch(
     assert len(errors) == (0 if from_a_bundle_request else 1)
 
 
+def test_missing_branch_error_names_the_source_without_its_credential(tmp_path):
+    """Branches of two clones can share a name: the ERROR names the source,
+    redacted."""
+    source = _source(url="https://user:s3cret@git.example.com/org/policy.git")
+    source.branch = "no-such-branch"
+    fetcher = GitPolicyFetcher(tmp_path, SCOPE_ID, source)
+
+    with capture_records() as logs:
+        fetcher._report_missing_branch()
+
+    [error] = starting_with(logs.emitted, "Did not find target branch on remote")
+    assert error["level"].name == "ERROR"
+    assert error["message"] == (
+        "Did not find target branch on remote: no-such-branch "
+        "(https://***@git.example.com/org/policy.git)"
+    )
+
+
 @pytest.mark.asyncio
 async def test_hinted_hash_line_stays_info(tmp_path, clear_fetcher_caches):
     """A hinted commit absent from the clone triggers a fetch, at INFO."""

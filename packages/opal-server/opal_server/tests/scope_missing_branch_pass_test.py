@@ -219,8 +219,10 @@ def _service(tmp_path: Path, scopes, pubsub=None) -> ScopesService:
 
 
 def _missing_branch_errors(records):
+    """The missing-branch ERRORs logged, counted by branch (each line ends in
+    the source's URL, in parentheses)."""
     return collections.Counter(
-        r["message"][len(_MISSING) :]
+        r["message"][len(_MISSING) :].split(" (", 1)[0]
         for r in records
         if r["level"].name == "ERROR" and r["message"].startswith(_MISSING)
     )
@@ -461,6 +463,11 @@ async def test_a_branch_missing_from_two_clones_is_logged_once_for_each(tmp_path
         await svc.sync_scopes()
 
     assert _missing_branch_errors(logs.emitted) == {"production": 2}
+    assert sorted(
+        r["message"] for r in logs.emitted if r["message"].startswith(_MISSING)
+    ) == sorted(
+        f"{_MISSING}production ({origin.working_tree_dir})" for origin in (a, b)
+    )
 
 
 # --- phase 2: one slot per clone ----------------------------------------------

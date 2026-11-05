@@ -479,6 +479,45 @@ async def test_a_fetch_that_fails_on_this_server_still_checks_the_clone_for_chan
         fresh.free()
 
 
+@pytest.mark.parametrize(
+    "failure",
+    [
+        git_cli.GitCliLocalError(127, "git not found on PATH"),
+        git_cli.GitCliBusyError(128, "fatal: another git op holds it"),
+    ],
+    ids=["local", "busy"],
+)
+@pytest.mark.asyncio
+async def test_a_pass_says_it_fetches_for_a_missing_branch_only_when_it_does(
+    failure, tmp_path, ops
+):
+    """A phase-1 fetch that failed on this server leaves neither a fetch time
+    nor a backoff, so a phase-2 scope whose branch the clone lacks asks for a
+    fetch: the pass does not fetch the clone again for it, and does not say
+    it does. The ERROR for each missing branch names the source: two clones
+    can lack branches of the same name.
+
+    Mutation: logging before the pass's check says "re-fetching the
+    remote" for each such scope.
+    """
+    origin = _origin(tmp_path / "origin")
+    svc = _service(tmp_path, _scopes(origin, 1, 2))
+    await svc.sync_scope(scope_id="m0")
+    ops.fetches = 0
+    ops.fail_fetch = failure
+
+    with capture_records() as records:
+        await svc.sync_scopes()
+
+    assert ops.fetches == 1
+    logged = [r["message"] for r in records.deployed]
+    assert [m for m in logged if m.startswith("Target branch was not found")] == []
+    url = origin.working_tree_dir
+    assert sorted(m for m in logged if m.startswith("Did not find target branch")) == [
+        f"Did not find target branch on remote: gone-{i} ({url})" for i in range(2)
+    ]
+
+
 def _branch_file(clone: Path, scope_id: str) -> tuple:
     """The scope's branch file in the clone, as (inode, mtime, content): a
     write of the branch replaces the file."""
