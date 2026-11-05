@@ -1709,13 +1709,11 @@ def _git_env(
     env = _isolated_env()
     # An empty credential.helper first drops every helper of the clone's own
     # config (the system's and the user's are not read): libgit2 never runs
-    # one, so neither may git. No hook runs and no fsmonitor starts, whatever
-    # the clone's config says.
+    # one, so neither may git. No hook runs, whatever the clone's config says.
     config = [
         ("credential.helper", ""),
         ("credential.useHttpPath", "false"),
         ("core.hooksPath", os.devnull),
-        ("core.fsmonitor", "false"),
     ]
     config += [("safe.directory", path) for path in _safe_directories()]
     if remote.credential is not None:
