@@ -49,6 +49,7 @@ from opal_common.topics.publisher import (
 from opal_common.urls import set_url_query_param
 from opal_server.config import opal_server_config
 from opal_server.data.data_update_publisher import DataUpdatePublisher
+from opal_server.git_cli import clone_under_way
 from opal_server.git_fetcher import (
     BranchHeadNotFoundError,
     CloneNotPopulatedError,
@@ -389,6 +390,24 @@ async def _branch_wait_claim(
     return claim
 
 
+def _make_bundle(fetcher: GitPolicyFetcher, base_hash: Optional[str]) -> PolicyBundle:
+    """``fetcher.make_bundle``, with no clone while a git command-line clone of
+    it is under way taken for a clone not populated yet.
+
+    That clone is made in a directory beside the clone's path and
+    renamed into place once complete, so the path is not there
+    meanwhile; a libgit2 clone is made in place, where the empty clone
+    gives CloneNotPopulatedError.
+    """
+    try:
+        return fetcher.make_bundle(base_hash)
+    except NoSuchPathError as exc:
+        # GitPython's NoSuchPathError holds the path it did not find.
+        if not clone_under_way(pathlib.Path(str(exc))):
+            raise
+        raise CloneNotPopulatedError(f"A clone into {exc} is under way") from exc
+
+
 async def _make_bundle_waiting_for_clone(
     fetcher: GitPolicyFetcher,
     base_hash: Optional[str],
@@ -465,7 +484,7 @@ async def _make_bundle_waiting_for_clone(
 
     waiting_for = "clone"
     try:
-        return await run_sync(fetcher.make_bundle, base_hash)
+        return await run_sync(_make_bundle, fetcher, base_hash)
     except CloneNotPopulatedError as first_exc:
         wait = _bounded_clone_wait()
         if wait <= 0:
@@ -573,7 +592,7 @@ async def _make_bundle_waiting_for_clone(
                     fetcher.has_branch_ref
                 ):
                     try:
-                        bundle = await run_sync(fetcher.make_bundle, base_hash)
+                        bundle = await run_sync(_make_bundle, fetcher, base_hash)
                     except (
                         CloneNotPopulatedError,
                         BranchHeadNotFoundError,
@@ -595,7 +614,7 @@ async def _make_bundle_waiting_for_clone(
                     continue
             else:
                 try:
-                    bundle = await run_sync(fetcher.make_bundle, base_hash)
+                    bundle = await run_sync(_make_bundle, fetcher, base_hash)
                 except CloneNotPopulatedError as exc:
                     pending = exc
                     continue
@@ -1052,11 +1071,13 @@ def init_scope_router(
                 ),
             )
         except CloneNotPopulatedError as exc:
-            # The clone has no refs/remotes/<remote>/* at all, so it is being
-            # populated right now — _clone() rmtree's the destination and clones
-            # INTO the final path, so this window is the whole clone. Telling a
-            # client its configuration is permanently wrong during the recovery
-            # that fixes it is the opposite of the truth.
+            # The clone has no refs/remotes/<remote>/* at all, or is not there
+            # while a git command-line clone of it is under way (_make_bundle),
+            # so it is being populated right now — _clone() rmtree's the
+            # destination and libgit2 clones INTO the final path, so this window
+            # is the whole clone. Telling a client its configuration is
+            # permanently wrong during the recovery that fixes it is the
+            # opposite of the truth.
             #
             # Derived from disk, NOT from the in-flight marker: that marker is a
             # per-process global written only by the leader's sync, while this

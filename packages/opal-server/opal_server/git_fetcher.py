@@ -93,9 +93,13 @@ class CloneNotPopulatedError(ValueError):
     Distinct from BranchHeadNotFoundError, which means the namespace has refs
     but not the configured one: a misconfiguration, or a branch pushed after
     the clone's last fetch (see that class). This is transient by
-    construction: _clone() rmtree's the destination and clones INTO the final
-    path, so for the whole duration of a recovery re-clone the dir exists with
-    no remote refs.
+    construction: _clone() rmtree's the destination and libgit2 clones INTO
+    the final path, so for the whole duration of a recovery re-clone the dir
+    exists with no remote refs. With SCOPES_GIT_FETCH_WITH_CLI on, git clones
+    into a ``.<source id>.clone-*`` directory beside the final path and
+    renames it into place once complete, so the final path does not exist
+    meanwhile: the bundle route raises this for a missing final path while
+    such a directory sits beside it (git_cli.clone_under_way).
 
     Deliberately derived from DISK, not from the in-flight marker: that marker
     is a per-process module global, written only by the leader's sync, while

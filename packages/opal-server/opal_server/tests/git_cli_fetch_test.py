@@ -16,10 +16,12 @@ import uuid
 from functools import partial
 from pathlib import Path
 
+import httpx
 import opal_common.logger as opal_common_logger
 import opal_server.scopes.task as task_module
 import pygit2
 import pytest
+from fastapi import FastAPI
 from opal_common.logger import logger
 from opal_common.monitoring import metrics
 from opal_common.schemas.policy_source import (
@@ -27,6 +29,7 @@ from opal_common.schemas.policy_source import (
     GitPolicyScopeSource,
     NoAuthData,
 )
+from opal_common.schemas.scopes import Scope
 from opal_server import git_cli
 from opal_server import git_fetcher as git_fetcher_module
 from opal_server.config import opal_server_config
@@ -39,6 +42,9 @@ from opal_server.git_fetcher import (
     hung_marker_dir,
     run_git_cli_op,
 )
+from opal_server.scopes.api import init_scope_router
+from opal_server.scopes.scope_repository import ScopeNotFoundError
+from opal_server.scopes.service import ScopesService
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
 
@@ -443,6 +449,92 @@ async def test_switching_the_backend_either_way_keeps_the_clone_and_its_bundles(
         assert await _bundles(born_cli, first) == expected, f"step {step}"
     assert clone.stat().st_ino == inode
     assert switched.callbacks.updates == reference.callbacks.updates
+
+
+class _Scopes:
+    def __init__(self, scope: Scope) -> None:
+        self._scope = scope
+
+    async def get(self, scope_id: str) -> Scope:
+        if scope_id != self._scope.scope_id:
+            raise ScopeNotFoundError(scope_id)
+        return self._scope
+
+
+class _NoAuth:
+    enabled = False
+
+    def __call__(self) -> dict:
+        return {}
+
+
+@pytest.mark.asyncio
+async def test_a_bundle_request_during_a_cli_clone_is_held_until_the_clone_lands(
+    cli_on, git_origin, tmp_path, monkeypatch
+):
+    """GET /scopes/:id/policy while git clones the scope's repository, with the
+    clone wait's defaults (20 s, no branch refresh interval).
+
+    git clones beside the clone's path and renames the clone into place,
+    so that path is not there meanwhile. The request is held, as during
+    a libgit2 clone (made in place), and gets the bundle once the clone
+    is in place, rather than a 503 at once.
+    """
+    monkeypatch.setattr(opal_server_config, "BASE_DIR", str(tmp_path))
+    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", 20.0)
+    monkeypatch.setattr(
+        opal_server_config, "SCOPES_POLICY_BRANCH_REFRESH_INTERVAL", 0.0
+    )
+    source = _source(git_origin.url)
+    scope = Scope(scope_id="scope-1", policy=source, data={"entries": []})
+    clone = GitPolicyFetcher.repo_clone_path(tmp_path, source)
+    shims = tmp_path / "bin"
+    shims.mkdir()
+    started, gate = shims / "clone.started", shims / "clone.gate"
+    (shims / "git").write_text(
+        "#!/bin/sh\n"
+        f'case " $* " in *" clone "*) : > \'{started}\'; '
+        f"while [ ! -e '{gate}' ]; do sleep 0.05; done;; esac\n"
+        f'exec \'{shutil.which("git")}\' "$@"\n'
+    )
+    (shims / "git").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{shims}{os.pathsep}{os.environ['PATH']}")
+    app = FastAPI()
+    app.include_router(
+        init_scope_router(
+            _Scopes(scope),
+            _NoAuth(),
+            None,
+            ScopesService(
+                base_dir=tmp_path, scopes=_Scopes(scope), pubsub_endpoint=None
+            ),
+        ),
+        prefix="/scopes",
+    )
+
+    cloning = asyncio.ensure_future(
+        cli_clone(git_origin.url, clone, source, remote="origin", timeout=60)
+    )
+    try:
+        await _until(started.exists)
+        assert not clone.exists()
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://t"
+        ) as client:
+            asked = asyncio.ensure_future(client.get("/scopes/scope-1/policy"))
+            await asyncio.wait({asked}, timeout=2.5)
+            assert not asked.done(), asked.result()
+            gate.touch()
+            await cloning
+            answer = await asyncio.wait_for(asked, 30)
+    finally:
+        gate.touch()
+        await asyncio.wait({cloning}, timeout=30)
+
+    assert answer.status_code == 200, answer.text
+    head = str(git_origin.repo.references["refs/heads/master"].target)
+    assert answer.json()["hash"] == head
 
 
 @pytest.mark.asyncio

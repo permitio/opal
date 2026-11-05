@@ -716,6 +716,26 @@ def clean_up_unfinished_op(repo_path: Path) -> None:
         drop_clone_lock(fd)
 
 
+def clone_under_way(repo_path: Path) -> bool:
+    """Whether a directory a clone of ``repo_path`` is being made in sits
+    beside it: a git command-line clone, renamed to ``repo_path`` once
+    complete, or what one whose process died left (until the next op on the
+    clone, or the preload, removes it).
+
+    Read from disk, so that every worker gives the same answer; False when
+    the directory cannot be listed.
+    """
+    prefix = f".{repo_path.name}{_CLONE_DIR_MARK}"
+    try:
+        with os.scandir(repo_path.parent) as entries:
+            return any(
+                e.name.startswith(prefix) and e.is_dir(follow_symlinks=False)
+                for e in entries
+            )
+    except OSError:
+        return False
+
+
 def _remove_clone_dirs(repo_path: Path) -> bool:
     """Remove every directory a clone of ``repo_path`` was being made in; for a
     holder of the clone's lock, under which no clone of it is under way.
