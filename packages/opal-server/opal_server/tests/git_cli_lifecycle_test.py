@@ -14,6 +14,7 @@ import asyncio.base_subprocess
 import errno
 import logging
 import os
+import shlex
 import shutil
 import stat
 import subprocess
@@ -29,7 +30,11 @@ import opal_server.scopes.task as task_module
 import pygit2
 import pytest
 from opal_common.monitoring import metrics
-from opal_common.schemas.policy_source import GitPolicyScopeSource, NoAuthData
+from opal_common.schemas.policy_source import (
+    GitPolicyScopeSource,
+    NoAuthData,
+    SSHAuthData,
+)
 from opal_server import git_cli
 from opal_server import git_fetcher as git_fetcher_module
 from opal_server.config import opal_server_config
@@ -1160,21 +1165,24 @@ def test_the_pre_fork_sweep_removes_what_dead_ops_left_and_skips_held_clones(
     hung_markers = clones / "free.hung"
     hung_markers.mkdir()
     dead_keys = [d / f"opal-git-ssh-{_dead_pid()}-x1" for d in (shm, disk)]
-    live_keys = [shm / f"opal-git-ssh-{os.getpid()}-x2"]
     other = [shm / "opal-git-ssh-x3", shm / "something-else"]
-    for directory in (*dead_keys, *live_keys, *other):
+    for directory in (*dead_keys, *other):
         directory.mkdir()
         (directory / "id").write_text("key")
+    live_key, live_lock = git_cli._make_key_dir()
     orphan(held)
 
-    sweep_clone_leftovers(clones)
+    try:
+        sweep_clone_leftovers(clones)
+    finally:
+        os.close(live_lock)
 
     assert [p for p in free_left if p.exists()] == []
     assert not gone_clone.exists()
     assert [p for p in held_left if not p.exists()] == []
     assert hung_markers.exists()
     assert [d for d in dead_keys if d.exists()] == []
-    assert all(d.exists() for d in (*live_keys, *other))
+    assert all(Path(d).exists() for d in (live_key, *other))
     assert "refs/remotes/origin/master" in _refs(free)
 
 
@@ -1206,6 +1214,45 @@ def test_the_pre_fork_sweep_clears_a_dead_op_s_record_once_all_it_left_is_gone(
     assert not lock.exists()
     assert new_packed_refs.exists() is stuck
     assert (clone_lock_path(clone).read_bytes() != b"") is stuck
+
+
+def test_the_sweep_removes_a_key_dir_no_process_holds_whatever_pid_it_names(
+    tmp_path, monkeypatch
+):
+    """After a restart in the same pod, /dev/shm is still there and the new
+    container's processes have the old ones' pids, this one's included: the key
+    directory of a process that died goes even when the pid in its name is a
+    live process's now."""
+    monkeypatch.setattr(git_cli, "_SHM", str(tmp_path))
+    monkeypatch.setattr(git_cli.tempfile, "tempdir", str(tmp_path))
+    left = [tmp_path / f"opal-git-ssh-{pid}-x1" for pid in (os.getpid(), 1)]
+    for directory in left:
+        directory.mkdir()
+        (directory / "id").write_text("key")
+
+    git_cli.remove_dead_key_dirs()
+
+    assert [d for d in left if d.exists()] == []
+
+
+def test_the_sweep_leaves_the_key_dir_of_an_op_under_way(tmp_path, monkeypatch):
+    monkeypatch.setattr(git_cli, "_SHM", str(tmp_path))
+    monkeypatch.setattr(git_cli.tempfile, "tempdir", str(tmp_path))
+    url = "ssh://git@127.0.0.1:22/repo.git"
+    source = GitPolicyScopeSource(
+        source_type="git",
+        url=url,
+        branch="master",
+        auth=SSHAuthData(username="git", private_key="key"),
+    )
+
+    with git_cli._git_env(source, git_cli._remote_for_git(url, source)) as (env, _):
+        ssh = shlex.split(env["GIT_SSH_COMMAND"])
+        key = Path(ssh[ssh.index("-i") + 1])
+        git_cli.remove_dead_key_dirs()
+        assert key.read_text() == "key\n"
+
+    assert not key.parent.exists()
 
 
 # --- the clean-up a libgit2 fetch runs first ------------------------------------

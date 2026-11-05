@@ -325,7 +325,10 @@ _LOCK_SUFFIX = ".lock"
 # the status script uses.
 _LOCK_FD_MIN = 10
 _KEY_DIR_PREFIX = "opal-git-ssh-"
-_KEY_DIR_RE = re.compile(r"\Aopal-git-ssh-([0-9]+)-")
+# An SSH key directory: the prefix, the pid of the process that made it (for
+# whoever looks; whether it is still in use is told by its lock), and
+# mkdtemp's random part.
+_KEY_DIR_RE = re.compile(r"\Aopal-git-ssh-[0-9]+-")
 # Memory, not disk, for SSH key files where there is one to use.
 _SHM = "/dev/shm"
 
@@ -1804,12 +1807,11 @@ def _git_env(
 
     ssh = ["ssh", *_SSH_OPTIONS, *_ssh_host_key_options(remote)]
     key_dir: Optional[str] = None
+    key_lock: Optional[int] = None
     try:
         if isinstance(source.auth, SSHAuthData):
             try:
-                key_dir = tempfile.mkdtemp(
-                    prefix=f"{_KEY_DIR_PREFIX}{os.getpid()}-", dir=_key_dir_parent()
-                )
+                key_dir, key_lock = _make_key_dir()
                 ssh += ["-i", _write_key(key_dir, source.auth.private_key)]
             except OSError as e:
                 raise GitCliLocalError(
@@ -1820,6 +1822,44 @@ def _git_env(
     finally:
         if key_dir is not None:
             _remove_key_dir(Path(key_dir))
+        if key_lock is not None:
+            os.close(key_lock)
+
+
+def _make_key_dir() -> Tuple[str, int]:
+    """A new directory for one op's SSH key file, and an fd holding an flock on
+    it, to be closed once the directory is removed: remove_dead_key_dirs
+    removes only a key directory whose lock it can take.
+
+    Raises:
+        OSError: the directory cannot be made or locked.
+    """
+    path = tempfile.mkdtemp(
+        prefix=f"{_KEY_DIR_PREFIX}{os.getpid()}-", dir=_key_dir_parent()
+    )
+    try:
+        return path, _lock_key_dir(path)
+    except BaseException:
+        _remove_key_dir(Path(path))
+        raise
+
+
+def _lock_key_dir(path: str) -> int:
+    """An fd holding an flock on the key directory ``path``.
+
+    Raises:
+        BlockingIOError: another fd holds it, in this process or any
+            other.
+        OSError: it cannot be opened or locked.
+    """
+    flags = os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_DIRECTORY", 0)
+    fd = os.open(path, flags | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
 
 
 def _key_dir_parent() -> str:
@@ -1845,25 +1885,42 @@ def _remove_key_dir(path: Path) -> None:
 
 def remove_dead_key_dirs() -> None:
     """Remove the SSH key directories of this user's processes that died before
-    removing them.
+    removing them: those whose lock (_make_key_dir) no process holds.
 
-    Never raises.
+    The lock, not the pid in the name, says whether one is in use: after
+    a container restart in the same pod, /dev/shm is still there and the
+    new container's processes have the old ones' pids, and a container
+    that shares /dev/shm cannot see this one's pids. Never raises.
     """
     for parent in {_SHM, tempfile.gettempdir()}:
         try:
             with os.scandir(parent) as entries:
                 found = [
-                    (e.path, m.group(1))
+                    e.path
                     for e in entries
-                    if (m := _KEY_DIR_RE.match(e.name))
+                    if _KEY_DIR_RE.match(e.name)
                     and e.is_dir(follow_symlinks=False)
                     and e.stat(follow_symlinks=False).st_uid == os.getuid()
                 ]
         except OSError:
             continue
-        for path, pid in found:
-            if not _pid_alive(pid):
+        for path in found:
+            try:
+                fd = _lock_key_dir(path)
+            except (BlockingIOError, FileNotFoundError):
+                continue  # an op under way holds it, or it is gone meanwhile
+            except OSError as e:
+                logger.warning(
+                    "Could not lock {path} to tell whether a live process uses "
+                    "it; leaving it: {err!r}",
+                    path=path,
+                    err=e,
+                )
+                continue
+            try:
                 _remove_key_dir(Path(path))
+            finally:
+                os.close(fd)
 
 
 def _write_key(key_dir: str, private_key: str) -> str:

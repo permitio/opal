@@ -776,17 +776,19 @@ def test_a_worker_s_start_removes_the_ssh_key_files_of_processes_that_died(
     dead = subprocess.Popen(["true"])
     dead.wait()
     left = shm / f"opal-git-ssh-{dead.pid}-x1"
-    live = shm / f"opal-git-ssh-{os.getpid()}-x2"
-    for directory in (left, live):
-        directory.mkdir()
-        (directory / "id").write_text("key")
+    left.mkdir()
+    (left / "id").write_text("key")
+    live, live_lock = git_cli._make_key_dir()
 
-    server_module.OpalServer(
-        init_policy_watcher=False, broadcaster_uri=None, enable_jwks_endpoint=False
-    )
+    try:
+        server_module.OpalServer(
+            init_policy_watcher=False, broadcaster_uri=None, enable_jwks_endpoint=False
+        )
+    finally:
+        os.close(live_lock)
 
     assert not left.exists()
-    assert live.exists()
+    assert Path(live).exists()
 
 
 @pytest.mark.asyncio
