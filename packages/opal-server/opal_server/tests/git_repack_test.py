@@ -1722,8 +1722,13 @@ def test_failed_repack_prunes_the_expired_cooldowns_of_other_sources(emitted):
 async def test_missing_git_is_logged_once_and_then_never_tried_again(
     tmp_path, monkeypatch, emitted, records
 ):
-    """The first due run is the ref steps of the first fresh clone; nothing of
-    the repack runs after it, on any clone, at the limit or below it."""
+    """The first due run is the ref steps of the first fresh clone, counted as
+    a pack-refs run, not a repack; nothing of the repack runs after it, on any
+    clone, at the limit or below it.
+
+    Mutation: counting the ref steps' run as a repack fails the first
+    count.
+    """
     no_git = tmp_path / "no-git"
     no_git.mkdir()
     monkeypatch.setenv("PATH", str(no_git))  # the real primitives, finding no git
@@ -1737,8 +1742,9 @@ async def test_missing_git_is_logged_once_and_then_never_tried_again(
     await first.fetched(_LIMIT - 1)
 
     assert pack_refs.calls == [str(first.clone_path)]
-    assert _repack_outcomes(emitted) == ["git_missing"]
-    assert _repack_seconds(emitted) == []  # nothing ran, so no duration
+    assert _pack_refs_outcomes(emitted) == ["git_missing"]
+    assert _repack_outcomes(emitted) == []
+    assert emitted["distribution"] == []  # nothing ran, so no duration
     [error] = [r for r in records if r["level"].name == "ERROR"]
     assert "git" in error["message"]
 
@@ -1748,8 +1754,8 @@ async def test_missing_git_is_logged_once_and_then_never_tried_again(
     assert first.notified[-1][1] == tip
     assert repack.calls == []
     assert pack_refs.calls == [str(first.clone_path)]
-    assert _repack_outcomes(emitted) == ["git_missing"]
-    assert _pack_refs_outcomes(emitted) == []
+    assert _pack_refs_outcomes(emitted) == ["git_missing"]
+    assert _repack_outcomes(emitted) == []
     assert [r for r in records if r["level"].name == "ERROR"] == [error]
 
 
@@ -4290,10 +4296,12 @@ def test_a_config_step_stopped_at_its_share_of_the_timeout_leaves_no_config_lock
     """Git config holding config.lock past the ref steps' share of the timeout
     is stopped like pack-refs, and its lock removed once its group is gone, the
     record cleared. Before a repack, pack-refs is skipped and git repack runs;
-    with the ref steps alone, TimeoutError names the step.
+    with the ref steps alone, TimeoutError names the step. Counted as a failed
+    ref step either way.
 
     Mutation: not cleaning up after the stop leaves config.lock; not waiting
-    for the watchdog after the SIGKILL leaves the locks held under CPU load.
+    for the watchdog after the SIGKILL leaves the locks held under CPU load;
+    raising before counting misses the ref steps alone.
     """
     clone_path, _ = _clone_with_fetch_packs(tmp_path, fetches=2)
     real_git = shutil.which("git")
@@ -4322,7 +4330,7 @@ def test_a_config_step_stopped_at_its_share_of_the_timeout_leaves_no_config_lock
     else:
         assert _repack_clone(clone_path, timeout=8, term_grace=0.5) is True
         assert _count_pack_files(clone_path) == 1
-        assert _ref_step_failures(emitted) == ["config"]
+    assert _ref_step_failures(emitted) == ["config"]
 
     assert (state / "ready").exists(), "git config never ran; test proves nothing"
     assert "pack-refs" not in (state / "ran").read_text().split()
@@ -4481,10 +4489,11 @@ def test_pack_refs_stopped_at_its_share_of_the_timeout_leaves_a_usable_clone(
     fails on them. They are removed once its process group is gone, as after a
     stopped fetch (PER-17993). Before a repack the stop is a warning, counted,
     and git repack then runs with the rest of the timeout; with the ref steps
-    alone TimeoutError names pack-refs.
+    alone TimeoutError names pack-refs, and the stop is counted too.
 
     Mutation: not removing the locks after the stop fails the lock asserts
-    and the fetch after; cancelling git repack fails "repack".
+    and the fetch after; cancelling git repack fails "repack"; raising
+    before counting fails "refs-only".
     """
     clone_path, _ = _clone_with_fetch_packs(tmp_path, fetches=2)
     real_git = shutil.which("git")
@@ -4512,6 +4521,7 @@ def test_pack_refs_stopped_at_its_share_of_the_timeout_leaves_a_usable_clone(
     if refs_only:
         with pytest.raises(TimeoutError, match="timeout ran out during git pack-refs"):
             git_fetcher._pack_clone_refs(clone_path, timeout=6, term_grace=0.5)
+        assert _ref_step_failures(emitted) == ["pack_refs"]
     else:
         assert _repack_clone(clone_path, timeout=8, term_grace=0.5) is True
         assert _count_pack_files(clone_path) == 1
@@ -4571,15 +4581,19 @@ def test_pack_refs_that_exits_0_but_leaves_the_refs_loose_is_counted(
     assert [m for m in warnings if "succeeded, and said" in m and "b4.lock" in m]
 
 
-def test_a_repack_whose_git_outlives_its_stop_stays_recorded(tmp_path, monkeypatch):
+def test_a_repack_whose_git_outlives_its_stop_stays_recorded(
+    tmp_path, monkeypatch, emitted
+):
     """A git still running after its SIGKILL (stuck in uninterruptible I/O)
     may still write into the clone, so its locks stay, and so does the
     repack's record in the clone's lock file: the op that gets the lock once
     that git is gone removes what it left, and clears the record. A repack
-    that ends cleanly clears its own.
+    that ends cleanly clears its own. The ref step that ran past its share is
+    counted as failed, though the repack ends there.
 
     Mutation: clearing the record whatever happened fails the first part; not
-    clearing it after a clean repack fails the last.
+    clearing it after a clean repack fails the last; raising before counting
+    fails the count.
     """
     clone_path, _ = _clone_with_fetch_packs(tmp_path, fetches=2)
     real_git = shutil.which("git")
@@ -4610,6 +4624,7 @@ def test_a_repack_whose_git_outlives_its_stop_stays_recorded(tmp_path, monkeypat
     with pytest.raises(TimeoutError):
         _repack_clone(clone_path, timeout=8, term_grace=0.5)
 
+    assert _ref_step_failures(emitted) == ["pack_refs"]
     assert record.read_text().strip() == str(os.getpid())
     assert (clone_path / ".git" / "packed-refs.lock").exists()
     monkeypatch.setattr(git_fetcher, "_stop_repack", real_stop)

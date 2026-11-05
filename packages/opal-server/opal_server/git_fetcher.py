@@ -2165,9 +2165,10 @@ def _tidy_refs(
     their share of the repack's timeout: the running one is stopped, and
     git repack gets the rest. With ``refs_only`` there is nothing after
     them, so pack-refs failing or leaving the refs loose raises
-    GitRepackError instead, and running out of time TimeoutError: the run
-    then waits out the repack's cooldown rather than running again on every
-    pass.
+    GitRepackError instead, and running out of time TimeoutError, counted
+    all the same, as is a step whose git outlives its stop, which raises
+    TimeoutError too: the run then waits out the repack's cooldown rather
+    than running again on every pass.
 
     The locks a git left are removed only when it was stopped or killed by
     a signal (git_cli.killed_by_signal): git removes its own when it exits
@@ -2195,9 +2196,9 @@ def _tidy_refs(
                 refs_step=True,
             )
         except TimeoutError as e:
+            _emit_ref_step_failed(name.replace("-", "_"))
             if refs_only or step.outlived:
                 raise
-            _emit_ref_step_failed(name.replace("-", "_"))
             logger.warning(
                 "{err}: stopped it, and git repack goes on without the rest",
                 err=e,
@@ -3749,7 +3750,7 @@ class GitPolicyFetcher(PolicyFetcher):
         except GitNotFoundError as e:
             if not _repack_git_missing:
                 _repack_git_missing = True
-                _emit_repack_attempt("git_missing")
+                _emit_repack_attempt("git_missing", refs_only=refs_only)
                 logger.error(
                     "Not repacking scope clones: git is not installed ({err}). "
                     "Their pack files keep piling up until this process "
