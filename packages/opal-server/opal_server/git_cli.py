@@ -1508,7 +1508,7 @@ class _Remote:
 def _remote_for_git(url: str, source: GitPolicyScopeSource) -> _Remote:
     """Split the credentials off ``url`` the way libgit2 uses them: a user and
     password in an HTTP URL first, else the source's token as user ``git``
-    (GitCallback's UserPass).
+    (GitCallback's UserPass), else the URL's user alone with an empty password.
 
     Raises:
         GitCliRefusedSourceError: a URL git cannot be given without a
@@ -1564,6 +1564,10 @@ def _remote_for_git(url: str, source: GitPolicyScopeSource) -> _Remote:
     ):
         username_password = ("git", source.auth.token)
         remote.secrets.append(source.auth.token)
+    if username_password is None and scheme in _HTTP_SCHEMES and user is not None:
+        # A user alone (a token as the user, say): libgit2 sends it with an
+        # empty password.
+        username_password = (unquote(user), "")
     if username_password is not None:
         # Basic credentials, should a server echo the header back.
         encoded = base64.b64encode(":".join(username_password).encode()).decode()

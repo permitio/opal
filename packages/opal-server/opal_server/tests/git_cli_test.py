@@ -44,6 +44,7 @@ from opal_server.git_cli import (
     known_hosts_file,
     validate_git_cli_settings,
 )
+from opal_server.git_fetcher import GitCallback
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
 
@@ -1688,18 +1689,24 @@ async def test_no_credential_reaches_a_command_line_an_error_or_a_log(
         ("", GitHubTokenAuthData(token="the-token"), _basic("git", "the-token")),
         ("al%40ce:p%3Ass", None, _basic("al@ce", "p:ss")),
         ("al:pw", GitHubTokenAuthData(token="the-token"), _basic("al", "pw")),
+        ("t%40ken", None, _basic("t@ken", "")),
+        ("al", GitHubTokenAuthData(token="the-token"), _basic("git", "the-token")),
         ("", None, None),
     ],
-    ids=["token", "url", "url-before-token", "none"],
+    ids=["token", "url", "url-before-token", "user-only", "token-before-user", "none"],
 )
 @pytest.mark.asyncio
 async def test_the_server_gets_the_credentials_libgit2_would_send(
     userinfo, auth, expected, git_http, make_origin, tmp_path
 ):
-    """The server asks (401) and gets what libgit2 answers a challenge with.
+    """The server asks (401) and gets what libgit2 answers a challenge with,
+    libgit2's own clone and fetch against the same server the control.
 
-    That is the URL's user and password first, else GitCallback's
-    UserPass("git", token). Each op's first request goes without
+    That is the URL's user and password first (a user alone with an
+    empty password), else GitCallback's UserPass("git", token). With a
+    user alone and a token, libgit2 tries the user first and the token
+    once the server refuses it; git asks its credential helper once,
+    which gives the token. Each op's first request goes without
     credentials, as git sends them only when asked, so the credential
     helper is what answers.
     """
@@ -1707,12 +1714,26 @@ async def test_the_server_gets_the_credentials_libgit2_would_send(
     url = git_http.url("repo.git", userinfo=userinfo)
     git_http.authorization = expected
 
+    libgit2 = pygit2.clone_repository(
+        url, str(tmp_path / "libgit2"), callbacks=GitCallback(_source(url, auth))
+    )
+    try:
+        libgit2_clone = list(git_http.requests)
+        origin.commit("master")
+        libgit2.remotes["origin"].fetch(callbacks=GitCallback(_source(url, auth)))
+    finally:
+        libgit2.free()
+    libgit2_fetch = git_http.requests[len(libgit2_clone) :]
+    del git_http.requests[:]
+
     await _clone(url, tmp_path / "cli", _source(url, auth))
     clone_requests = list(git_http.requests)
     origin.commit("master")
     await _fetch(tmp_path / "cli", _source(url, auth))
     fetch_requests = git_http.requests[len(clone_requests) :]
 
+    for requests in (libgit2_clone, libgit2_fetch):
+        assert requests[-1][2].get("Authorization") == expected
     for requests in (clone_requests, fetch_requests):
         sent = [h.get("Authorization") for _, _, h in requests]
         if expected is None:
