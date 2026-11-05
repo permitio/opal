@@ -42,6 +42,23 @@ def preload_sandbox(monkeypatch, tmp_path):
     monkeypatch.setattr(opal_server_config, "BASE_DIR", str(tmp_path))
 
 
+class NoRedis:
+    """A RedisDB that connects to nothing."""
+
+    def __init__(self, url):
+        pass
+
+    async def close(self):
+        pass
+
+
+@pytest.fixture
+def no_redis(monkeypatch):
+    """For tests that run preload_scopes with its scope store stubbed out: the
+    preload makes no real Redis client, and closes the one it has."""
+    monkeypatch.setattr(task_module, "RedisDB", NoRedis)
+
+
 # --- local git remotes, for the git command-line fetch tests -------------------
 
 _SIG = pygit2.Signature("opal-test", "opal-test@example.com")

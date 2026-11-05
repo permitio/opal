@@ -610,7 +610,7 @@ def test_the_server_starts_with_known_hosts_and_the_cli_off_and_logs_an_error(
 
 
 def test_the_scope_preload_fails_before_any_sync_on_an_unreadable_known_hosts(
-    tmp_path, monkeypatch, preload_sandbox
+    tmp_path, monkeypatch, preload_sandbox, no_redis
 ):
     events = []
 
@@ -627,7 +627,6 @@ def test_the_scope_preload_fails_before_any_sync_on_an_unreadable_known_hosts(
             events.append("reset_caches")
 
     monkeypatch.setattr(opal_common_logger, "_logs_configured", True)
-    monkeypatch.setattr(task_module, "RedisDB", lambda url: object())
     monkeypatch.setattr(task_module, "ScopesService", _StubService)
     monkeypatch.setattr(task_module, "shutdown_git_executor", lambda: None)
     monkeypatch.setattr(task_module, "GitPolicyFetcher", _StubGitPolicyFetcher)

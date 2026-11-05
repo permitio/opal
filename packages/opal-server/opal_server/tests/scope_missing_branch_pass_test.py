@@ -353,7 +353,7 @@ async def test_a_failed_phase_1_fetch_is_tried_again_by_the_next_pass_not_by_pha
 
 
 def test_the_preload_clones_once_and_fetches_nothing_for_missing_branches(
-    tmp_path, git_ops, monkeypatch
+    tmp_path, git_ops, monkeypatch, no_redis
 ):
     """The boot preload is a pass too: phase 1 clones the repository, and the
     scopes whose branches it lacks fetch nothing more."""
@@ -361,7 +361,6 @@ def test_the_preload_clones_once_and_fetches_nothing_for_missing_branches(
     scopes = _Scopes(_scopes_on_missing_branches(origin))
     monkeypatch.setattr(opal_server_config, "SCOPES", True)
     monkeypatch.setattr(opal_server_config, "BASE_DIR", str(tmp_path / "opal"))
-    monkeypatch.setattr(task_module, "RedisDB", lambda url: None)
     monkeypatch.setattr(task_module, "ScopeRepository", lambda db: scopes)
     # Both would replace this test's log sinks and metrics client.
     monkeypatch.setattr(task_module, "configure_logs", lambda: None)

@@ -2518,7 +2518,9 @@ async def test_refresh_waits_for_the_clone_lock_its_repack_needs(tmp_path, monke
     assert git_fetcher._repacks_due == {}
 
 
-def test_preload_marks_the_repack_due_and_the_first_pass_runs_it(tmp_path, monkeypatch):
+def test_preload_marks_the_repack_due_and_the_first_pass_runs_it(
+    tmp_path, monkeypatch, no_redis
+):
     """The preload runs in the gunicorn master before any worker starts, so a
     repack there would hold up every worker.
 
@@ -2534,7 +2536,6 @@ def test_preload_marks_the_repack_due_and_the_first_pass_runs_it(tmp_path, monke
     repo.push()
     monkeypatch.setattr(opal_server_config, "SCOPES", True)
     monkeypatch.setattr(opal_server_config, "BASE_DIR", str(tmp_path / "base"))
-    monkeypatch.setattr(task_module, "RedisDB", lambda url: None)
     monkeypatch.setattr(task_module, "ScopeRepository", lambda db: scopes)
     # Both would replace this test's log sinks and metrics client.
     monkeypatch.setattr(task_module, "configure_logs", lambda: None)

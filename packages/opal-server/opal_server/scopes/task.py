@@ -254,7 +254,8 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             configure_server_metrics()
             logger.info("Preloading repo clones for scopes")
 
-            scopes = ScopeRepository(RedisDB(opal_server_config.REDIS_URL))
+            redis_db = RedisDB(opal_server_config.REDIS_URL)
+            scopes = ScopeRepository(redis_db)
             service = ScopesService(
                 base_dir=Path(opal_server_config.BASE_DIR),
                 scopes=scopes,
@@ -312,6 +313,24 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                         timeout=opal_server_config.SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT,
                     )
 
+            async def _preload_and_close():
+                # The client's pool keeps every connection it opened, one per
+                # scope read in flight at once, and binds them to this loop: it
+                # can close them only here, before asyncio.run closes the loop,
+                # whatever the sync did. Left open, their sockets stay in the
+                # master for as long as it lives, and reach every worker it
+                # forks. A close that fails is logged and left: it is never in
+                # the way of the start, nor in place of the preload's own error.
+                try:
+                    await _preload()
+                finally:
+                    try:
+                        await redis_db.close()
+                    except Exception as e:
+                        logger.warning(
+                            "Preload: closing its Redis client failed: {err!r}", err=e
+                        )
+
             # The gunicorn master's SIGCHLD handler reaps every child, so
             # asyncio finds each git command-line op's process reaped already
             # and warns. git_cli reads git's exit status from the process's
@@ -320,7 +339,7 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             asyncio_logger = logging.getLogger("asyncio")
             asyncio_logger.addFilter(unknown_child)
             try:
-                asyncio.run(_preload())
+                asyncio.run(_preload_and_close())
             finally:
                 asyncio_logger.removeFilter(unknown_child)
                 # A clone's lock left open here would be held in every forked

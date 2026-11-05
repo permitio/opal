@@ -45,5 +45,14 @@ class RedisDB:
     async def delete(self, key: str):
         await self._redis.delete(key)
 
+    async def close(self) -> None:
+        """Close every connection the client's pool opened.
+
+        close_connection_pool=True: from_url builds the client around a
+        pool of its own making, which redis-py 4.x then treats as one it
+        was given, and close() alone leaves it connected.
+        """
+        await self._redis.close(close_connection_pool=True)
+
     def _serialize(self, value: BaseModel) -> str:
         return value.model_dump_json()

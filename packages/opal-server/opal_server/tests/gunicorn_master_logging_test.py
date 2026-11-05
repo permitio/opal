@@ -181,18 +181,22 @@ class _FakeScopesService:
             )
 
 
-def _fake_redis_db(url):
-    # Logs its URL on construction, as opal_server.redis_utils.RedisDB does. The
-    # fake passes it raw, so only the master's own log setup can mask it.
-    logger.debug("Connecting to Redis: {url}", url=url)
-    return object()
+class _FakeRedisDB:
+    def __init__(self, url):
+        # Logs its URL on construction, as opal_server.redis_utils.RedisDB
+        # does. The fake passes it raw, so only the master's own log setup can
+        # mask it.
+        logger.debug("Connecting to Redis: {url}", url=url)
+
+    async def close(self):
+        pass
 
 
 @pytest.fixture
 def stub_preload(monkeypatch, preload_sandbox):
     monkeypatch.setattr(opal_server_config, "REDIS_URL", CREDENTIALED_REDIS_URL)
     monkeypatch.setattr(task_module, "configure_server_metrics", lambda: None)
-    monkeypatch.setattr(task_module, "RedisDB", _fake_redis_db)
+    monkeypatch.setattr(task_module, "RedisDB", _FakeRedisDB)
     monkeypatch.setattr(task_module, "ScopesService", _FakeScopesService)
     monkeypatch.setattr(task_module, "drain_git_ops", lambda timeout: True)
     monkeypatch.setattr(task_module, "shutdown_git_executor", lambda: None)

@@ -1240,7 +1240,7 @@ def test_unfinished_op_clean_up_releases_the_clone_lock(git_origin, tmp_path, re
 
 
 @pytest.fixture
-def preload(monkeypatch, preload_sandbox):
+def preload(monkeypatch, preload_sandbox, no_redis):
     """preload_scopes with SCOPES on and the given sync_scopes, Redis and
     logging set up stubbed, as when_ready runs it in the gunicorn master."""
 
@@ -1253,7 +1253,6 @@ def preload(monkeypatch, preload_sandbox):
                 await sync_scopes(**kwargs)
 
         monkeypatch.setattr(opal_common_logger, "_logs_configured", True)
-        monkeypatch.setattr(task_module, "RedisDB", lambda url: object())
         monkeypatch.setattr(task_module, "ScopesService", _Service)
         monkeypatch.setattr(opal_server_config, "SCOPES", True)
         task_module.ScopesPolicyWatcherTask.preload_scopes()

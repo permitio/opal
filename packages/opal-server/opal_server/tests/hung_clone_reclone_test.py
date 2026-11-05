@@ -1010,7 +1010,7 @@ def test_no_live_clone_on_disk_keeps_every_hung_clone(
 
 
 @pytest.fixture
-def preload(monkeypatch, tmp_path):
+def preload(monkeypatch, tmp_path, no_redis):
     state = {
         "events": [],
         "sync": None,
@@ -1021,7 +1021,6 @@ def preload(monkeypatch, tmp_path):
     }
     monkeypatch.setattr(opal_common_logger, "_logs_configured", True)
     monkeypatch.setattr(task_module, "configure_server_metrics", lambda: None)
-    monkeypatch.setattr(task_module, "RedisDB", lambda url: object())
 
     class _Scopes:
         def __init__(self, db):
