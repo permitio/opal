@@ -1,13 +1,17 @@
 """Fixtures shared by the opal-server tests."""
 
+import datetime
 import gzip
+import ipaddress
 import os
 import selectors
 import shutil
 import socket
+import ssl
 import subprocess
 import threading
 import time
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, cast
@@ -245,14 +249,17 @@ class GitHttpServer(ThreadingHTTPServer):
     """``git http-backend`` over HTTP on localhost, for the repositories under
     ``root``.
 
-    ``redirect_to``: a base URL every request is redirected to (302), path
-    and query kept, before anything else. ``authorization``: the exact
-    Authorization header every request must carry, else 401.
-    ``stall_after``: send only this many bytes of a pack (the answer to a
-    fetch request), then hold the connection open until the server closes.
-    ``error``: answer every request (once authorized) with a git ``ERR``
-    packet carrying this message, which git prints as a remote error.
-    Every request's headers are kept in ``requests``.
+    ``redirect_to``: a base URL every plain-HTTP request is redirected to
+    (302), path and query kept, before anything else. ``tls``: when set, a
+    connection that opens with a TLS handshake is served over TLS with this
+    context, on the same port. ``authorization``: the exact Authorization
+    header every request must carry, else 401. ``stall_after``: send only
+    this many bytes of a pack (the answer to a fetch request), then hold
+    the connection open until the server closes. ``error``: answer every
+    request (once authorized) with a git ``ERR`` packet carrying this
+    message, which git prints as a remote error. Every request's headers
+    are kept in ``requests``, and its scheme (http or https) at the same
+    index in ``schemes``.
     """
 
     daemon_threads = True
@@ -261,17 +268,26 @@ class GitHttpServer(ThreadingHTTPServer):
         super().__init__(("127.0.0.1", 0), _GitHttpHandler)
         self.root = root
         self.redirect_to: Optional[str] = None
+        self.tls: Optional[ssl.SSLContext] = None
         self.authorization: Optional[str] = None
         self.stall_after: Optional[int] = None
         self.error: Optional[str] = None
         self.stalled = threading.Event()
         self.release = threading.Event()
         self.requests: List[Tuple[str, str, Dict[str, str]]] = []
+        self.schemes: List[str] = []
         threading.Thread(target=self.serve_forever, daemon=True).start()
 
-    def url(self, name: str, userinfo: str = "") -> str:
+    def url(self, name: str, userinfo: str = "", scheme: str = "http") -> str:
         prefix = f"{userinfo}@" if userinfo else ""
-        return f"http://{prefix}127.0.0.1:{self.server_address[1]}/{name}"
+        return f"{scheme}://{prefix}127.0.0.1:{self.server_address[1]}/{name}"
+
+    def finish_request(self, request: Any, client_address: Any) -> None:
+        if self.tls is None or request.recv(1, socket.MSG_PEEK) != b"\x16":
+            super().finish_request(request, client_address)
+            return
+        with self.tls.wrap_socket(request, server_side=True) as tls:
+            super().finish_request(tls, client_address)
 
     def close(self) -> None:
         self.release.set()
@@ -306,8 +322,10 @@ class _GitHttpHandler(BaseHTTPRequestHandler):
 
     def _serve(self) -> None:
         server = cast(GitHttpServer, self.server)
+        over_tls = isinstance(self.connection, ssl.SSLSocket)
         server.requests.append((self.command, self.path, dict(self.headers)))
-        if server.redirect_to is not None:
+        server.schemes.append("https" if over_tls else "http")
+        if server.redirect_to is not None and not over_tls:
             # The Location header carries the request's path: without CR and
             # LF, no request can add a header of its own to the answer.
             path = self.path.replace("\r", "").replace("\n", "")
@@ -416,6 +434,58 @@ def make_git_http():
 def git_http(tmp_path, make_git_http):
     """A git HTTP server for the repositories in ``tmp_path / "served"``."""
     return make_git_http(tmp_path / "served")
+
+
+@dataclass
+class TlsCert:
+    """A self-signed certificate for 127.0.0.1: ``path``, its PEM file, for a
+    client to trust; ``context``, a server context that presents it."""
+
+    path: Path
+    context: ssl.SSLContext
+
+
+@pytest.fixture
+def tls_cert(tmp_path) -> TlsCert:
+    """A TlsCert, made for the test, valid for a day."""
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "127.0.0.1")])
+    now = datetime.datetime.now(datetime.timezone.utc)
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(minutes=5))
+        .not_valid_after(now + datetime.timedelta(days=1))
+        .add_extension(
+            x509.SubjectAlternativeName(
+                [x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]
+            ),
+            critical=False,
+        )
+        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+        .sign(key, hashes.SHA256())
+    )
+    cert_path = tmp_path / "tls-cert.pem"
+    key_path = tmp_path / "tls-key.pem"
+    cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    key_path.write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+    )
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(cert_path, key_path)
+    return TlsCert(cert_path, context)
 
 
 def all_processes() -> List[Tuple[int, int, int, str]]:

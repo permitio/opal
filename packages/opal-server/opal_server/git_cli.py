@@ -190,9 +190,12 @@ _GIT_CONFIG_ARGS = (
 )
 # The credential helper, in git's environment config. It answers git's "get"
 # with the op's user and password only when git asks for the source's own
-# protocol and host[:port] (a redirect elsewhere gets nothing), and reads them
-# from variables of git's environment, so they are in no helper text, command
-# line or file. Everything it runs (test, read, printf) is built into sh.
+# host[:port], over the source's protocol or, for an http source, https (where
+# a redirect to https on the same host takes git; libgit2's callback answers
+# whatever the URL). A redirect to another host, or from https to http, gets
+# nothing. It reads them from variables of git's environment, so they are in
+# no helper text, command line or file. Everything it runs (test, read,
+# printf) is built into sh.
 _CREDENTIAL_ENV = (
     "OPAL_GIT_CREDENTIAL_PROTOCOL",
     "OPAL_GIT_CREDENTIAL_HOST",
@@ -204,8 +207,9 @@ _CREDENTIAL_HELPER = (
     'while IFS= read -r l; do case "$l" in '
     "protocol=*) p=${l#protocol=};; host=*) h=${l#host=};; '') break;; "
     "esac; done; "
-    'if test "$p" = "$OPAL_GIT_CREDENTIAL_PROTOCOL" && '
-    'test "$h" = "$OPAL_GIT_CREDENTIAL_HOST"; then '
+    'if test "$h" = "$OPAL_GIT_CREDENTIAL_HOST" && { '
+    'test "$p" = "$OPAL_GIT_CREDENTIAL_PROTOCOL" || '
+    'test "$p/$OPAL_GIT_CREDENTIAL_PROTOCOL" = https/http; }; then '
     "printf 'username=%s\\npassword=%s\\n' "
     '"$OPAL_GIT_CREDENTIAL_USERNAME" "$OPAL_GIT_CREDENTIAL_PASSWORD"; '
     "fi; }; f"

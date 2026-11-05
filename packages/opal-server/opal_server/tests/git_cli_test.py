@@ -1908,6 +1908,43 @@ async def test_a_redirect_to_another_host_gets_no_credentials(
     )
 
 
+@pytest.mark.parametrize("where", ["token", "url"])
+@pytest.mark.asyncio
+async def test_an_http_remote_that_redirects_to_https_on_its_host_gets_its_credentials(
+    where, git_http, tls_cert, make_origin, tmp_path, monkeypatch
+):
+    """An http:// source whose server redirects every request to https:// on
+    the same host and port, and asks for credentials there.
+
+    git asks its credential helper for https after the redirect, and
+    gets the source's credentials, as libgit2's callback gives them
+    whatever the URL; they are never sent over plain http.
+    """
+    origin = make_origin(git_http.root / "repo.git")
+    git_http.tls = tls_cert.context
+    git_http.redirect_to = git_http.url("", scheme="https")
+    monkeypatch.setenv("GIT_SSL_CAINFO", str(tls_cert.path))
+    if where == "token":
+        url = git_http.url("repo.git")
+        source = _source(url, GitHubTokenAuthData(token="the-token"))
+        git_http.authorization = _basic("git", "the-token")
+    else:
+        url = git_http.url("repo.git", userinfo="alice:pw")
+        source = _source(url)
+        git_http.authorization = _basic("alice", "pw")
+
+    await _clone(url, tmp_path / "cli", source)
+    head = origin.commit("master")
+    await _fetch(tmp_path / "cli", source)
+
+    assert _refs(tmp_path / "cli")["refs/remotes/origin/master"] == head
+    auths = [h.get("Authorization") for _, _, h in git_http.requests]
+    sent = list(zip(git_http.schemes, auths))
+    assert ("http", None) in sent
+    assert ("https", git_http.authorization) in sent
+    assert {auth for scheme, auth in sent if scheme == "http"} == {None}
+
+
 @pytest.mark.asyncio
 async def test_the_token_is_in_no_git_config_or_command_line_given_to_git(
     git_http, make_origin, tmp_path, monkeypatch
@@ -1941,26 +1978,49 @@ async def test_the_token_is_in_no_git_config_or_command_line_given_to_git(
             assert token.encode() not in path.read_bytes(), path
 
 
+_HTTP_REMOTE = "http://git.example:8080/org/repo.git"
+_HTTPS_REMOTE = "https://git.example:8080/org/repo.git"
+
+
 @pytest.mark.parametrize(
-    "asked, answers",
+    "url, asked, answers",
     [
-        ("protocol=http\nhost=git.example:8080\n", True),
-        ("protocol=http\nhost=git.example:8080\npath=other/repo.git\n", True),
-        ("protocol=https\nhost=git.example:8080\n", False),
-        ("protocol=http\nhost=git.example\n", False),
-        ("protocol=http\nhost=elsewhere.example:8080\n", False),
+        (_HTTP_REMOTE, "protocol=http\nhost=git.example:8080\n", True),
+        (
+            _HTTP_REMOTE,
+            "protocol=http\nhost=git.example:8080\npath=other/r.git\n",
+            True,
+        ),
+        (_HTTP_REMOTE, "protocol=https\nhost=git.example:8080\n", True),
+        (_HTTP_REMOTE, "protocol=http\nhost=git.example\n", False),
+        (_HTTP_REMOTE, "protocol=http\nhost=elsewhere.example:8080\n", False),
+        (_HTTP_REMOTE, "protocol=https\nhost=git.example\n", False),
+        (_HTTP_REMOTE, "protocol=https\nhost=elsewhere.example:8080\n", False),
+        (_HTTPS_REMOTE, "protocol=https\nhost=git.example:8080\n", True),
+        (_HTTPS_REMOTE, "protocol=http\nhost=git.example:8080\n", False),
     ],
-    ids=["its-host", "other-path", "other-protocol", "other-port", "other-host"],
+    ids=[
+        "its-host",
+        "other-path",
+        "https-on-its-host",
+        "other-port",
+        "other-host",
+        "https-other-port",
+        "https-other-host",
+        "https-remote",
+        "https-remote-asked-for-http",
+    ],
 )
 def test_the_credential_helper_answers_only_for_the_remote_s_protocol_and_host(
-    asked, answers, tmp_path
+    url, asked, answers, tmp_path
 ):
     """What git asks its credential helpers, asked of git itself (git
     credential fill) with the environment an op gives git: the user and
-    password come back for the remote's own protocol and host:port, any
-    path (credential.useHttpPath is off), and for nothing else, a
-    redirect's target included."""
-    url = "http://git.example:8080/org/repo.git"
+    password come back for the remote's own host:port, any path
+    (credential.useHttpPath is off), over the remote's protocol or, for an
+    http remote, https (where a redirect to https on its host takes git),
+    and for nothing else: not another host or port, a redirect's target
+    included, and not http for an https remote."""
     source = _source(url, GitHubTokenAuthData(token="the-token"))
     remote = git_cli._remote_for_git(url, source)
     with git_cli._git_env(source, remote) as (env, _):
