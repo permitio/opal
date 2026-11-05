@@ -1557,7 +1557,7 @@ def _drop_repack_lock(fd: int) -> None:
 
 
 async def remove_clone_dir_exclusive(path: str) -> bool:
-    """``shutil.rmtree(path)`` of a scope clone, under the repack lock.
+    """``_remove_clone_tree(path)`` of a scope clone, under the repack lock.
 
     For a process that deletes a clone without holding the lock_source
     of the process that repacks it (the DELETE floor runs on whichever
@@ -1581,7 +1581,7 @@ async def remove_clone_dir_exclusive(path: str) -> bool:
         except OSError as e:
             if not _removes_without_lock(path, e):
                 raise
-            await run_sync(shutil.rmtree, path)
+            await run_sync(_remove_clone_tree, path)
             return True
         if fd is not None:
             break
@@ -1604,7 +1604,7 @@ def _rmtree_then_drop_lock(path: str, fd: int) -> bool:
 
 
 def _rmtree_unless_locked(path: str) -> bool:
-    """``shutil.rmtree(path)`` of a scope clone under the clone's own lock
+    """``_remove_clone_tree(path)`` of a scope clone under the clone's own lock
     (git_cli.take_clone_lock): whether it ran. False, having removed nothing,
     while a git op holds that lock (a git command-line op of another process,
     one whose worker died included, or a repack). Blocking. Where the lock
@@ -1620,15 +1620,34 @@ def _rmtree_unless_locked(path: str) -> bool:
     except OSError as e:
         if not _removes_without_lock(path, e):
             raise
-        shutil.rmtree(path)
+        _remove_clone_tree(path)
         return True
     if fd is None:
         return False
     try:
-        shutil.rmtree(path)
+        _remove_clone_tree(path)
     finally:
         git_cli.drop_clone_lock(fd)
     return True
+
+
+def _remove_clone_tree(path: str) -> None:
+    """``shutil.rmtree(path)``, to which an entry gone before the walk gets to
+    it is no error.
+
+    The reflog removal thread (_remove_reflogs_set_aside) removes inside
+    the clone outside its lock, so a delete of the clone can find gone an
+    entry it listed. On Python 3.11-3.12 rmtree then stops, leaving the
+    rest, and raises FileNotFoundError, which callers take for the clone
+    being gone. ``path`` itself gone still raises it.
+    """
+
+    def _unless_an_entry_is_gone(function, failed: str, exc_info) -> None:
+        if failed == path or not isinstance(exc_info[1], FileNotFoundError):
+            raise exc_info[1]
+
+    # onerror, not onexc: onexc is new in Python 3.12.
+    shutil.rmtree(path, onerror=_unless_an_entry_is_gone)
 
 
 def _removes_without_lock(path: str, err: OSError) -> bool:

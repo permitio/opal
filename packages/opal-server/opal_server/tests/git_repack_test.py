@@ -4042,6 +4042,58 @@ def test_reflogs_left_set_aside_are_removed(tmp_path, by):
     assert _wait_for(lambda: not left.exists())
 
 
+def _reflog_thread_ahead_of_unlink(monkeypatch) -> None:
+    """os.unlink with the reflog removal thread running ahead of it in the same
+    directory: by the first reflog file a delete removes, the thread has
+    removed the others, which the delete has already listed."""
+    real_unlink = os.unlink
+    ahead: list = []
+
+    def _unlink(path, *, dir_fd=None):
+        name = os.path.basename(path)
+        if name.startswith("reflog-") and not ahead:
+            ahead.append(name)
+            where = dir_fd if dir_fd is not None else os.path.dirname(path)
+            for other in os.listdir(where):
+                if other.startswith("reflog-") and other != name:
+                    if dir_fd is None:
+                        other = os.path.join(where, other)
+                    real_unlink(other, dir_fd=dir_fd)
+        real_unlink(path, dir_fd=dir_fd)
+
+    monkeypatch.setattr(os, "unlink", _unlink)
+
+
+@pytest.mark.parametrize("by", ["recovery", "delete"])
+@pytest.mark.asyncio
+async def test_a_clone_delete_beside_the_reflog_removal_thread_removes_it_all(
+    tmp_path, monkeypatch, by
+):
+    """The reflog removal thread runs outside the clone's lock, so a delete of
+    the clone (invalid-repo recovery, a DELETE) can walk the reflogs the thread
+    is removing, and find gone an entry it listed. On Python 3.11 and 3.12
+    rmtree then stops with FileNotFoundError and leaves the rest, and the
+    callers take that error for the clone being gone already.
+
+    Mutation: a plain rmtree leaves the clone's directory.
+    """
+    clone = tmp_path / "git_sources" / "src"
+    aside = clone / ".git" / f"{git_cli.REFLOGS_SET_ASIDE}0001"
+    aside.mkdir(parents=True)
+    for i in range(3):
+        (aside / f"reflog-{i}").write_text("0" * 40 + "\n")
+    (clone / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
+    _reflog_thread_ahead_of_unlink(monkeypatch)
+
+    if by == "recovery":
+        removed = await run_sync(git_fetcher._rmtree_unless_locked, str(clone))
+    else:
+        removed = await git_fetcher.remove_clone_dir_exclusive(str(clone))
+
+    assert removed is True
+    assert not clone.exists()
+
+
 def test_a_config_step_that_finds_a_live_lock_leaves_it_and_still_packs_the_refs(
     tmp_path, records, emitted
 ):
