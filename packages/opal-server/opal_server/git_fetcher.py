@@ -1568,13 +1568,21 @@ async def remove_clone_dir_exclusive(path: str) -> bool:
     hold it (the repack timeout plus its stop and sweep), and returns
     False without removing anything if it is still held then, or while a
     git command-line op of another process holds the clone's own lock.
+    Where the lock cannot be taken at all, removes the clone without it
+    only as _removes_without_lock allows.
 
-    Raises what rmtree raises, and FileNotFoundError when the clones'
-    directory is gone.
+    Raises what rmtree raises, FileNotFoundError when the clones'
+    directory is gone, and otherwise what taking the lock raises.
     """
     deadline = time.monotonic() + _repack_timeout_seconds() + _REPACK_STOP_SECONDS
     while True:
-        fd = _take_repack_lock(_repack_lock_dir(path))
+        try:
+            fd = _take_repack_lock(_repack_lock_dir(path))
+        except OSError as e:
+            if not _removes_without_lock(path, e):
+                raise
+            await run_sync(shutil.rmtree, path)
+            return True
         if fd is not None:
             break
         if time.monotonic() >= deadline:
@@ -1599,18 +1607,53 @@ def _rmtree_unless_locked(path: str) -> bool:
     """``shutil.rmtree(path)`` of a scope clone under the clone's own lock
     (git_cli.take_clone_lock): whether it ran. False, having removed nothing,
     while a git op holds that lock (a git command-line op of another process,
-    one whose worker died included, or a repack). Blocking.
+    one whose worker died included, or a repack). Blocking. Where the lock
+    cannot be taken at all, runs without it only as _removes_without_lock
+    allows.
 
     Raises what rmtree raises, FileNotFoundError when the clone is gone
-    included (the clones' directory with it, for the lock file).
+    included (the clones' directory with it, for the lock file), and
+    otherwise what taking the lock raises.
     """
-    fd = git_cli.take_clone_lock(Path(path))
+    try:
+        fd = git_cli.take_clone_lock(Path(path))
+    except OSError as e:
+        if not _removes_without_lock(path, e):
+            raise
+        shutil.rmtree(path)
+        return True
     if fd is None:
         return False
     try:
         shutil.rmtree(path)
     finally:
         git_cli.drop_clone_lock(fd)
+    return True
+
+
+def _removes_without_lock(path: str, err: OSError) -> bool:
+    """Whether the scope clone ``path``, whose lock cannot be taken (``err``,
+    not FileNotFoundError: flock failing on NFS mounted without
+    local_lock=flock, say), is removed without it.
+
+    Only with SCOPES_GIT_FETCH_WITH_CLI off, logged. A libgit2 fetch or
+    clone takes no lock then, and a repack, which takes this one, cannot
+    run where it cannot be taken: removing the clone is what invalid-repo
+    recovery and a DELETE did before the lock existed. With it on every git
+    fetch and clone takes the lock and fails without it, so a clone removed
+    could not be cloned again, and where the failure passes (a lock table
+    that was full) a git op of another process may hold the lock and still
+    be writing in the clone.
+    """
+    if isinstance(err, FileNotFoundError):
+        return False
+    if opal_server_config.SCOPES_GIT_FETCH_WITH_CLI:
+        return False
+    logger.warning(
+        "Removing {path} without its lock, which cannot be taken: {err!r}",
+        path=path,
+        err=err,
+    )
     return True
 
 

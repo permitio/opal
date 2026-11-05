@@ -1650,6 +1650,55 @@ async def test_lock_that_cannot_be_taken_fails_the_repack_not_the_sync(
     assert "OSError" in warning["message"]
 
 
+def _gut(clone_path: Path) -> None:
+    """Remove every object of the clone, its refs left: an invalid clone."""
+    objects = clone_path / ".git" / "objects"
+    for entry in objects.iterdir():
+        if entry.name == "pack":
+            for pack in entry.iterdir():
+                pack.unlink()
+        elif len(entry.name) == 2:
+            shutil.rmtree(entry)
+
+
+@pytest.mark.parametrize("cli", [False, True], ids=["libgit2", "cli"])
+@pytest.mark.asyncio
+async def test_where_flock_fails_an_invalid_clone_is_cloned_again_with_the_cli_off(
+    tmp_path, monkeypatch, records, cli
+):
+    """Where flock fails (NFS without local_lock=flock), the clone's lock
+    cannot be taken. With SCOPES_GIT_FETCH_WITH_CLI off only a repack takes it,
+    and no repack runs there, so the invalid clone is deleted without the lock
+    and cloned again. With it on every git fetch and clone takes it too and
+    fails without it, so the clone is kept: deleted, it could not be cloned
+    again.
+
+    Mutation: raising whatever the setting leaves the clone invalid with
+    it off (the clone onto its directory fails); deleting whatever the
+    setting leaves no clone at all with it on.
+    """
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", cli)
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.sync()
+    GitPolicyFetcher.forget_repo(str(scope.clone_path))
+    _gut(scope.clone_path)
+    _flock_fails_with(monkeypatch, errno.ENOLCK)
+
+    await scope.sync()
+
+    clone = pygit2.Repository(str(scope.clone_path))
+    try:
+        assert (clone.get(scope.tip) is None) is cli
+    finally:
+        clone.free()
+    without_lock = [
+        r
+        for r in records
+        if r["level"].name == "WARNING" and "without its lock" in r["message"]
+    ]
+    assert len(without_lock) == (0 if cli else 1)
+
+
 def test_failed_repack_prunes_the_expired_cooldowns_of_other_sources(emitted):
     """What keeps the cooldowns bounded as sources come and go: a deleted
     scope's entry is never looked up again, so only the next failure, of
@@ -2974,6 +3023,34 @@ async def test_remove_clone_dir_exclusive_waits_for_a_running_repack(
         os.close(held)
     assert await git_fetcher.remove_clone_dir_exclusive(str(clone)) is True
     assert not clone.exists()
+
+
+@pytest.mark.parametrize("cli", [False, True], ids=["libgit2", "cli"])
+@pytest.mark.asyncio
+async def test_remove_clone_dir_exclusive_where_flock_fails(tmp_path, monkeypatch, cli):
+    """The DELETE floor where no lock can be taken (NFS without
+    local_lock=flock): the clone is removed without them with
+    SCOPES_GIT_FETCH_WITH_CLI off, as for invalid-repo recovery, and kept, the
+    error raised, with it on.
+
+    Mutation: raising whatever the setting leaves a deleted scope's
+    clone on disk.
+    """
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", cli)
+    clones = tmp_path / "git_sources"
+    clone = clones / "src"
+    (clone / ".git").mkdir(parents=True)
+    _flock_fails_with(monkeypatch, errno.ENOLCK)
+
+    if cli:
+        with pytest.raises(OSError) as info:
+            await git_fetcher.remove_clone_dir_exclusive(str(clone))
+        assert info.value.errno == errno.ENOLCK
+        assert clone.exists()
+    else:
+        assert await git_fetcher.remove_clone_dir_exclusive(str(clone)) is True
+        assert not clone.exists()
+    assert git_fetcher._repack_lock_fds == set()
 
 
 @pytest.mark.asyncio
