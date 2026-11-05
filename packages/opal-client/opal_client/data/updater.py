@@ -26,6 +26,11 @@ from opal_client.policy_store.policy_store_client_factory import (
 )
 from opal_common.async_utils import TasksPool, repeated_call
 from opal_common.config import opal_common_config
+from opal_common.fetcher.providers.http_fetch_provider import (
+    FETCH_NOT_MODIFIED,
+    HttpFetcherConfig,
+    clear_conditional_validators,
+)
 from opal_common.http_utils import is_http_error_response, redact_url
 from opal_common.logging_utils.errors import describe_error
 from opal_common.schemas.data import (
@@ -268,6 +273,10 @@ class DataUpdater:
             "Performing data configuration, reason: {reason}", reason=data_fetch_reason
         )
 
+        # Clear cached conditional HTTP validators so base fetches on initial
+        # load, reconnect, or policy-store re-init always perform a full fetch.
+        clear_conditional_validators()
+
         # If we're reconnecting, stop any old periodic tasks before fetching anew
         await self._stop_polling_update_tasks()
 
@@ -329,6 +338,7 @@ class DataUpdater:
         """Resets internal state so the updater can be started again after
         being stopped."""
         self._stopping = False
+        clear_conditional_validators()
         self._tasks.restart()
 
     async def start(self):
@@ -565,6 +575,16 @@ class DataUpdater:
             )
             return DataEntryReport(entry=entry, fetched=False, saved=False)
 
+        if result is FETCH_NOT_MODIFIED:
+            logger.info(
+                "Skipping policy-store write for '{url}' (304 Not Modified)",
+                url=redact_url(entry.url),
+            )
+            store_transaction._update_remote_status(
+                url=redact_url(entry.url), status=True, error=""
+            )
+            return DataEntryReport(entry=entry, fetched=True, saved=False)
+
         try:
             await self._store_fetched_data(entry, result, store_transaction)
         except Exception as e:
@@ -598,10 +618,29 @@ class DataUpdater:
         Returns:
             JsonableValue: The fetched data, as a JSON-serializable object.
         """
+        config = entry.config
+        if (
+            isinstance(config, dict)
+            and config.get("conditional_request")
+            and not config.get("cache_key")
+        ):
+            config = {
+                **config,
+                "cache_key": f"{entry.url}|{entry.dst_path or ''}",
+            }
+        elif (
+            isinstance(config, HttpFetcherConfig)
+            and config.conditional_request
+            and not config.cache_key
+        ):
+            config = config.model_copy(
+                update={"cache_key": f"{entry.url}|{entry.dst_path or ''}"}
+            )
+
         try:
             result = await self._data_fetcher.handle_url(
                 url=entry.url,
-                config=entry.config,
+                config=config,
                 data=entry.data,
             )
         except Exception as e:
