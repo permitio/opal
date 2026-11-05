@@ -2389,6 +2389,69 @@ async def test_a_clone_over_ssh_with_a_key_works_and_removes_the_key(
     assert list(keys.iterdir()) == []
 
 
+@pytest.mark.asyncio
+async def test_an_ssh_rsa_only_server_fails_with_ssh_s_reason_in_the_error(
+    make_sshd, make_origin, tmp_path
+):
+    """A server that offers only an ssh-rsa (SHA-1) host key, which ssh from
+    OpenSSH 8.8 on refuses: ssh says why at its INFO level, and the error has
+    that line, not only git's "Could not read from remote repository"."""
+    server = make_sshd(host_key_type="rsa", config="HostKeyAlgorithms ssh-rsa\n")
+    origin = make_origin(tmp_path / "served" / "repo.git")
+    url = server.url(origin.path)
+    source = _source(url, SSHAuthData(username="git", private_key=server.client_key))
+
+    with pytest.raises(GitCliError) as info:
+        await _clone(url, tmp_path / "cli", source)
+
+    assert "no matching host key type found. Their offer: ssh-rsa" in (
+        info.value.stderr_tail
+    )
+
+
+@pytest.mark.asyncio
+async def test_an_ssh_error_does_not_say_the_host_key_was_added(
+    sshd, make_origin, tmp_path
+):
+    """Without SCOPES_GIT_SSH_KNOWN_HOSTS ssh takes the server's host key and,
+    on every op, says it added it to known_hosts, which is /dev/null: the error
+    (here for a key the server does not authorize) leaves that out."""
+    origin = make_origin(tmp_path / "served" / "repo.git")
+    url = sshd.url(origin.path)
+    unauthorized = (sshd.base / "other_host_key").read_text()
+    source = _source(url, SSHAuthData(username="git", private_key=unauthorized))
+
+    with pytest.raises(GitCliError) as info:
+        await _clone(url, tmp_path / "cli", source)
+
+    assert "Permission denied (publickey)" in info.value.stderr_tail
+    assert "Permanently added" not in info.value.stderr_tail
+
+
+@pytest.mark.asyncio
+async def test_the_error_keeps_ssh_s_reason_and_drops_its_host_key_note(
+    tmp_path, monkeypatch
+):
+    """What ssh writes, each line ending in CRLF as ssh ends it: the error
+    keeps why the op failed (a link the server went silent on, here) and drops
+    the host-key note every op without a known_hosts file gets."""
+    _shim(
+        tmp_path,
+        monkeypatch,
+        "ssh",
+        r"""printf "Warning: Permanently added '[127.0.0.1]:1' (ED25519) to the list of known hosts.\r\n" >&2
+printf 'Timeout, server 127.0.0.1 not responding.\r\n' >&2
+exit 255""",
+    )
+    url = "ssh://git@127.0.0.1:1/repo.git"
+
+    with pytest.raises(GitCliError) as info:
+        await _clone(url, tmp_path / "cli")
+
+    assert "Timeout, server 127.0.0.1 not responding." in info.value.stderr_tail
+    assert "Permanently added" not in info.value.stderr_tail
+
+
 # --- SSH host keys -------------------------------------------------------------
 
 _LIBGIT2_CLONE = """

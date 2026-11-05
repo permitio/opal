@@ -258,6 +258,9 @@ _CLONE_ARGS = (
 # the system's (no ProxyCommand, ControlMaster or IdentityFile from there).
 # BatchMode: never prompt. IdentityFile=none, before any -i: no default key of
 # ~/.ssh is ever tried, even when the op's own key file cannot be read.
+# LogLevel=INFO, ssh's default: ssh says why it gave up (no algorithm in
+# common with the server, a server gone silent, a connection closed or reset)
+# at INFO, and that goes into the op's error.
 # Beyond libgit2: a connect that gets no answer fails after 30 s, and a link
 # the server stays silent on (4 keepalives, 15 s apart, unanswered) after
 # about a minute, with ssh's own error rather than at the op's timeout.
@@ -271,7 +274,7 @@ _SSH_OPTIONS = (
     "-o",
     "IdentityFile=none",
     "-o",
-    "LogLevel=ERROR",
+    "LogLevel=INFO",
     "-o",
     "ConnectTimeout=30",
     "-o",
@@ -289,6 +292,14 @@ _SSH_HOST_KEYS_AS_LIBGIT2 = (
     "UserKnownHostsFile=/dev/null",
     "-o",
     "GlobalKnownHostsFile=/dev/null",
+)
+# What ssh says, at INFO, of each host key it takes with the options above:
+# that it added the key to known_hosts, which is /dev/null. It says so on every
+# op that reaches the server, so it is left out of the op's error. ssh ends its
+# lines with CRLF.
+_SSH_HOST_KEY_ADDED = re.compile(
+    r"^Warning: Permanently added .* to the list of known hosts\.\r?\n?",
+    re.MULTILINE,
 )
 _HTTP_SCHEMES = ("http", "https")
 _SSH_SCHEMES = ("ssh", "git+ssh", "ssh+git")
@@ -2153,7 +2164,8 @@ class _Group:
 
     def stderr_tail(self, redact: Callable[[str], str]) -> str:
         """The end of git's stderr, ``redact``-ed before it is cut, so that no
-        part of a secret the cut goes through is left."""
+        part of a secret the cut goes through is left, and without ssh's note
+        of a host key it added to /dev/null."""
         try:
             raw = self._stderr.done.result()
         except (asyncio.CancelledError, Exception):
@@ -2163,6 +2175,7 @@ class _Group:
             # What was kept starts in the middle of a line, maybe of a secret
             # (git is given none with a newline): that line goes.
             text = text.partition("\n")[2]
+        text = _SSH_HOST_KEY_ADDED.sub("", text)
         return text.strip()[-_STDERR_TAIL_CHARS:]
 
 

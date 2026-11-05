@@ -566,10 +566,13 @@ class Sshd:
     """An OpenSSH server on localhost, run as this user, that serves git
     through git-shell to a client with a key.
 
-    It has a host key of its own, which no known_hosts file names.
+    It has a host key of its own, of ``host_key_type``, which no known_hosts
+    file names. ``config`` is added to its sshd_config.
     """
 
-    def __init__(self, base: Path) -> None:
+    def __init__(
+        self, base: Path, host_key_type: str = "ed25519", config: str = ""
+    ) -> None:
         sshd = shutil.which("sshd") or "/usr/sbin/sshd"
         if not os.path.exists(sshd):
             pytest.skip("no sshd on this machine")
@@ -579,9 +582,13 @@ class Sshd:
         ).stdout.strip()
         base.mkdir(parents=True, exist_ok=True)
         self.base = base
-        for name in ("host_key", "other_host_key", "client_key"):
+        for name, key_type in (
+            ("host_key", host_key_type),
+            ("other_host_key", "ed25519"),
+            ("client_key", "ed25519"),
+        ):
             subprocess.run(
-                ["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(base / name)],
+                ["ssh-keygen", "-q", "-t", key_type, "-N", "", "-f", str(base / name)],
                 check=True,
                 capture_output=True,
             )
@@ -598,16 +605,16 @@ class Sshd:
         with socket.socket() as s:
             s.bind(("127.0.0.1", 0))
             self.port = s.getsockname()[1]
-        config = base / "sshd_config"
-        config.write_text(
+        config_file = base / "sshd_config"
+        config_file.write_text(
             f"Port {self.port}\nListenAddress 127.0.0.1\n"
             f"HostKey {base / 'host_key'}\nPidFile {base / 'sshd.pid'}\n"
             f"AuthorizedKeysFile {authorized}\nUsePAM no\nStrictModes no\n"
             "PasswordAuthentication no\nKbdInteractiveAuthentication no\n"
-            f"PubkeyAuthentication yes\nForceCommand {shell}\n"
+            f"PubkeyAuthentication yes\nForceCommand {shell}\n{config}"
         )
         self._proc = subprocess.Popen(
-            [sshd, "-D", "-e", "-f", str(config)],
+            [sshd, "-D", "-e", "-f", str(config_file)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
         )
@@ -649,8 +656,22 @@ class Sshd:
 
 
 @pytest.fixture
-def sshd(tmp_path):
+def make_sshd(tmp_path):
+    """Makes local sshds serving git, given Sshd's arguments after its base
+    directory; a skip where none can be started."""
+    servers = []
+
+    def make(**kwargs) -> Sshd:
+        server = Sshd(tmp_path / f"sshd-{len(servers)}", **kwargs)
+        servers.append(server)
+        return server
+
+    yield make
+    for server in servers:
+        server.close()
+
+
+@pytest.fixture
+def sshd(make_sshd):
     """A local sshd serving git, or a skip where none can be started."""
-    server = Sshd(tmp_path / "sshd")
-    yield server
-    server.close()
+    return make_sshd()
