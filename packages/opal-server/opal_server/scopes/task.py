@@ -241,10 +241,10 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         logs through loguru's unscrubbed default handler.
         """
         if opal_server_config.SCOPES:
-            # Before any clone, and before a worker exists to refuse to start.
-            validate_git_cli_settings()
             if not logs_configured():
                 configure_logs()
+            # Before any clone, and before a worker exists to refuse to start.
+            validate_git_cli_settings()
             # This runs in the gunicorn MASTER (scripts/gunicorn_conf.py::when_ready)
             # before any worker configured monitoring. Without
             # configure_server_metrics() the git metrics emitted during preload

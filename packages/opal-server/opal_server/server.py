@@ -119,11 +119,6 @@ class OpalServer:
                 topic. upon being triggered, will detect updates to the policy (new commits) and
                 will update the opal client via pubsub.
         """
-        validate_git_cli_settings()
-        if opal_server_config.SCOPES_GIT_FETCH_WITH_CLI:
-            # SSH key files of a worker that died (SIGKILL, an OOM kill) before
-            # it could remove them; the pre-fork preload sweeps them too.
-            remove_dead_key_dirs()
         # load defaults
         init_publisher: bool = load_conf_if_none(
             init_publisher, opal_server_config.PUBLISHER_ENABLED
@@ -147,6 +142,14 @@ class OpalServer:
         self._policy_remote_url = policy_remote_url
 
         self._configure_monitoring()
+        # Once logging is configured, so that what they log never goes out
+        # through loguru's default handler (no gunicorn master configured it
+        # when uvicorn runs the server on its own).
+        validate_git_cli_settings()
+        if opal_server_config.SCOPES_GIT_FETCH_WITH_CLI:
+            # SSH key files of a worker that died (SIGKILL, an OOM kill) before
+            # it could remove them; the pre-fork preload sweeps them too.
+            remove_dead_key_dirs()
         metrics.increment("startup")
 
         self.data_sources_config: ServerDataSourceConfig = (
