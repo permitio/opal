@@ -276,6 +276,9 @@ class DataEntryReport(BaseModel):
     saved: Optional[bool] = False
     # Hash of the returned data
     hash: Optional[str] = None
+    # The source answered "not modified" to a conditional fetch, so the data
+    # already in the policy-data-store was kept and nothing was written
+    not_modified: bool = False
 
 
 class DataUpdateReport(BaseModel):

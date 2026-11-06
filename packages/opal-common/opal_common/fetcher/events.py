@@ -1,5 +1,6 @@
 from typing import Any, ClassVar, List, Optional, Set, get_args
 
+from opal_common.fetcher.conditional import CacheValidators
 from opal_common.logging_utils.redaction import RedactedReprMixin
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -94,6 +95,9 @@ class FetchEvent(RedactedReprMixin, BaseModel):
     config: Optional[dict] = None
     # Tenacity.retry - Override default retry configuration for this event
     retry: Optional[dict] = None
+    # Validators from the previous fetch of this resource, for providers that
+    # support conditional fetching (ignored by the others)
+    validators: Optional[CacheValidators] = None
 
     @field_validator("config", mode="before")
     @classmethod

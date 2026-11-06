@@ -1392,6 +1392,12 @@ Default: `False`
 
 Split writing data updates to root path.
 
+#### OPAL_DATA_UPDATER_CONDITIONAL_FETCH_MAX_AGE
+
+Default: unset
+
+For data sources fetched with [conditional requests](/getting-started/running-opal/run-opal-server/data-sources#skipping-unchanged-data-conditional-requests), the max age in seconds of the stored validators. Once the last full fetch is older than this, the next fetch is unconditional. A backstop for policy stores that lose data without OPAL noticing. Unset means no max age.
+
 #### OPAL_POLICY_SUBSCRIPTION_DIRS
 
 Default: `["."]`

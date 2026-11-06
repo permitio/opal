@@ -5,6 +5,7 @@ from opal_client.config import opal_client_config
 from opal_client.policy_store.base_policy_store_client import JsonableValue
 from opal_common.config import opal_common_config
 from opal_common.fetcher import FetchingEngine
+from opal_common.fetcher.conditional import CacheValidators
 from opal_common.fetcher.events import FetcherConfig
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
 from opal_common.http_utils import redact_url
@@ -59,9 +60,17 @@ class DataFetcher:
         await self._engine.terminate_workers()
 
     async def handle_url(
-        self, url: str, config: dict, data: Optional[JsonableValue]
+        self,
+        url: str,
+        config: dict,
+        data: Optional[JsonableValue],
+        validators: Optional[CacheValidators] = None,
     ) -> Optional[JsonableValue]:
-        """Helper function wrapping self._engine.handle_url."""
+        """Helper function wrapping self._engine.handle_url.
+
+        ``validators`` are passed on for a conditional fetch; see
+        ``opal_common.fetcher.conditional``.
+        """
         if data is not None:
             logger.info("Data provided inline for url: {url}", url=redact_url(url))
             return data
@@ -73,7 +82,9 @@ class DataFetcher:
         logger.info("Fetching data from url: {url}", url=redact_url(url))
         try:
             # ask the engine to get our data
-            response = await self._engine.handle_url(url, config=config)
+            response = await self._engine.handle_url(
+                url, config=config, validators=validators
+            )
             return response
         except asyncio.TimeoutError as e:
             logger.exception("Timeout while fetching url: {url}", url=redact_url(url))
