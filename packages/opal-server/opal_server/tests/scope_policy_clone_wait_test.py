@@ -166,6 +166,43 @@ def _gated_make_bundle(gate):
     return fake_make_bundle, calls
 
 
+async def _open_once_every_request_waits(gate, emitted, requests, timeout=20.0):
+    """Open ``gate`` once each of ``requests`` concurrent requests is in the
+    wait: holding a slot, or shed by the cap. Whether all of them got there
+    within ``timeout`` seconds; the gate opens then all the same, so that
+    the requests end.
+
+    Not on a timer: a request that makes its first attempt after the gate
+    has opened finds the bundle ready and never waits, which a loaded
+    machine makes happen.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    try:
+        while (
+            scopes_api._clone_wait_inflight + _wait_outcomes(emitted).count("shed")
+            < requests
+        ):
+            if loop.time() >= deadline:
+                return False
+            await asyncio.sleep(0.005)
+        return True
+    finally:
+        gate["ready"] = True
+
+
+async def _until_a_slot_is_held(timeout=20.0):
+    """Wait until a request holds a wait slot; whether one did within
+    ``timeout`` seconds."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while scopes_api._clone_wait_inflight < 1:
+        if loop.time() >= deadline:
+            return False
+        await asyncio.sleep(0.005)
+    return True
+
+
 @pytest.fixture(autouse=True)
 def clean_module_state(monkeypatch):
     """Per-process wait state, reset per test.
@@ -835,7 +872,9 @@ async def test_the_cap_sheds_the_excess_instead_of_holding_every_request(
     monkeypatch.setattr(
         "opal_server.scopes.api.opal_server_config.BASE_DIR", str(tmp_path)
     )
-    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", 5.0)
+    # Longer than _open_once_every_request_waits gives the requests to get
+    # there, so that no held request times out first.
+    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", 30.0)
     monkeypatch.setattr("opal_server.scopes.api._CLONE_WAIT_POLL_SECONDS", 0.02)
     monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT", 3)
 
@@ -844,14 +883,14 @@ async def test_the_cap_sheds_the_excess_instead_of_holding_every_request(
     monkeypatch.setattr(GitPolicyFetcher, "make_bundle", fake)
     app = _app(FakeScopeRepository([_scope()]), tmp_path)
 
-    asyncio.get_running_loop().call_later(0.15, gate.__setitem__, "ready", True)
-
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://bed") as client:
-        responses = await asyncio.gather(
-            *(client.get("/scopes/live/policy") for _ in range(5))
+        *responses, all_in_the_wait = await asyncio.gather(
+            *(client.get("/scopes/live/policy") for _ in range(5)),
+            _open_once_every_request_waits(gate, emitted, 5),
         )
 
+    assert all_in_the_wait, "the 5 requests did not all reach the wait within 20s"
     codes = sorted(r.status_code for r in responses)
     assert codes == [
         200,
@@ -906,7 +945,9 @@ async def test_a_cap_of_zero_means_no_cap(tmp_path, monkeypatch, emitted):
     monkeypatch.setattr(
         "opal_server.scopes.api.opal_server_config.BASE_DIR", str(tmp_path)
     )
-    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", 5.0)
+    # Longer than _open_once_every_request_waits gives the requests to get
+    # there, so that no held request times out first.
+    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", 30.0)
     monkeypatch.setattr("opal_server.scopes.api._CLONE_WAIT_POLL_SECONDS", 0.02)
     monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT", 0)
 
@@ -914,14 +955,15 @@ async def test_a_cap_of_zero_means_no_cap(tmp_path, monkeypatch, emitted):
     fake, _calls = _gated_make_bundle(gate)
     monkeypatch.setattr(GitPolicyFetcher, "make_bundle", fake)
     app = _app(FakeScopeRepository([_scope()]), tmp_path)
-    asyncio.get_running_loop().call_later(0.15, gate.__setitem__, "ready", True)
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://bed") as client:
-        responses = await asyncio.gather(
-            *(client.get("/scopes/live/policy") for _ in range(4))
+        *responses, all_in_the_wait = await asyncio.gather(
+            *(client.get("/scopes/live/policy") for _ in range(4)),
+            _open_once_every_request_waits(gate, emitted, 4),
         )
 
+    assert all_in_the_wait, "the 4 requests did not all reach the wait within 20s"
     assert [r.status_code for r in responses] == [
         200
     ] * 4, f"cap=0 shed requests: {[r.status_code for r in responses]}"
@@ -1046,8 +1088,8 @@ async def test_a_cancelled_request_releases_its_slot_and_is_counted(
             _fetcher(tmp_path), None, "live", None
         )
     )
-    await asyncio.sleep(0.05)
-    assert scopes_api._clone_wait_inflight == 1, "the request never took a slot"
+    assert await _until_a_slot_is_held(), "the request never took a slot"
+    assert scopes_api._clone_wait_inflight == 1
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
