@@ -778,10 +778,14 @@ def verify_private_key_or_throw(scope_in: Scope):
 
 
 def verify_branch_or_throw(scope_in: Scope):
-    """Refuse a git branch that cannot name a ref.
+    """Refuse a git branch that cannot name a ref: an empty name, or ``x~1``,
+    say.
 
-    An empty name or ``x~1``, say: no fetch can bring it, so the scope
-    could never be served.
+    Such a name is not a branch name git can fetch, so the scope could not
+    follow a branch. ``x~1`` still resolves, as a revision expression (the
+    parent of ``origin/x``), and a scope stored with one before this check
+    is served that commit; a PUT of such a scope, new or an update, gets
+    the 422.
     """
     if not isinstance(scope_in.policy, GitPolicyScopeSource):
         return
