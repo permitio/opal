@@ -67,7 +67,9 @@ def _load_scopes(opal, prefix, names):
     most three rounds before the final wait. Without those passes (no
     packed-refs housekeeping) the first round already holds.
 
-    Returns the per-key load count reached (max over a wait).
+    Returns the stats once the counts have settled, from a single read; if
+    ``repos`` is still short after the rounds, the per-key max over a few
+    reads once it fills.
     """
     n = len(names)
     for i, name in enumerate(names):
