@@ -1531,6 +1531,41 @@ async def test_only_a_fetch_made_by_this_sync_marks_a_repack_due(tmp_path, monke
     assert _count_pack_files(scope.clone_path) == _LIMIT - 1
 
 
+class _FailingCallbacks(PolicyFetcherCallbacks):
+    """The notification of a scope that fails, for that scope alone (a publish
+    that fails, say)."""
+
+    async def on_update(self, old_head, head):
+        raise RuntimeError("publish failed")
+
+
+@pytest.mark.parametrize("op", ["clone", "fetch"])
+@pytest.mark.asyncio
+async def test_a_notification_that_fails_still_marks_the_clone_its_sync_wrote(
+    tmp_path, op
+):
+    """The pack a fetch wrote, and the refs a libgit2 clone left each in a file
+    of its own, are the clone's, whichever scope's sync wrote them: the sync
+    that fails after its fetch or clone, in its change check or its
+    notification, still marks the clone due, and fails all the same.
+
+    Mutation: marking only after a notification that went out leaves the
+    clone unmarked, and in a pass whose first scope on the clone fails
+    this way, unmarked pass after pass.
+    """
+    scope = _ScopeRepo(tmp_path, "s1")
+    if op == "fetch":
+        await scope.fetched(_LIMIT - 1)
+        assert git_fetcher._repacks_due == {}
+        scope.push()
+    scope.fetcher.callbacks = _FailingCallbacks()
+
+    with pytest.raises(RuntimeError, match="publish failed"):
+        await scope.sync()
+
+    assert set(git_fetcher._repacks_due) == {scope.source_id}
+
+
 @pytest.mark.asyncio
 async def test_only_packs_with_their_index_count_toward_the_limit(
     tmp_path, monkeypatch, records

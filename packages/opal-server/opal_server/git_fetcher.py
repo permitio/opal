@@ -3339,22 +3339,27 @@ class GitPolicyFetcher(PolicyFetcher):
                         # syncs (PUT /scopes, the refresh routes) keep the line,
                         # and a pass's syncs log it once per branch per pass
                         # (_report_missing_branch).
-                        if (
-                            should_fetch
-                            or not honor_backoff
-                            or pass_started is not None
-                            or RepoInterface.has_remote_branch(
-                                repo, self._source.branch, self._remote
-                            )
-                        ):
-                            await self._notify_on_changes(repo)
-                        if fetched:
-                            # Housekeeping for the pack that fetch just wrote:
-                            # marked here, repacked at the end of the pass.
-                            # Only here and after a clone: a sync that did not
-                            # fetch added no pack, and a failed fetch added
-                            # none either.
-                            await self._mark_repack_due()
+                        try:
+                            if (
+                                should_fetch
+                                or not honor_backoff
+                                or pass_started is not None
+                                or RepoInterface.has_remote_branch(
+                                    repo, self._source.branch, self._remote
+                                )
+                            ):
+                                await self._notify_on_changes(repo)
+                        finally:
+                            if fetched:
+                                # Housekeeping for the pack that fetch just
+                                # wrote: marked here, repacked at the end of
+                                # the pass. Only here and after a clone: a sync
+                                # that did not fetch added no pack, and a failed
+                                # fetch added none either. Also when this
+                                # scope's change check failed: the pack is the
+                                # clone's, and in a pass this may be the one
+                                # sync that fetched it.
+                                await self._mark_repack_due()
                         return
                     else:
                         if self._tried_earlier_in_pass("clone"):
@@ -3428,10 +3433,12 @@ class GitPolicyFetcher(PolicyFetcher):
         with no packed-refs file (with reflogs, when the libgit2 fetch
         prunes: _ref_steps_due) is therefore marked too, below the limit,
         and the due repack runs only the ref steps on it
-        (_pack_clone_refs). Called only after a fetch or a clone made by
-        this sync succeeded and PDPs were notified, under lock_source. It
-        only marks: the sync pass repacks the due clones last, after every
-        notification it sends (run_due_repacks). Run here instead, a repack
+        (_pack_clone_refs). Called only once a fetch or a clone made by this
+        sync succeeded, after its change check and the notification of PDPs,
+        whether or not those succeeded (what a fetch wrote is the clone's,
+        not the scope's), under lock_source. It only marks: the sync pass
+        repacks the due clones last, after every notification it sends
+        (run_due_repacks). Run here instead, a repack
         would hold up the change check and notification of every scope the
         pass handles after this one, and in the boot preload the start of
         every worker. A sync outside a pass (a refresh, a PUT) marks too,
@@ -4097,9 +4104,13 @@ class GitPolicyFetcher(PolicyFetcher):
             # A reclone just downloaded current remote state — record it so
             # _was_fetched_after() doesn't force a redundant fetch next cycle.
             GitPolicyFetcher.repos_last_fetched[self._source_id] = clone_started
-            await self._notify_on_changes(repo)
-            # A libgit2 clone's refs are each in a file of their own.
-            await self._mark_repack_due()
+            try:
+                await self._notify_on_changes(repo)
+            finally:
+                # A libgit2 clone's refs are each in a file of their own;
+                # marked whether or not this scope's change check succeeded,
+                # as after a fetch.
+                await self._mark_repack_due()
 
     def _get_repo(self) -> Repository:
         path = str(self._repo_path)
