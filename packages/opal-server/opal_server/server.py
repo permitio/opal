@@ -218,9 +218,9 @@ class OpalServer:
         #   - statistics: workers synchronise their own view over the backbone
         #   - scopes: the fleet purge broadcast (scopes/purge.py) must reach
         #     EVERY worker so it drops its GitPolicyFetcher caches for a
-        #     deleted/repointed source. Measured on staging (~23 WS conns over
-        #     16 workers): 5 of 8 workers per pod never received a single purge
-        #     and kept stale repo_locks entries for the life of the process.
+        #     deleted/repointed source. With ~23 WS conns over 16 workers, 5
+        #     of 8 workers per pod never received a single purge and kept
+        #     stale repo_locks entries for the life of the process.
         # So the "global" listening context is held whenever either is on and a
         # broadcaster exists (single-process deployments have nothing to read).
         self.broadcast_listening_context: Optional[
@@ -422,8 +422,8 @@ class OpalServer:
             ):
                 healthy = broadcaster.is_reader_healthy()
                 # Publish what the probe already decided. A wedged reader is
-                # otherwise invisible outside this handler: staging runs no
-                # liveness probe, so nothing acts on the 503 below.
+                # otherwise invisible outside this handler: where no liveness
+                # probe runs, nothing acts on the 503 below.
                 metrics.gauge(
                     "opal_server.broadcaster_reader_healthy",
                     1 if healthy else 0,

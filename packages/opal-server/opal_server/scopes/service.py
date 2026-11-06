@@ -281,11 +281,11 @@ class ScopesService:
                 # sources this line is emitted per source per pass, and the
                 # ~40-line traceback that used to ride along rotated the
                 # container log (10 MiB) within minutes of a boot — the boot
-                # markers were gone before anyone could read them, and in prod
-                # it is the mechanism behind opal-server being 56% of the org's
-                # log bytes. The traceback is still there at DEBUG for anyone
-                # chasing a specific source; the source, scope and reason are
-                # in the ERROR line.
+                # markers were gone before anyone could read them, and those
+                # tracebacks were the bulk of the server's log output. The
+                # traceback is still there at DEBUG for anyone chasing a
+                # specific source; the source, scope and reason are in the
+                # ERROR line.
                 logger.error(
                     "Could not fetch policy for scope {scope_id} "
                     "(remote: {url}): {etype}: {err}",
