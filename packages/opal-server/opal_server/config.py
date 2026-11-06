@@ -290,10 +290,11 @@ class OpalServerConfig(Confi):
         "whatever a clone's own config says, and ssh gives up on a connect "
         "after 30 seconds and on a link the server stays silent on after about "
         "a minute (4 keepalives, 15 seconds apart, unanswered), with an error "
-        "of its own rather than at the timeout. Each op forks the server "
-        "process, which under uvloop costs about 40 ms at 1.5 GB of resident "
-        "memory. Needs git 2.32 or later on PATH, /bin/sh (git runs under it, "
-        "which reports git's exit status), and ssh for SSH sources; the official "
+        "of its own rather than at the timeout. Each op starts git from the "
+        "server process, which under uvloop forks it: the more memory the "
+        "server holds, the longer that takes. Needs git 2.32 or later on PATH, "
+        "/bin/sh (git runs under it, which reports git's exit status), and "
+        "ssh for SSH sources; the official "
         "images, Debian and Alpine, have all three, and the server does not "
         "start without git 2.32 or /bin/sh. "
         "Unlike libgit2, ssh needs the server's uid to have an entry in the "
@@ -302,9 +303,10 @@ class OpalServerConfig(Confi):
         "ERROR at start; add an entry, or use nss_wrapper, whose LD_PRELOAD "
         "and `NSS_WRAPPER_*` variables git and ssh are given. "
         "ssh from OpenSSH 8.8 on, which the official images have, refuses "
-        "ssh-rsa (SHA-1) signatures, which libgit2 accepts: a git server that "
-        "offers only an ssh-rsa host key, or accepts only ssh-rsa signatures "
-        "from the user's RSA key, works with this off and fails with it on. "
+        "ssh-rsa (SHA-1) signatures: a git server that offers only an ssh-rsa "
+        "host key, which libgit2 accepts, works with this off and fails with it "
+        "on. A git server that accepts only ssh-rsa signatures from the user's "
+        "RSA key fails with this on or off. "
         "SSH key files go to /dev/shm where it is writable, else to the temp "
         "dir (TMPDIR); the server does not start when that path holds % or $, "
         "which ssh would expand. "
@@ -319,8 +321,8 @@ class OpalServerConfig(Confi):
         "in this file (ssh's StrictHostKeyChecking=yes), and the file is never "
         "written to. Its lines are OpenSSH known_hosts lines; a host on a port "
         "other than 22 is written `[host]:port`. When unset (the default), host "
-        "keys are handled as by the libgit2 fetch. A relative path is taken "
-        "relative to the server's working directory at start. With "
+        "keys are handled as by the libgit2 fetch. A relative path is resolved "
+        "against the server's working directory on each op. With "
         "SCOPES_GIT_FETCH_WITH_CLI on, the server does not start when this "
         "names no readable file or its path holds whitespace, % or $ (ssh "
         "would read the path as a list, or expand it); a file that "
@@ -356,10 +358,9 @@ class OpalServerConfig(Confi):
         "on that clone shares. libgit2 (SCOPES_GIT_FETCH_WITH_CLI off) removes "
         "a pruned ref kept in a file of its own in well under a millisecond, but "
         "rewrites the whole packed-refs file for each ref it prunes from it, and "
-        "that file grows with the repository's branches: about 20 ms per ref on "
-        "a clone of a repository with 63,000 branches, and about 1 ms with "
-        "2,000, so pruning a thousand refs from the larger clone takes tens of "
-        "seconds, against a couple of seconds with git. With this on and "
+        "that file grows with the repository's branches: about 13 ms per ref on "
+        "a clone of a repository with 63,000 branches (79 seconds for 6,000 "
+        "deleted refs). With this on and "
         "SCOPES_GIT_FETCH_WITH_CLI off, the repack therefore leaves a clone's "
         "refs in files of their own instead of packing them (see "
         "SCOPES_GIT_REPACK_PACK_LIMIT); a clone whose refs are packed already "
@@ -370,9 +371,9 @@ class OpalServerConfig(Confi):
     SCOPES_GIT_MAX_WORKERS = confi.int(
         "SCOPES_GIT_MAX_WORKERS",
         # Worst-case OS-thread count during an outage is this limit plus the
-        # number of lingering timed-out ("zombie") ops: a timed-out op releases
-        # its concurrency slot but keeps a daemon thread running on its own.
-        # SCOPES_GIT_MAX_ZOMBIES bounds that tail.
+        # number of lingering timed-out ("zombie") libgit2 ops: a timed-out
+        # libgit2 op releases its concurrency slot but keeps a daemon thread
+        # running on its own. SCOPES_GIT_MAX_ZOMBIES bounds that tail.
         10,
         description="Maximum number of concurrent scope git operations. It bounds "
         "phase 1 (the network clone/fetch of each distinct repo) AND phase 2 (the "
@@ -382,14 +383,20 @@ class OpalServerConfig(Confi):
         "up to 8 of its scopes at once, in lanes of their own: they read their "
         "records from the store side by side, and take the clone's sync lock one "
         "at a time for the change-check, so up to 8 times this many scopes are in "
-        "flight, while each clone's git work still runs one scope at a time. A "
-        "timed-out "
-        "operation stops counting against this limit, so one hung remote does not "
+        "flight, while each clone's git work still runs one scope at a time. "
+        "Those reads each take a connection from the leader worker's Redis "
+        "connection pool, which therefore grows to about 8 times this many "
+        "connections at a pass's peak, and does not shrink. With "
+        "SCOPES_GIT_FETCH_WITH_CLI off, a timed-out operation stops counting "
+        "against this limit, so one hung remote does not "
         "hold a concurrency slot — its lingering daemon thread persists on its own "
         "(a black-holed remote's can persist for the life of the process). That "
         "tail is bounded by SCOPES_GIT_MAX_ZOMBIES, which is a GLOBAL ceiling: "
         "read its description, because at that ceiling new git ops are refused "
-        "for every scope, healthy ones included.",
+        "for every scope, healthy ones included. With SCOPES_GIT_FETCH_WITH_CLI "
+        "on, a timed-out op leaves no thread behind, and holds its slot until "
+        "git is stopped: up to SCOPES_GIT_CLI_KILL_GRACE plus 10 seconds, plus "
+        "the removal of what git left, past the timeout.",
     )
     SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT = confi.float(
         "SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT",
