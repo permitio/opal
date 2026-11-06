@@ -524,6 +524,46 @@ async def test_a_pass_says_it_fetches_for_a_missing_branch_only_when_it_does(
     ]
 
 
+@pytest.mark.parametrize(
+    "failure",
+    [
+        git_cli.GitCliLocalError(127, "git not found on PATH"),
+        git_cli.GitCliBusyError(128, "fatal: another git op holds it"),
+    ],
+    ids=["local", "busy"],
+)
+@pytest.mark.asyncio
+async def test_a_fetch_that_fails_on_this_server_marks_no_repack(
+    failure, tmp_path, ops, monkeypatch
+):
+    """A sync whose fetch could not run on this server wrote no pack, so it
+    does not mark the clone due for a repack, even with the clone at the pack
+    limit; the sync of the same clone whose fetch runs does.
+
+    Mutation: marking after every sync that wanted to fetch marks it.
+    """
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_REPACK_PACK_LIMIT", 2)
+    origin = _origin(tmp_path / "origin")
+    svc = _service(tmp_path, _scopes(origin, 1, 0))
+    await svc.sync_scope(scope_id="m0")
+    for text in ("package b\n", "package c\n"):
+        _commit(origin, text)
+        await svc.sync_scope(scope_id="m0", force_fetch=True)
+    policy = _scope("m0", origin.working_tree_dir).policy
+    clone = GitPolicyFetcher.repo_clone_path(tmp_path / "opal", policy)
+    assert git_fetcher._count_pack_files(clone) >= 2  # the premise
+    assert set(git_fetcher._repacks_due) == {GitPolicyFetcher.source_id(policy)}
+    git_fetcher._repacks_due.clear()
+    _commit(origin, "package d\n")
+    ops.fetches = 0
+    ops.fail_fetch = failure
+
+    await svc.sync_scope(scope_id="m0", force_fetch=True)
+
+    assert ops.fetches == 1
+    assert git_fetcher._repacks_due == {}
+
+
 def _branch_file(clone: Path, scope_id: str) -> tuple:
     """The scope's branch file in the clone, as (inode, mtime, content): a
     write of the branch replaces the file."""
