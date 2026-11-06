@@ -22,6 +22,12 @@ API (`/scopes`)
 >
 > The server must be started with the environment variable
 > `OPAL_SCOPES=1`.
+>
+> The scope clones are kept under
+> [`OPAL_BASE_DIR`](/getting-started/configuration#opal_base_dir), which two
+> running servers must not share: at each start, the pre-fork scope preload
+> removes the lock files and partial packs in every clone there, whichever
+> server's git op left them.
 
 ### Use a REST API call to create or change a scope
 

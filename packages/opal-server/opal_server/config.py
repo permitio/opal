@@ -442,8 +442,9 @@ class OpalServerConfig(Confi):
         "least half of them, the hang is most likely the git provider's and "
         "nothing is deleted, so every scope keeps its last fetched policy; "
         "nothing is deleted either when no clone on disk is one the current "
-        "scopes use. Do not share BASE_DIR between running servers with this "
-        "on: any marker counts, whoever wrote it. Each clone deleted "
+        "scopes use. Do not share BASE_DIR between running servers (see "
+        "BASE_DIR); with this on, any marker counts, whoever wrote it. Each "
+        "clone deleted "
         "increments opal_server.scopes.hung_clone_recloned.",
     )
     SCOPES_GIT_MAX_ZOMBIES = confi.int(
@@ -567,7 +568,9 @@ class OpalServerConfig(Confi):
         "disk grows without bound until the volume holding the clones fills. It "
         "only affects scopes mode (SCOPES=true): the classic policy-repo path "
         "fetches with the git command line, which cleans up its own packs. The "
-        "git binary must be on PATH (the official images ship it). The repack "
+        "git binary must be on PATH, and /bin/sh must exist, since each git of a "
+        "repack runs under it (the official images ship both); without /bin/sh "
+        "every repack fails, and is retried once an hour. The repack "
         "runs inside the opal-server container, one clone at a time per pod, "
         "enforced with an flock on the directory holding the clones: that "
         "directory must be on a local filesystem, or on NFS mounted with "
@@ -1028,7 +1031,12 @@ class OpalServerConfig(Confi):
     BASE_DIR = confi.str(
         "BASE_DIR",
         default=pathlib.Path.home() / ".local/state/opal",
-        description="The base directory for OPAL",
+        description="The base directory for OPAL. In scopes mode the scope "
+        "clones are in its git_sources directory. Two running servers must not "
+        "share it, with SCOPES_GIT_FETCH_WITH_CLI on or off: at each start the "
+        "pre-fork scope preload removes the lock files and partial packs it "
+        "finds in every clone there, and the clones half made beside them, "
+        "whichever server's git op they belong to.",
     )
 
     POLICY_REFRESH_INTERVAL = confi.int(
