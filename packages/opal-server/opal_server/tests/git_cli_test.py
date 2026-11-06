@@ -1588,6 +1588,40 @@ def test_a_group_whose_processes_cannot_be_listed_counts_as_having_members(
     assert members is True
 
 
+@pytest.mark.skipif(not os.path.isdir("/proc/self"), reason="the filter reads /proc")
+@pytest.mark.parametrize(
+    "code, members",
+    [(errno.EMFILE, True), (errno.ENOENT, False)],
+    ids=["EMFILE", "gone"],
+)
+def test_a_process_that_cannot_be_read_counts_as_a_member_unless_it_is_gone(
+    code, members, monkeypatch
+):
+    """A process whose /proc/<pid>/stat cannot be read for want of an fd
+    (EMFILE) may be the group's: as when /proc cannot be listed, the group is
+    taken to have members, and the op waits rather than finish under a live
+    git.
+
+    One whose stat is not there any more exited meanwhile.
+    """
+    live = subprocess.Popen(["sleep", "30"], start_new_session=True)
+
+    def _open(path, *args, **kwargs):
+        if str(path).startswith("/proc/") and str(path).endswith("/stat"):
+            raise OSError(code, os.strerror(code))
+        return open(path, *args, **kwargs)
+
+    try:
+        with monkeypatch.context() as patched:
+            patched.setattr(git_cli, "open", _open, raising=False)
+            found = git_cli.live_members(live.pid)
+    finally:
+        live.kill()
+        live.wait()
+
+    assert found is members
+
+
 @pytest.fixture
 def reaped_elsewhere(monkeypatch):
     """Every child asyncio reaps was already reaped by someone else, as when

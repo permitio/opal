@@ -2000,7 +2000,8 @@ def live_members(pgid: int) -> bool:
 
     A zombie is dead, and whether it is ever reaped is up to its parent
     (pid 1, once git that started it is gone), not to this op. Without
-    /proc, or when it cannot be listed (EMFILE, say), any member counts,
+    /proc, or when it cannot be listed or a process in it cannot be read
+    for another reason than being gone (EMFILE, say), any member counts,
     but on macOS kill() tells zombies apart.
     """
     try:
@@ -2021,8 +2022,10 @@ def live_members(pgid: int) -> bool:
         try:
             with open(f"/proc/{name}/stat", encoding="utf-8", errors="replace") as f:
                 fields = f.read().rpartition(")")[2].split()
-        except OSError:
+        except (FileNotFoundError, ProcessLookupError):
             continue  # gone meanwhile
+        except OSError:
+            return True  # it may be the group's
         # After the command: state, ppid, pgrp, ...
         if len(fields) > 2 and fields[2] == str(pgid) and fields[0] not in "ZX":
             return True
