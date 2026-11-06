@@ -493,8 +493,7 @@ class ScopesService:
                             logger.warning(
                                 f"Not removing clone dir {safe_path} of deleted "
                                 f"scope {scope_id}: a repack or a git op in this "
-                                "pod still holds its lock; the dir stays until a "
-                                "later cleanup removes it"
+                                "pod still holds its lock; the dir stays"
                             )
                 finally:
                     if (
