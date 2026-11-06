@@ -4,17 +4,22 @@ server user's git config (which libgit2 does read; only their safe.directory
 reaches git), ``~/.netrc``, hooks wherever they are configured, transports
 libgit2 does not speak, and the server's own environment. Each test shows,
 with a plain git given the same setup, that what it plants does take effect
-when git is not isolated.
+when git is not isolated; where it says libgit2 acts the same, libgit2 is
+run on the same server and setup, as the control.
 
 Real git against local remotes only (see git_cli_test).
 """
 
 import base64
+import datetime
 import os
 import shutil
+import ssl
 import subprocess
+import sys
 import uuid
 from pathlib import Path
+from typing import Dict, Optional, Tuple
 
 import pygit2
 import pytest
@@ -25,6 +30,7 @@ from opal_common.schemas.policy_source import (
 )
 from opal_server.config import opal_server_config
 from opal_server.git_cli import GitCliError, cli_clone, cli_fetch
+from opal_server.git_fetcher import GitCallback
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
 
@@ -121,6 +127,59 @@ def _plain_git(home: Path, *args: str) -> subprocess.CompletedProcess:
     )
 
 
+_LIBGIT2_CLONE = """
+import sys
+
+import pygit2
+from opal_common.schemas.policy_source import (
+    GitHubTokenAuthData,
+    GitPolicyScopeSource,
+    NoAuthData,
+)
+from opal_server.git_fetcher import GitCallback
+
+url, dest, token, system = sys.argv[1:]
+pygit2.settings.search_path[pygit2.enums.ConfigLevel.SYSTEM] = system
+auth = GitHubTokenAuthData(token=token) if token else NoAuthData(auth_type="none")
+source = GitPolicyScopeSource(source_type="git", url=url, branch="master", auth=auth)
+try:
+    pygit2.clone_repository(url, dest, callbacks=GitCallback(source)).free()
+    print("cloned")
+except Exception as e:
+    print("failed:", repr(e))
+"""
+
+
+def _libgit2_clone(
+    url: str,
+    dest: Path,
+    home: Path,
+    token: str = "",
+    system: Optional[Path] = None,
+    env: Optional[Dict[str, str]] = None,
+) -> str:
+    """The control: ``url`` cloned to ``dest`` by libgit2 as the scopes
+    fetcher clones (pygit2's clone_repository, with GitCallback for the
+    source's token), in a child interpreter whose HOME is ``home``, plus
+    ``env``: libgit2 takes its global and XDG config from HOME as it loads,
+    and pygit2 its CA settings. Its system config is ``system``'s gitconfig
+    (an empty directory unless given). What it printed: "cloned", or
+    "failed: ..."."""
+    if system is None:
+        system = home.parent / "libgit2-etc"
+        system.mkdir(exist_ok=True)
+    child_env = {k: v for k, v in os.environ.items() if k != "XDG_CONFIG_HOME"}
+    child_env.update(HOME=str(home), **(env or {}))
+    done = subprocess.run(
+        [sys.executable, "-c", _LIBGIT2_CLONE, url, str(dest), token, str(system)],
+        env=child_env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    return done.stdout.strip() or done.stderr.strip()
+
+
 def _helper(marker: Path) -> str:
     """A credential helper that records each call and answers with credentials
     the source does not have."""
@@ -136,8 +195,9 @@ async def test_git_reads_neither_the_system_nor_the_user_s_git_config(
 ):
     """A User-Agent, extra headers and credential helpers, in the system
     config, ``~/.gitconfig`` and ``~/.config/git/config``: a plain git sends
-    and asks them all; no clone or fetch here, failing or succeeding, with a
-    token or without, sends or asks any of them."""
+    and asks them all; libgit2 (the control, with the same configs) sends and
+    asks none of them, and no clone or fetch here, failing or succeeding, with
+    a token or without, does either."""
     origin = make_origin(git_http.root / "repo.git")
     markers = {level: tmp_path / f"{level}-helper" for level in ("system", "user")}
     system_config.write_text(
@@ -174,7 +234,15 @@ async def test_git_reads_neither_the_system_nor_the_user_s_git_config(
             await _fetch(tmp_path / "cli", source)
         with pytest.raises(GitCliError):
             await _clone(url, tmp_path / "failed", source)
+    etc = tmp_path / "etc"
+    etc.mkdir()
+    (etc / "gitconfig").write_text(system_config.read_text())
+    refused = _libgit2_clone(url, tmp_path / "libgit2-refused", home, system=etc)
+    git_http.authorization = _basic("git", "the-token")
+    cloned = _libgit2_clone(url, tmp_path / "libgit2", home, "the-token", etc)
 
+    assert refused.startswith("failed"), refused
+    assert cloned == "cloned", cloned
     assert [m for m in markers.values() if m.exists()] == []
     for _, _, headers in git_http.requests[asked:]:
         assert headers.get("User-Agent") != "opal-test-system"
@@ -187,11 +255,12 @@ async def test_no_credentials_from_the_user_s_netrc_are_sent(
     git_http, make_origin, tmp_path, home
 ):
     """Libcurl, which git's HTTP transport runs on, sends the credentials
-    ``~/.netrc`` has for the host; libgit2 reads no ``.netrc``.
+    ``~/.netrc`` has for the host.
 
-    A plain git clones with them; here a source with no auth gets the
-    401, one with a token clones with its token, and no request carries
-    them.
+    A plain git clones with them, and libgit2 (the control, with the
+    same home) does not; here, as with libgit2, a source with no auth
+    gets the 401, one with a token clones with its token, and no request
+    carries them.
     """
     make_origin(git_http.root / "repo.git")
     (home / ".netrc").write_text("machine 127.0.0.1 login nrcuser password nrcpass\n")
@@ -204,13 +273,17 @@ async def test_no_credentials_from_the_user_s_netrc_are_sent(
     assert git_http.requests[-1][2].get("Authorization") == netrc
     asked = len(git_http.requests)
 
+    libgit2_none = _libgit2_clone(url, tmp_path / "libgit2-none", home)
     with pytest.raises(GitCliError):
         await _clone(url, tmp_path / "none", _source(url))
     git_http.authorization = _basic("git", "the-token")
+    libgit2_token = _libgit2_clone(url, tmp_path / "libgit2-token", home, "the-token")
     await _clone(
         url, tmp_path / "token", _source(url, GitHubTokenAuthData(token="the-token"))
     )
 
+    assert libgit2_none.startswith("failed"), libgit2_none
+    assert libgit2_token == "cloned", libgit2_token
     assert "refs/remotes/origin/master" in _refs(tmp_path / "token")
     sent = [h.get("Authorization") for _, _, h in git_http.requests[asked:]]
     assert netrc not in sent, sent
@@ -274,11 +347,12 @@ async def test_safe_directory_in_the_server_s_git_config_reaches_git(
 async def test_no_credential_helper_from_the_user_s_git_config_is_ever_run(
     git_http, make_origin, tmp_path, home
 ):
-    """Libgit2 runs no credential helper.
+    """A credential helper in git's config would be handed the source's
+    credentials to keep (``store`` writes them to a file) on a success, and
+    asked for credentials of its own on a 401.
 
-    One in git's config would be handed
-    the source's credentials to keep (``store`` writes them to a file) on a
-    success, and asked for credentials of its own on a 401.
+    libgit2 (the control, with the same home) runs it on neither, and
+    neither does git here.
     """
     make_origin(git_http.root / "repo.git")
     calls = tmp_path / "helper-calls"
@@ -289,15 +363,22 @@ async def test_no_credential_helper_from_the_user_s_git_config_is_ever_run(
     token = f"tok{uuid.uuid4().hex}"
     url = git_http.url("repo.git")
     source = _source(url, GitHubTokenAuthData(token=token))
-
     git_http.authorization = _basic("git", token)
+    control = _plain_git(home, "ls-remote", url)
+    assert calls.exists(), control.stderr
+    calls.unlink()
+
+    libgit2_cloned = _libgit2_clone(url, tmp_path / "libgit2", home, token)
     clone = tmp_path / "cli"
     await _clone(url, clone, source)
     await _fetch(clone, source)
     git_http.authorization = _basic("someone", "else")
+    libgit2_refused = _libgit2_clone(url, tmp_path / "libgit2-refused", home, token)
     with pytest.raises(GitCliError):
         await _fetch(clone, source)
 
+    assert libgit2_cloned == "cloned", libgit2_cloned
+    assert libgit2_refused.startswith("failed"), libgit2_refused
     assert not calls.exists(), calls.read_text()
 
 
@@ -307,7 +388,8 @@ async def test_no_credential_helper_from_the_clone_s_own_config_is_run(
 ):
     """The clone's own config is read, as libgit2 reads it, but a credential
     helper there is not run, on a success (it would be handed the token to
-    keep) or on a 401 (it would be asked for credentials)."""
+    keep) or on a 401 (it would be asked for credentials): a plain git runs it,
+    and libgit2 (the control, fetching the same clone) does not."""
     make_origin(git_http.root / "repo.git")
     marker = tmp_path / "helper-calls"
     token = f"tok{uuid.uuid4().hex}"
@@ -325,6 +407,16 @@ async def test_no_credential_helper_from_the_clone_s_own_config_is_run(
     assert marker.exists(), control.stderr
     marker.unlink()
 
+    libgit2 = pygit2.Repository(str(clone))
+    try:
+        libgit2.remotes["origin"].fetch(callbacks=GitCallback(source))
+        git_http.authorization = _basic("someone", "else")
+        with pytest.raises(pygit2.GitError):
+            libgit2.remotes["origin"].fetch(callbacks=GitCallback(source))
+    finally:
+        libgit2.free()
+    assert not marker.exists(), marker.read_text()
+    git_http.authorization = _basic("git", token)
     await _fetch(clone, source)
     git_http.authorization = _basic("someone", "else")
     with pytest.raises(GitCliError):
@@ -429,9 +521,10 @@ async def test_no_hook_runs_wherever_it_is_configured(
 async def test_no_proxy_is_used(
     git_http, make_origin, tmp_path, home, blackhole, monkeypatch
 ):
-    """Libgit2 (through pygit2) uses no proxy: neither the user's http.proxy
-    nor the server's proxy variables reach git, which would otherwise send the
-    fetch to a proxy that never answers."""
+    """libgit2 (the control, with the same home and variables) uses no proxy,
+    and neither does git here: neither the user's http.proxy nor the server's
+    proxy variables reach git, which would otherwise send the fetch to a proxy
+    that never answers."""
     make_origin(git_http.root / "repo.git")
     proxy = f"http://127.0.0.1:{blackhole}"
     (home / ".gitconfig").write_text(
@@ -440,8 +533,20 @@ async def test_no_proxy_is_used(
     url = git_http.url("repo.git")
     control = _plain_git(home, "ls-remote", url)
     assert control.returncode != 0 and git_http.requests == [], control.stderr
-    for name in ("http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY", "ALL_PROXY"):
-        monkeypatch.setenv(name, proxy)
+    proxies = {
+        name: proxy
+        for name in (
+            "http_proxy",
+            "HTTP_PROXY",
+            "https_proxy",
+            "HTTPS_PROXY",
+            "ALL_PROXY",
+        )
+    }
+    libgit2 = _libgit2_clone(url, tmp_path / "libgit2", home, env=proxies)
+    assert libgit2 == "cloned", libgit2
+    for name, value in proxies.items():
+        monkeypatch.setenv(name, value)
 
     await cli_clone(url, tmp_path / "cli", _source(url), remote="origin", timeout=10)
 
@@ -526,6 +631,107 @@ async def test_ca_certificates_reach_git_where_libgit2_s_openssl_finds_them(
     env = recorded_env()
     assert {k: v for k, v in env.items() if k.startswith("GIT_SSL_")} == expected
     assert "SSL_CERT_FILE" not in env and "SSL_CERT_DIR" not in env
+
+
+def _ca_signed_localhost(tmp_path: Path) -> Tuple[Path, ssl.SSLContext]:
+    """A CA made for the test, valid for a day, and a server context that
+    presents a certificate it signed for localhost: the CA's PEM file, and the
+    context.
+
+    A DNS name, as libgit2 refuses a self-signed certificate for an IP
+    address (conftest's tls_cert) that git takes.
+    """
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    ca_key = ec.generate_private_key(ec.SECP256R1())
+    key = ec.generate_private_key(ec.SECP256R1())
+    ca_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "OPAL test CA")])
+    leaf_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "localhost")])
+
+    def _signed_by_the_ca(subject, public_key, extension, critical):
+        return (
+            x509.CertificateBuilder()
+            .subject_name(subject)
+            .issuer_name(ca_name)
+            .public_key(public_key)
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(now - datetime.timedelta(minutes=5))
+            .not_valid_after(now + datetime.timedelta(days=1))
+            .add_extension(extension, critical=critical)
+            .sign(ca_key, hashes.SHA256())
+        )
+
+    ca = _signed_by_the_ca(
+        ca_name,
+        ca_key.public_key(),
+        x509.BasicConstraints(ca=True, path_length=None),
+        True,
+    )
+    leaf = _signed_by_the_ca(
+        leaf_name,
+        key.public_key(),
+        x509.SubjectAlternativeName([x509.DNSName("localhost")]),
+        False,
+    )
+    pem = serialization.Encoding.PEM
+    ca_path, leaf_path, key_path = (
+        tmp_path / n for n in ("ca.pem", "leaf.pem", "leaf.key")
+    )
+    ca_path.write_bytes(ca.public_bytes(pem))
+    leaf_path.write_bytes(leaf.public_bytes(pem))
+    key_path.write_bytes(
+        key.private_bytes(
+            pem, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
+        )
+    )
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(leaf_path, key_path)
+    return ca_path, context
+
+
+@pytest.mark.parametrize("where", ["SSL_CERT_FILE", "SSL_CERT_DIR", "neither"])
+@pytest.mark.asyncio
+async def test_an_https_server_is_trusted_where_libgit2_trusts_it(
+    where, git_http, make_origin, tmp_path, home, monkeypatch
+):
+    """An https server whose certificate a CA of its own signed: libgit2 (the
+    control, with the same variables) trusts it when SSL_CERT_FILE or
+    SSL_CERT_DIR names that CA, and not otherwise, and so does git here."""
+    make_origin(git_http.root / "repo.git")
+    ca, git_http.tls = _ca_signed_localhost(tmp_path)
+    url = f"https://localhost:{git_http.server_address[1]}/repo.git"
+    for name in ("SSL_CERT_FILE", "SSL_CERT_DIR", "GIT_SSL_CAINFO", "GIT_SSL_CAPATH"):
+        monkeypatch.delenv(name, raising=False)
+    env = {}
+    if where == "SSL_CERT_FILE":
+        env[where] = str(ca)
+    elif where == "SSL_CERT_DIR":
+        directory = tmp_path / "cas"
+        directory.mkdir()
+        shutil.copy(ca, directory / "ca.pem")
+        openssl = shutil.which("openssl")
+        hashed = openssl and subprocess.run(
+            [openssl, "rehash", str(directory)], capture_output=True, check=False
+        )
+        if not hashed or hashed.returncode != 0:
+            pytest.skip("no openssl rehash to name a CA directory's files by hash")
+        env[where] = str(directory)
+
+    libgit2 = _libgit2_clone(url, tmp_path / "libgit2", home, env=env)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    if where == "neither":
+        with pytest.raises(GitCliError):
+            await _clone(url, tmp_path / "cli")
+        assert libgit2.startswith("failed"), libgit2
+    else:
+        await _clone(url, tmp_path / "cli")
+        assert libgit2 == "cloned", libgit2
+        assert "refs/remotes/origin/master" in _refs(tmp_path / "cli")
 
 
 @pytest.mark.asyncio
