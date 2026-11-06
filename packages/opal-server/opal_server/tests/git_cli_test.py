@@ -750,6 +750,17 @@ async def test_a_clone_whose_parent_cannot_be_made_is_a_local_error(
         ("https://127.0.0.1/{marker}.git?private_token=abc", "token auth"),
         ("https://127.0.0.1/{marker}.git?x=1&Access_Token=abc", "token auth"),
         ("https://127.0.0.1/{marker}.git?token=abc", "token auth"),
+        ("https://127.0.0.1/{marker}.git?password=abc", "token auth"),
+        ("https://127.0.0.1/{marker}.git?api_key=abc", "token auth"),
+        ("https://127.0.0.1/{marker}.git?apikey=abc", "token auth"),
+        ("https://127.0.0.1/{marker}.git?key=abc", "token auth"),
+        ("https://127.0.0.1/{marker}.git?secret=abc", "token auth"),
+        ("https://127.0.0.1/{marker}.git?sig=abc", "token auth"),
+        ("https://127.0.0.1/{marker}.git?signature=abc", "token auth"),
+        ("https://127.0.0.1/{marker}.git?x=1;key=abc", "token auth"),
+        ("https://127.0.0.1/{marker}.git?%74oken=abc", "token auth"),
+        ("https://127.0.0.1/{marker}.git#token=abc", "token auth"),
+        ("https://127.0.0.1/{marker}.git?x=1#y=2&Password=abc", "token auth"),
         ("ssh://pw:pw@127.0.0.1/{marker}.git", "cannot be taken out"),
     ],
     ids=[
@@ -759,6 +770,17 @@ async def test_a_clone_whose_parent_cannot_be_made_is_a_local_error(
         "private_token",
         "access_token",
         "token",
+        "password",
+        "api_key",
+        "apikey",
+        "key",
+        "secret",
+        "sig",
+        "signature",
+        "after-a-semicolon",
+        "encoded-name",
+        "fragment",
+        "fragment-after-a-query",
         "ssh-user-is-the-password",
     ],
 )
@@ -767,7 +789,11 @@ async def test_a_url_git_cannot_be_given_without_a_credential_on_its_command_lin
     url_format, message, git_origin, tmp_path, processes_with
 ):
     """Before anything runs: git would put the URL on its remote helper's
-    command line, and print it in its errors."""
+    command line, and print it in its errors.
+
+    A credential in the query string or the fragment is any parameter
+    OPAL's redaction counts as one (and GitLab's private_token).
+    """
     marker = f"refused-{uuid.uuid4().hex}"
     url = url_format.format(marker=marker)
     clone = tmp_path / "cli"
@@ -783,6 +809,17 @@ async def test_a_url_git_cannot_be_given_without_a_credential_on_its_command_lin
         assert message in str(error)
         assert "abc" not in str(error) and "pw" not in str(error)
         assert seen == set()
+
+
+@pytest.mark.parametrize(
+    "query", ["?ref=main", "?keys=1&tokens=2", "?token=", "#key"], ids=str
+)
+def test_a_url_whose_query_or_fragment_holds_no_credential_is_not_refused(query):
+    """A parameter of another name, or one of those names with no value, is
+    no credential: the URL is given to git as it is."""
+    url = f"https://127.0.0.1/repo.git{query}"
+
+    assert git_cli._remote_for_git(url, _source(url)).url == url
 
 
 def test_credentials_are_left_out_of_the_remote_s_repr():

@@ -58,10 +58,10 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, FrozenSet, Iterator, List, Optional, Set, Tuple
-from urllib.parse import parse_qsl, unquote, urlsplit, urlunsplit
+from urllib.parse import unquote, unquote_plus, urlsplit, urlunsplit
 
 import pygit2
-from opal_common.http_utils import redact_sensitive_text
+from opal_common.http_utils import SENSITIVE_QUERY_PARAMS, redact_sensitive_text
 from opal_common.logger import logger
 from opal_common.schemas.policy_source import (
     GitHubTokenAuthData,
@@ -106,8 +106,8 @@ class GitCliBusyError(GitCliLocalError):
 class GitCliRefusedSourceError(GitCliLocalError):
     """The source's URL or credentials cannot be given to git without a
     credential on its command line or in what it prints (a URL that does not
-    parse, a password in an scp-like URL, a credential in the query string, a
-    newline or a NUL in a user or password).
+    parse, a password in an scp-like URL, a credential in the query string or
+    the fragment, a newline or a NUL in a user or password).
 
     Nothing ran; only a change of the source makes it work.
     """
@@ -305,9 +305,11 @@ _SSH_HOST_KEY_ADDED = re.compile(
 )
 _HTTP_SCHEMES = ("http", "https")
 _SSH_SCHEMES = ("ssh", "git+ssh", "ssh+git")
-# Query parameters that carry a credential; git would send them on every
-# request and print them in its errors, so such a URL is refused.
-_QUERY_CREDENTIALS = ("private_token", "access_token", "token")
+# Query string or fragment parameters that carry a credential: those OPAL's own
+# redaction masks, and GitLab's private_token. git would hand them to its
+# remote helper on its command line, send them on every request and print
+# them in its errors, so such a URL is refused.
+_QUERY_CREDENTIALS = SENSITIVE_QUERY_PARAMS | {"private_token"}
 # The password of GitHub's https://<token>:x-oauth-basic@... URLs, whose user
 # is the token.
 _PASSWORD_OF_A_TOKEN_USER = "x-oauth-basic"
@@ -1695,6 +1697,17 @@ def _stands_alone(text: str, start: int, end: int) -> bool:
     return not joined_before and not joined_after
 
 
+def _carries_a_credential(component: str) -> bool:
+    """Whether a URL's query string or fragment has a parameter with a value
+    whose name (decoded, any case) is one of _QUERY_CREDENTIALS; parameters are
+    split on ``&`` and ``;``, as OPAL's redaction splits them."""
+    for pair in re.split(r"[&;]", component):
+        name, _, value = pair.partition("=")
+        if value and unquote_plus(name).lower() in _QUERY_CREDENTIALS:
+            return True
+    return False
+
+
 def _remote_for_git(url: str, source: GitPolicyScopeSource) -> _Remote:
     """Split the credentials off ``url`` the way libgit2 uses them: a user and
     password in an HTTP URL first, else the source's token as user ``git``
@@ -1710,8 +1723,8 @@ def _remote_for_git(url: str, source: GitPolicyScopeSource) -> _Remote:
         GitCliRefusedSourceError: a URL git cannot be given without a
             credential on its command line: one that does not parse, an
             scp-like one with a password, one with a credential in its
-            query string, or a non-HTTP one whose user, which stays in it,
-            holds the password.
+            query string or fragment, or a non-HTTP one whose user, which
+            stays in it, holds the password.
     """
     if "://" not in url and "@" in url:
         userinfo = url.split("@", 1)[0]
@@ -1729,11 +1742,11 @@ def _remote_for_git(url: str, source: GitPolicyScopeSource) -> _Remote:
         raise GitCliRefusedSourceError(
             128, "fatal: the source's URL does not parse"
         ) from None
-    if any(k.lower() in _QUERY_CREDENTIALS for k, _ in parse_qsl(parts.query)):
+    if _carries_a_credential(parts.query) or _carries_a_credential(parts.fragment):
         raise GitCliRefusedSourceError(
             128,
-            "fatal: the source's URL carries a credential in its query string; "
-            "use the source's token auth instead",
+            "fatal: the source's URL carries a credential in its query string or "
+            "fragment; use the source's token auth instead",
         )
     remote = _Remote(url)
     scheme = parts.scheme.lower()
