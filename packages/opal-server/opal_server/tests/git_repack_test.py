@@ -1970,6 +1970,44 @@ async def test_repack_outliving_its_awaiter_keeps_the_single_flight_and_the_hand
 
 
 @pytest.mark.asyncio
+async def test_slow_walks_for_the_log_line_never_make_a_repack_a_timeout(
+    tmp_path, monkeypatch, emitted, records
+):
+    """The log line's sizes of the refs and reflogs come from walks of every
+    file under refs/ and logs/: 126,000 files on a libgit2 clone of a
+    repository with 63,000 branches, slow on a slow volume. They are taken
+    outside the git executor's timeout, so a repack that finished in time is an
+    "ok" however long they take, and the line still carries them.
+
+    Mutation: walking inside the executor's timeout, as the repack did,
+    counts the repack as a timeout and cools the clone down.
+    """
+    spy = _RepackSpy(real=lambda repo_path, timeout, **kwargs: True)
+    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.fetched(_LIMIT - 1)
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_REPACK_TIMEOUT", 0.2)
+    monkeypatch.setattr(git_fetcher, "_REPACK_EXECUTOR_SLACK_SECONDS", 0.1)
+    real_walk = git_fetcher._ref_disk_bytes
+
+    def _slow_walk(repo_path):
+        time.sleep(0.3)  # each walk alone takes the whole executor timeout
+        return real_walk(repo_path)
+
+    monkeypatch.setattr(git_fetcher, "_ref_disk_bytes", _slow_walk)
+
+    await scope.push_and_sync()
+
+    assert spy.calls == [str(scope.clone_path)]
+    assert _repack_outcomes(emitted) == ["ok"]
+    assert git_fetcher._repack_failed_at == {}
+    [done] = [r for r in records if r["message"].startswith("Repacked scope clone")]
+    assert done["extra"]["refs_before"] > 0
+    assert done["extra"]["refs_after"] > 0
+    assert await run_sync(git_fetcher.drain_git_ops, 10)
+
+
+@pytest.mark.asyncio
 async def test_cancelled_sync_propagates_and_single_flight_ends_with_git(
     tmp_path, monkeypatch, emitted
 ):

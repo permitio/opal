@@ -2495,7 +2495,8 @@ _REPACK_FAILURE_COOLDOWN_SECONDS = 3600.0
 # run_in_git_executor's timeout on top of the repack's own hard one:
 # _repack_clone returns at most grace + kill wait after its timeout, plus a
 # directory sweep. Past this its thread is stuck where no signal reaches, and
-# the sync stops waiting for it.
+# the sync stops waiting for it. The walks of the clone's refs and reflogs for
+# the log line run outside it (_repack_due_clone).
 _REPACK_EXECUTOR_SLACK_SECONDS = (
     _REPACK_TERM_GRACE_SECONDS + _REPACK_KILL_WAIT_SECONDS + 10.0
 )
@@ -2715,12 +2716,6 @@ class _RepackSizes(NamedTuple):
     bytes_before: int
     packs_after: int
     bytes_after: int
-    # On disk (allocated blocks), what the ref steps are for: the refs (their
-    # files and packed-refs) and the reflogs, before and after.
-    refs_before: int = 0
-    refs_after: int = 0
-    reflogs_before: int = 0
-    reflogs_after: int = 0
 
 
 def _tree_disk_bytes(path: Path) -> int:
@@ -2749,7 +2744,8 @@ def _tree_disk_bytes(path: Path) -> int:
 
 def _ref_disk_bytes(repo_path: str | os.PathLike[str]) -> Tuple[int, int]:
     """What a scope clone's refs (refs/ and packed-refs) and its reflogs
-    (logs/) take on disk, for the log line."""
+    (logs/) take on disk (allocated blocks), for the log line: what the ref
+    steps are for."""
     git_dir = Path(repo_path) / ".git"
     refs = _tree_disk_bytes(git_dir / "refs")
     try:
@@ -2788,27 +2784,21 @@ def _repack_clone_exclusive(
     nothing, when another repack is running: in this process (the
     single-flight lock) or anywhere else in the pod (the repack lock,
     which ``_repack_clone`` takes). Otherwise the pack dir's size before
-    and its pack count and size after, and what the refs and reflogs took
-    on disk before and after. Raises what ``_repack_clone`` raises.
+    and its pack count and size after. Raises what ``_repack_clone``
+    raises.
     """
     lock = _repack_lock  # release the lock taken, whatever the global is by then
     if not lock.acquire(blocking=False):
         return None
     try:
         bytes_before = _pack_dir_bytes(repo_path)
-        refs_before, reflogs_before = _ref_disk_bytes(repo_path)
         run = _pack_clone_refs if refs_only else _repack_clone
         if not run(repo_path, timeout):
             return None
-        refs_after, reflogs_after = _ref_disk_bytes(repo_path)
         return _RepackSizes(
             bytes_before=bytes_before,
             packs_after=_count_pack_files(repo_path),
             bytes_after=_pack_dir_bytes(repo_path),
-            refs_before=refs_before,
-            refs_after=refs_after,
-            reflogs_before=reflogs_before,
-            reflogs_after=reflogs_after,
         )
     finally:
         lock.release()
@@ -3752,6 +3742,12 @@ class GitPolicyFetcher(PolicyFetcher):
         # Timed from here, a wait for a git-executor slot included: the
         # number that matters is how long the repack holds lock_source.
         started = time.monotonic()
+        # For the log line, and outside the git executor's timeout, which
+        # bounds git: a walk stats every file under refs/ and logs/, 126,000
+        # on a libgit2 clone of a repository with 63,000 branches, and on a
+        # slow volume that counted against it could make a repack that
+        # finished in time a timeout.
+        refs_before, reflogs_before = await run_sync(_ref_disk_bytes, path)
         try:
             # Its own span, so the pass span's duration can be told apart
             # from the repacks it ends with.
@@ -3818,7 +3814,6 @@ class GitPolicyFetcher(PolicyFetcher):
             # after the in-memory record, which a cancel here cannot undo.
             await run_sync(_record_repack_failure, path)
             return
-        seconds = time.monotonic() - started
         if sizes is None:
             _emit_repack_skipped()
             GitPolicyFetcher._keep_due(due, lock)
@@ -3832,15 +3827,17 @@ class GitPolicyFetcher(PolicyFetcher):
         # setting it was opened with, and one opened on a clone made with
         # reflogs on would write them again on its next fetch.
         GitPolicyFetcher._release_handle_after_repack(due)
+        refs_after, reflogs_after = await run_sync(_ref_disk_bytes, path)
+        seconds = time.monotonic() - started
         refs = (
             "refs {refs_before} -> {refs_after} bytes on disk, reflogs "
             "{reflogs_before} -> {reflogs_after}"
         )
         ref_sizes = {
-            "refs_before": sizes.refs_before,
-            "refs_after": sizes.refs_after,
-            "reflogs_before": sizes.reflogs_before,
-            "reflogs_after": sizes.reflogs_after,
+            "refs_before": refs_before,
+            "refs_after": refs_after,
+            "reflogs_before": reflogs_before,
+            "reflogs_after": reflogs_after,
         }
         if refs_only:
             _emit_repack_attempt("ok", seconds, refs_only=True)
