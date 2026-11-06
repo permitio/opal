@@ -6,7 +6,7 @@ class Formatter:
 
     def limit_len(self, record, field, length=MAX_FIELD_LEN):
         # Shorten field content
-        content = record[field]
+        content = record[field] or ""
         if len(content) > length:
             parts = content.split(".")
             if len(parts) > 2:
