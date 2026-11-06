@@ -1685,6 +1685,87 @@ async def test_lock_that_cannot_be_taken_fails_the_repack_not_the_sync(
     assert "OSError" in warning["message"]
 
 
+def _fail_repack_setup(monkeypatch, fault: str, clone_path: Path) -> None:
+    """Make one of the repack's own steps past the repack lock fail.
+
+    Opening the clone's lock file fails with EACCES, recording the repack
+    in it with ENOSPC (a full disk), making the watchdog's pipe with
+    EMFILE. Each is patched on the ``os`` module the step calls it
+    through, as git_cli_test does for the git command-line ops.
+    """
+    if fault == "clone lock":
+        lock_path = os.fspath(git_cli.clone_lock_path(clone_path))
+        real_open = os.open
+
+        def _open(path, flags, mode=0o777, *, dir_fd=None):
+            if os.fspath(path) == lock_path:
+                raise PermissionError(errno.EACCES, os.strerror(errno.EACCES), path)
+            return real_open(path, flags, mode, dir_fd=dir_fd)
+
+        monkeypatch.setattr(git_cli.os, "open", _open)
+    elif fault == "record":
+
+        def _full(fd, data, offset):
+            raise OSError(errno.ENOSPC, os.strerror(errno.ENOSPC))
+
+        monkeypatch.setattr(git_cli.os, "pwrite", _full)
+    else:
+
+        def _no_pipe():
+            raise OSError(errno.EMFILE, os.strerror(errno.EMFILE))
+
+        monkeypatch.setattr(git_fetcher.os, "pipe", _no_pipe)
+
+
+@pytest.mark.parametrize(
+    "fault, errno_",
+    [
+        ("clone lock", errno.EACCES),
+        ("record", errno.ENOSPC),
+        ("watchdog pipe", errno.EMFILE),
+    ],
+    ids=["clone-lock-EACCES", "record-ENOSPC", "pipe-EMFILE"],
+)
+@pytest.mark.asyncio
+async def test_a_repack_whose_own_setup_fails_cools_down_and_frees_both_locks(
+    tmp_path, monkeypatch, emitted, records, fault, errno_
+):
+    """Past the repack lock, the repack opens the clone's lock file, records
+    itself in it and makes the watchdog's pipe, and each can fail. The failure
+    is the repack's: git never starts, the run is an error that cools down,
+    both locks are free with no fd of them left, and the record of an op that
+    died before it stays for the next op on the clone.
+
+    Mutation: not dropping the clone's lock or the repack lock on the way
+    out, or a record write that empties the lock file before it fails,
+    fails it.
+    """
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.fetched(_LIMIT - 1)
+    scope.push()
+    await scope.sync()  # the fetch that reaches the limit
+    assert set(git_fetcher._repacks_due) == {scope.source_id}
+    _record_a_dead_op(scope.clone_path)
+    dead_op = _record(scope.clone_path)
+    runs = tmp_path / "runs"
+    _install_git_shim(tmp_path, monkeypatch, f'echo run >> "{runs}"\n', refs_steps=True)
+
+    with monkeypatch.context() as faults:
+        _fail_repack_setup(faults, fault, scope.clone_path)
+        await GitPolicyFetcher.run_due_repacks({scope.source_id})
+
+    assert not runs.exists()
+    assert _repack_outcomes(emitted) == ["error"]
+    assert scope.source_id in git_fetcher._repack_failed_at
+    assert git_fetcher._repack_lock_fds == set()
+    assert _lock_is_free(git_fetcher._repack_lock_dir(scope.clone_path))
+    assert _clone_lock_is_free(scope.clone_path)
+    assert _record(scope.clone_path) == dead_op
+    assert _count_pack_files(scope.clone_path) == _LIMIT
+    [warning] = [r for r in records if "failed after" in r["message"]]
+    assert os.strerror(errno_) in warning["message"]
+
+
 def _gut(clone_path: Path) -> None:
     """Remove every object of the clone, its refs left: an invalid clone."""
     objects = clone_path / ".git" / "objects"
