@@ -91,7 +91,8 @@ class _PubSub:
 class _GitOps:
     """The URLs fetched and cloned, by pygit2 or git_cli, in order.
 
-    ``fail``: messages of the next fetches to fail, one each.
+    ``fail``: how the next fetches fail, one each: a message, for the
+    remote's error, or the exception to raise.
     """
 
     def __init__(self):
@@ -159,7 +160,8 @@ def git_ops(monkeypatch):
     def fetch(remote, *args, **kwargs):
         ops.fetches.append(remote.url)
         if ops.fail:
-            raise pygit2.GitError(ops.fail.pop())
+            failure = ops.fail.pop()
+            raise pygit2.GitError(failure) if isinstance(failure, str) else failure
         return real_fetch(remote, *args, **kwargs)
 
     def clone(url, *args, **kwargs):
@@ -170,7 +172,10 @@ def git_ops(monkeypatch):
         ops.fetches.append(source.url)
         if ops.fail:
             kwargs["on_gone"](False)
-            raise GitCliError(128, f"fatal: {ops.fail.pop()}")
+            failure = ops.fail.pop()
+            if isinstance(failure, str):
+                raise GitCliError(128, f"fatal: {failure}")
+            raise failure
         return await real_cli_fetch(repo_path, remote, source, **kwargs)
 
     async def cli_clone(url, *args, **kwargs):
@@ -468,6 +473,47 @@ async def test_a_branch_missing_from_two_clones_is_logged_once_for_each(tmp_path
     ) == sorted(
         f"{_MISSING}production ({origin.working_tree_dir})" for origin in (a, b)
     )
+
+
+@pytest.mark.parametrize(
+    "failure",
+    ["remote hung up", TimeoutError("git fetch exceeded 60s")],
+    ids=["remote", "timeout"],
+)
+@pytest.mark.asyncio
+async def test_a_pass_whose_fetch_failed_reports_no_branch_missing_on_the_remote(
+    tmp_path, git_ops, failure
+):
+    """Phase 1's fetch of the clone fails, and the clone's phase-2 scope whose
+    branch it lacks does not fetch it again: the pass never reached the
+    remote, which has the branch. That scope's sync says so at DEBUG, and no
+    "Did not find target branch on remote"; the fetch's own failure is
+    logged. The refresh-all pass, which does not honour the backoff, so
+    that phase 2 does sync the scope.
+
+    Mutation: reporting the missing branch whatever the pass's fetch ended
+    in logs the ERROR for a branch the remote has.
+    """
+    origin = _origin(tmp_path / "origin")
+    svc = _service(tmp_path, [_scope("s-main", origin), _scope("s-new", origin, "new")])
+    await svc.sync_scope(scope_id="s-main")
+    origin.create_head("new")
+    git_ops.fail.append(failure)
+
+    with capture_records() as logs:
+        await svc.sync_scopes(honor_backoff=False)
+
+    assert len(git_ops.fetches) == 1
+    assert _missing_branch_errors(logs.emitted) == {}
+    assert [
+        r["message"]
+        for r in logs.emitted
+        if r["level"].name == "DEBUG" and "is not in the clone" in r["message"]
+    ] == [
+        f"scope s-new: target branch new is not in the clone of "
+        f"{origin.working_tree_dir}, and no fetch of it in this sync pass reached "
+        "the remote"
+    ]
 
 
 # --- phase 2: one slot per clone ----------------------------------------------

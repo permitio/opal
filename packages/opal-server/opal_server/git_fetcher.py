@@ -3338,7 +3338,8 @@ class GitPolicyFetcher(PolicyFetcher):
                         # an ERROR on every server per request is noise. Other
                         # syncs (PUT /scopes, the refresh routes) keep the line,
                         # and a pass's syncs log it once per branch per pass
-                        # (_report_missing_branch).
+                        # (_report_missing_branch), once a fetch in the pass
+                        # reached the remote.
                         try:
                             if (
                                 should_fetch
@@ -4261,9 +4262,26 @@ class GitPolicyFetcher(PolicyFetcher):
 
     def _report_missing_branch(self) -> None:
         """Log that the remote lacks this scope's branch: in a sync pass once
-        per branch, since every scope naming it reports the same fetch."""
+        per branch, since every scope naming it reports the same fetch.
+
+        In a pass, only once a fetch or clone of the clone succeeded in
+        it: after one that failed the pass does not fetch the clone again,
+        and has not reached the remote, so a branch the clone lacks says
+        nothing about the remote. That is logged at DEBUG; the failure was
+        logged where it happened.
+        """
         sync_pass = _running_sync_pass()
         if sync_pass is not None:
+            last_fetched = GitPolicyFetcher.repos_last_fetched.get(self._source_id)
+            if last_fetched is None or last_fetched <= sync_pass.started:
+                logger.debug(
+                    "scope {scope}: target branch {branch} is not in the clone of "
+                    "{url}, and no fetch of it in this sync pass reached the remote",
+                    scope=self._scope_id,
+                    branch=self._source.branch,
+                    url=redact_url(self._source.url),
+                )
+                return
             key = (self._source_id, self._source.branch)
             if key in sync_pass.missing_branches_logged:
                 logger.debug(
