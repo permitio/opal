@@ -26,13 +26,17 @@ import pygit2
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from opal_common.schemas.policy_source import GitPolicyScopeSource, NoAuthData
+from opal_common.schemas.policy_source import (
+    BasePolicyScopeSource,
+    GitPolicyScopeSource,
+    NoAuthData,
+)
 from opal_common.schemas.scopes import Scope
 from opal_common.tests.log_capture import capture_records
 from opal_server import git_fetcher
 from opal_server.config import opal_server_config
 from opal_server.git_fetcher import GitPolicyFetcher
-from opal_server.scopes.api import init_scope_router
+from opal_server.scopes.api import init_scope_router, verify_branch_or_throw
 from opal_server.scopes.scope_repository import ScopeNotFoundError
 from opal_server.scopes.service import ScopesService
 
@@ -249,3 +253,22 @@ def test_put_scope_takes_a_branch_with_a_slash(tmp_path, monkeypatch):
 
     assert response.status_code == 201, response.text
     assert store.scopes == {"s1": scope}
+
+
+def test_the_branch_check_passes_a_policy_that_is_not_on_git():
+    """The check is for git sources only. Scope.policy admits only
+    GitPolicyScopeSource today, and its source_type is free-form, so no PUT
+    /scopes body carries another source; model_construct builds a scope on the
+    base source type, as one of a later non-git type would be.
+
+    Mutation: making the non-git early return in verify_branch_or_throw
+    raise, or dropping it, fails here.
+    """
+    policy = BasePolicyScopeSource(
+        source_type="bundle", url="https://bundles.example.com/p", auth=NoAuthData()
+    )
+    scope = Scope.model_construct(
+        scope_id="s-other", policy=policy, data={"entries": []}
+    )
+
+    assert verify_branch_or_throw(scope) is None
