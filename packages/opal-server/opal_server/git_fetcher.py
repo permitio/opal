@@ -2207,6 +2207,13 @@ def _tidy_refs(
     pack-refs exits 128 on a packed-refs.lock it finds, git config 255 on a
     config.lock). What cannot be removed keeps the repack recorded in the
     clone's lock file, for the next op on the clone to try again.
+
+    That removal takes every ref lock in the clone, whatever its age
+    (git_cli.remove_kill_leftovers). A libgit2 fetch holds no clone lock,
+    and one the pre-fork preload started can still be running in the
+    gunicorn master after its drain gave up on it: should that fetch be
+    updating refs while a stopped step's locks are removed, one of its ref
+    updates can be lost. The clone's next fetch writes that ref again.
     """
     path = os.fspath(repo_path)
     git_dir = Path(repo_path) / ".git"
@@ -3131,6 +3138,15 @@ class GitPolicyFetcher(PolicyFetcher):
         return True
 
     def _tried_in_this_pass(self, op: str) -> None:
+        """Record that this sync of the running sync pass is about to do ``op``
+        ("fetch" or "clone") on this source.
+
+        Recorded before the op runs, so the pass tries each clone once
+        whatever the outcome: a fetch that fails at once on this server
+        (the clone busy, GitCliBusyError; another local error,
+        GitCliLocalError) is not tried again by a later sync of the same
+        pass. The next pass tries it again.
+        """
         sync_pass = _running_sync_pass()
         if sync_pass is None:
             return
