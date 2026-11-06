@@ -1322,35 +1322,50 @@ def test_the_pre_fork_sweep_clears_a_dead_op_s_record_once_all_it_left_is_gone(
     assert (clone_lock_path(clone).read_bytes() != b"") is stuck
 
 
-def test_the_pre_fork_sweep_removes_this_host_s_fetch_keep_whatever_pid_it_names(
-    git_origin, tmp_path
+@pytest.mark.parametrize("by", ["pre-fork sweep", "dead op's clean-up"])
+def test_a_fetch_keep_goes_under_the_clone_s_lock_whatever_pid_and_host_it_names(
+    by, git_origin, tmp_path
 ):
-    """No git runs yet in the preload's container, and a git op of any other
-    process holds its clone's lock, which the sweep has: a .keep of a fetch on
-    this host is a dead fetch's, even when its pid names a live process now (a
-    restart in the same pod keeps the host name, and hands the old pids out
-    again).
+    """Only a git command-line fetch writes a fetch's .keep, and it holds the
+    clone's lock for as long as any of its processes lives: under that lock,
+    the .keep is a dead fetch's, whatever pid (a restart in the same pod hands
+    the old ones out again, this one's included) or host (a volume of clones
+    mounted by a new pod) it names.
 
-    One of another host, or not a fetch's, stays.
+    Left, the pack it keeps would never be merged, and every repack of
+    the clone would end with two packs. A .keep that is not a fetch's
+    stays.
     """
     clones = tmp_path / "git_sources"
     clone = clones / "src"
     _clone_at(clone, git_origin.url, git_origin.url)
+    for _ in range(2):
+        git_origin.commit("master")
+        subprocess.run(
+            ["git", "-C", str(clone), "-c", "fetch.unpackLimit=1", "fetch", "-q"],
+            check=True,
+        )
     pack_dir = clone / ".git" / "objects" / "pack"
-    pack_dir.mkdir(parents=True, exist_ok=True)
+    packs = sorted(pack_dir.glob("pack-*.pack"))
+    assert len(packs) >= 2
     host = socket.gethostname()
-    reused = [pack_dir / "pack-1111.keep", pack_dir / "pack-2222.keep"]
-    for keep, pid in zip(reused, (os.getpid(), 1)):
-        keep.write_text(f"fetch-pack {pid} on {host}\n")
-    other_host = pack_dir / "pack-4444.keep"
-    other_host.write_text(f"fetch-pack {os.getpid()} on not-{host}\n")
+    fetch_keeps = [p.with_suffix(".keep") for p in packs[:2]]
+    fetch_keeps[0].write_text(f"fetch-pack {os.getpid()} on {host}\n")
+    fetch_keeps[1].write_text(f"fetch-pack 4242 on not-{host}\n")
     kept = pack_dir / "pack-3333.keep"
     kept.write_text("keep this one\n")
 
-    sweep_clone_leftovers(clones)
+    if by == "pre-fork sweep":
+        sweep_clone_leftovers(clones)
+    else:
+        clone_lock_path(clone).write_text("4194303\n")
+        git_cli.clean_up_unfinished_op(clone)
 
-    assert [k for k in reused if k.exists()] == []
-    assert other_host.exists() and kept.exists()
+    assert [k for k in fetch_keeps if k.exists()] == []
+    assert kept.exists()
+    assert clone_lock_path(clone).read_bytes() == b""
+    git_fetcher_module._repack_clone(clone, timeout=60)
+    assert git_fetcher_module._count_pack_files(clone) == 1
 
 
 def test_the_sweep_removes_a_key_dir_no_process_holds_whatever_pid_it_names(

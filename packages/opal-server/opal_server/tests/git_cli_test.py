@@ -1302,9 +1302,10 @@ async def test_what_a_killed_fetch_left_is_removed_once_its_group_is_gone(
     hung_clone, blackhole
 ):
     """The lock files git takes while it updates refs, its partial pack, and
-    the .keep index-pack writes for a fetch whose process is gone.
+    the .keep index-pack writes for a fetch, whatever pid and host it names:
+    under the clone's lock, no fetch that wrote one is alive.
 
-    A .keep that is not a fetch's, or names a live process, stays.
+    A .keep that is not a fetch's stays.
     """
     clone, point = hung_clone
     url, _ = point(f"http://127.0.0.1:{blackhole}/{{marker}}.git")
@@ -1325,12 +1326,13 @@ async def test_what_a_killed_fetch_left_is_removed_once_its_group_is_gone(
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("x")
     host = socket.gethostname()
-    dead_keep = pack_dir / "pack-1111.keep"
-    dead_keep.write_text(f"fetch-pack {_dead_pid()} on {host}\n")
-    live_keep = pack_dir / "pack-2222.keep"
-    live_keep.write_text(f"fetch-pack {os.getpid()} on {host}\n")
-    other_host = pack_dir / "pack-4444.keep"
-    other_host.write_text(f"fetch-pack {_dead_pid()} on not-{host}\n")
+    fetch_keeps = {
+        pack_dir / "pack-1111.keep": f"fetch-pack {_dead_pid()} on {host}\n",
+        pack_dir / "pack-2222.keep": f"fetch-pack {os.getpid()} on {host}\n",
+        pack_dir / "pack-4444.keep": f"fetch-pack {_dead_pid()} on not-{host}\n",
+    }
+    for keep, text in fetch_keeps.items():
+        keep.write_text(text)
     kept = pack_dir / "pack-3333.keep"
     kept.write_text("keep this one\n")
 
@@ -1338,8 +1340,8 @@ async def test_what_a_killed_fetch_left_is_removed_once_its_group_is_gone(
         await _fetch(clone, _source(url), timeout=_TIMEOUT)
 
     assert [p for p in left if p.exists()] == []
-    assert not dead_keep.exists()
-    assert live_keep.exists() and other_host.exists() and kept.exists()
+    assert [k for k in fetch_keeps if k.exists()] == []
+    assert kept.exists()
 
 
 def _dead_pid() -> int:
