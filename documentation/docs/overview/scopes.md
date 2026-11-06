@@ -101,11 +101,13 @@ curl --request PUT 'http://opal_server/scopes'
 }'
 ```
 
-A `branch` that cannot name a git branch, such as an empty name or `main~1`,
-is refused with a 422: no fetch could ever bring it. A scope whose branch is
-not on the remote gets no policy (`GET /scopes/<scope_id>/policy` answers 409),
-and the server logs `Did not find target branch on remote: <branch> (<url>)` at
-ERROR; a sync pass logs it once for each branch of each clone.
+`PUT /scopes` refuses, with 422, a branch name git can't fetch (such as `x~1`
+or an empty name), since such a scope can't follow a branch. A scope stored
+with such a name before this release keeps being served as it was until it is
+changed. A scope whose branch is not on the remote gets no policy
+(`GET /scopes/<scope_id>/policy` answers 409), and the server logs
+`Did not find target branch on remote: <branch> (<url>)` at ERROR; a sync pass
+logs it once for each branch of each clone.
 
 ### Launch OPAL Client with a scope
 
