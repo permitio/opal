@@ -742,8 +742,8 @@ def reclone_hung_scope_clones(
     deleted.
 
     For the pre-fork preload, before its sync, which clones each deleted one
-    fresh: nothing else uses the clones then, since sharing BASE_DIR between
-    running servers is not supported with this setting on. Only a real
+    fresh: nothing else uses the clones then, since running servers never
+    share BASE_DIR (see OPAL_BASE_DIR). Only a real
     directory named like a source id is deleted, never a symlink. Markers of a
     clone that is gone (a deleted scope) are removed. When the hung clones span
     many repositories (see _HUNG_RECLONE_MAX_REPO_SHARE) nothing is deleted.
