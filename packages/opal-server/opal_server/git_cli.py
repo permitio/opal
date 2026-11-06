@@ -105,7 +105,7 @@ class GitCliRefusedSourceError(GitCliLocalError):
     """The source's URL or credentials cannot be given to git without a
     credential on its command line or in what it prints (a URL that does not
     parse, a password in an scp-like URL, a credential in the query string, a
-    newline in a user or password).
+    newline or a NUL in a user or password).
 
     Nothing ran; only a change of the source makes it work.
     """
@@ -1802,7 +1802,8 @@ def _git_env(
         GitCliLocalError: SCOPES_GIT_SSH_KNOWN_HOSTS cannot be read, or the
             key file cannot be written.
         GitCliRefusedSourceError: a user or password holds a newline, which
-            git's credential protocol cannot carry.
+            git's credential protocol cannot carry, or a NUL, which no
+            environment variable can.
     """
     env = _isolated_env()
     # An empty credential.helper first drops every helper of the clone's own
@@ -1817,7 +1818,9 @@ def _git_env(
     if remote.credential is not None:
         if any("\n" in part or "\0" in part for part in remote.credential):
             raise GitCliRefusedSourceError(
-                128, "fatal: a user or password with a newline cannot be given to git"
+                128,
+                "fatal: a user or password with a newline or a NUL cannot be given "
+                "to git",
             )
         config.append(("credential.helper", _CREDENTIAL_HELPER))
         env.update(zip(_CREDENTIAL_ENV, remote.credential))

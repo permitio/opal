@@ -333,6 +333,38 @@ async def test_no_credential_helper_from_the_clone_s_own_config_is_run(
     assert not marker.exists(), marker.read_text()
 
 
+@pytest.mark.asyncio
+async def test_git_asks_no_askpass_program_and_no_terminal_for_credentials(
+    git_http, make_origin, tmp_path, home
+):
+    """A server that asks for credentials the source does not have: a plain git
+    asks the askpass program the clone's own config names (core.askPass); here
+    git asks neither it nor a terminal, and fails, saying so."""
+    make_origin(git_http.root / "repo.git")
+    url = git_http.url("repo.git")
+    clone = tmp_path / "cli"
+    await _clone(url, clone)
+    marker = tmp_path / "askpass-ran"
+    askpass = tmp_path / "askpass.sh"
+    askpass.write_text(f"#!/bin/sh\necho \"$1\" >> '{marker}'\necho someone\n")
+    askpass.chmod(0o755)
+    repo = pygit2.Repository(str(clone))
+    try:
+        repo.config["core.askPass"] = str(askpass)
+    finally:
+        repo.free()
+    git_http.authorization = _basic("someone", "else")
+    control = _plain_git(home, "-C", str(clone), "fetch", "-q")
+    assert marker.exists(), control.stderr
+    marker.unlink()
+
+    with pytest.raises(GitCliError) as info:
+        await _fetch(clone, _source(url))
+
+    assert not marker.exists(), marker.read_text()
+    assert "terminal prompts disabled" in info.value.stderr_tail
+
+
 def _hook(path: Path, marker: Path) -> None:
     """A reference-transaction hook (run on every ref update a clone or fetch
     makes) that records that it ran."""

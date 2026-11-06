@@ -36,6 +36,7 @@ from opal_server.config import opal_server_config
 from opal_server.git_cli import (
     GitCliError,
     GitCliLocalError,
+    GitCliRefusedSourceError,
     GitCliTimeoutError,
     cli_clone,
     cli_fetch,
@@ -2311,11 +2312,25 @@ async def test_a_password_whose_text_is_elsewhere_in_the_url_is_still_used(
     assert "refs/remotes/origin/master" in _refs(tmp_path / "cli")
 
 
+@pytest.mark.parametrize(
+    "userinfo, token",
+    [("alice:a%0Ab", None), ("alice:a%00b", None), ("", "to\0ken")],
+    ids=["newline", "NUL-in-the-url", "NUL-in-the-token"],
+)
 @pytest.mark.asyncio
-async def test_a_credential_with_a_newline_is_refused(git_http, tmp_path):
-    url = git_http.url("repo.git", userinfo="alice:a%0Ab")
-    with pytest.raises(GitCliError, match="newline"):
-        await _clone(url, tmp_path / "cli")
+async def test_a_credential_with_a_newline_or_a_nul_is_refused(
+    userinfo, token, git_http, tmp_path
+):
+    """git's credential protocol cannot carry a newline, and no environment
+    variable can hold a NUL: such a user, password or token is refused as the
+    source's, before git runs."""
+    url = git_http.url("repo.git", userinfo=userinfo)
+    auth = GitHubTokenAuthData(token=token) if token else None
+
+    with pytest.raises(GitCliRefusedSourceError, match="newline or a NUL"):
+        await _clone(url, tmp_path / "cli", _source(url, auth))
+
+    assert git_http.requests == []
 
 
 def _closed_port() -> int:
@@ -2486,6 +2501,43 @@ async def test_the_ssh_git_runs_ends_a_silent_link_on_its_own(
         "ServerAliveCountMax=4",
     ):
         assert ssh[ssh.index(option) - 1] == "-o", ssh
+
+
+@pytest.mark.parametrize("known_hosts", [False, True], ids=["as-libgit2", "file"])
+@pytest.mark.asyncio
+async def test_the_ssh_git_runs_reads_no_ssh_config_and_no_system_known_hosts(
+    known_hosts, git_origin, tmp_path, monkeypatch
+):
+    """The ssh git runs is given -F /dev/null and
+    GlobalKnownHostsFile=/dev/null, with SCOPES_GIT_SSH_KNOWN_HOSTS too.
+
+    Without them it would read /etc/ssh/ssh_config, ssh_config.d and the
+    server user's ~/.ssh/config (its home comes from the user database,
+    not HOME), which can bring a ProxyCommand, a ControlMaster, an
+    IdentityFile or SendEnv to every op; and it would trust the host
+    keys of /etc/ssh/ssh_known_hosts beside those of the configured
+    file.
+    """
+    argv = tmp_path / "ssh.argv"
+    _shim(tmp_path, monkeypatch, "ssh", f'printf "%s\\n" "$@" > "{argv}"\nexit 255')
+    if known_hosts:
+        path = tmp_path / "known_hosts"
+        path.write_text("")
+        monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", True)
+        monkeypatch.setattr(opal_server_config, "SCOPES_GIT_SSH_KNOWN_HOSTS", str(path))
+    clone = tmp_path / "cli"
+    pygit2.clone_repository(git_origin.url, str(clone)).free()
+    url = "ssh://git@127.0.0.1:1/repo.git"
+    _point_at(clone, url)
+
+    with pytest.raises(GitCliError):
+        await _fetch(clone, _source(url))
+
+    ssh = argv.read_text().splitlines()
+    assert ssh[ssh.index("-F") + 1] == "/dev/null", ssh
+    assert ssh[ssh.index("GlobalKnownHostsFile=/dev/null") - 1] == "-o", ssh
+    if known_hosts:
+        assert f"UserKnownHostsFile={path}" in ssh, ssh
 
 
 @pytest.mark.asyncio
