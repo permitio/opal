@@ -9,6 +9,7 @@ import aiohttp
 import pytest
 from opal_client.policy_store.cedar_client import CedarClient
 from opal_client.policy_store.opa_client import OpaClient
+from opal_client.policy_store.openfga_client import OpenFGAClient
 from opal_client.policy_store.schemas import PolicyStoreAuth
 from opal_common.schemas.policy import DataModule
 from opal_common.schemas.store import StoreTransaction, TransactionType
@@ -201,4 +202,35 @@ async def test_cedar_connection_error_log_omits_auth_header(name):
         await _call(CEDAR_CALLS[name](client))
 
     assert "Cedar Agent connection error: ClientResponseError: 502" in logs.combined
+    assert FAKE_KEY not in logs.combined
+
+
+OPENFGA_CALLS = {
+    "set_policy": lambda c: c.set_policy(
+        policy_id="model.json",
+        policy_code='{"schema_version": "1.1", "type_definitions": [{"type": "user"}]}',
+    ),
+    "get_policy": lambda c: c.get_policy("01MODEL0001"),
+    "get_policies": lambda c: c.get_policies(),
+    "set_policy_data": lambda c: c.set_policy_data(
+        [{"user": "user:alice", "relation": "viewer", "object": "document:1"}]
+    ),
+    "delete_policy_data": lambda c: c.delete_policy_data(),
+    "get_data": lambda c: c.get_data(""),
+}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name", OPENFGA_CALLS)
+async def test_openfga_connection_error_log_omits_auth_header(name):
+    client = OpenFGAClient(
+        STORE_URL,
+        openfga_auth_token=FAKE_KEY,
+        auth_type=PolicyStoreAuth.TOKEN,
+        store_id="01STORE0001",
+    )
+    with capture_logs() as logs:
+        await _call(OPENFGA_CALLS[name](client))
+
+    assert "OpenFGA connection error: ClientResponseError: 502" in logs.combined
     assert FAKE_KEY not in logs.combined

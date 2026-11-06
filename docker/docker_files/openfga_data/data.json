@@ -1,0 +1,24 @@
+{
+  "writes": [
+    {
+      "user": "user:alice",
+      "relation": "admin",
+      "object": "organization:acme"
+    },
+    {
+      "user": "user:bob",
+      "relation": "member",
+      "object": "organization:acme"
+    },
+    {
+      "user": "user:alice",
+      "relation": "owner",
+      "object": "document:q4-roadmap"
+    },
+    {
+      "user": "user:bob",
+      "relation": "viewer",
+      "object": "document:q4-roadmap"
+    }
+  ]
+}
