@@ -1,5 +1,5 @@
 """Every value the public configuration reference gives for a setting loads,
-and every setting it documents is one the code reads (PER-18263).
+and every setting it documents is one the code reads.
 
 The reference gave values that stopped a server or a client at startup when
 copied into the environment: `opa` for OPAL_POLICY_STORE_TYPE (whose values
@@ -11,7 +11,9 @@ environment name and read by no code, so setting it did nothing.
 config_docs_drift_test.py checks the text of the SCOPES_* settings. This
 checks the values and the names of every setting in the reference, from the
 server, client and common configs: each default, each option, and each
-example (an ``export OPAL_...=`` line or an inline ``OPAL_...=`` code span).
+example (an ``export OPAL_...=`` line or an inline ``OPAL_...=`` code span)
+loads; each section names a setting the code reads; and each example names
+a setting some config declares.
 """
 
 import collections
@@ -93,19 +95,44 @@ def _readers():
 
 
 _READERS = _readers()
+# Read at import for the parametrization below. A tree without the reference
+# (the server image holds packages/ only) gets no values from it, and the mdx
+# fixture fails or skips each test that reads it: an error at import would
+# abort the whole pytest run.
+_MDX_TEXT = _MDX.read_text() if _MDX.exists() else None
 _VALUES = [
     (key, value, where)
-    for key, value, where in _documented_values(_MDX.read_text())
+    for key, value, where in _documented_values(_MDX_TEXT or "")
     # `None` is the reference's word for unset.
     if key in _READERS and value != "None" and (key, value) not in _PLACEHOLDERS
 ]
 
 
-def test_every_section_has_a_default_this_test_reads():
+@pytest.fixture
+def mdx() -> str:
+    """The reference's text.
+
+    A source checkout without it fails the test, since the reference
+    moved or was renamed there; any other tree skips it.
+    """
+    if _MDX_TEXT is not None:
+        return _MDX_TEXT
+    in_checkout = (_PACKAGES.parent / ".git").exists() or (
+        _PACKAGES / "opal-server" / "setup.py"
+    ).exists()
+    if in_checkout:
+        pytest.fail(
+            f"{_MDX} is missing from this checkout: the configuration reference "
+            "moved or was renamed, so this test checks nothing. Update _MDX."
+        )
+    pytest.skip(f"no {_MDX.name} here: not a source checkout")
+
+
+def test_every_section_has_a_default_this_test_reads(mdx):
     """A guard that finds no values guards nothing: a reformatted `Default:`
     line would empty the list below without failing anything."""
-    sections = _sections(_MDX.read_text())
-    assert len(sections) == _MDX.read_text().count("\n#### OPAL_")
+    sections = _sections(mdx)
+    assert len(sections) == mdx.count("\n#### OPAL_")
     assert [key for key, body in sections if _default(body) is None] == []
     assert len(_VALUES) > 100
 
@@ -156,7 +183,24 @@ def _identifier_uses():
     return uses
 
 
-def test_every_documented_setting_is_read_by_the_code():
+def test_every_example_names_a_setting_some_config_declares(mdx):
+    """An example that names no declared setting does nothing when copied, as a
+    removed setting's name left in an ``export`` line would; the values test
+    above leaves such names out, since no config can load them."""
+    examples = [
+        key for key, _, where in _documented_values(mdx) if where.endswith("example")
+    ]
+    undeclared = sorted({key for key in examples if key not in _READERS})
+
+    assert examples, f"found no examples in {_MDX.name}: the parser no longer matches"
+    assert not undeclared, (
+        f"{_MDX.name} has examples for "
+        f"{[f'OPAL_{key}' for key in undeclared]}, which no config declares, so "
+        "setting them does nothing. Declare the setting, or fix the example."
+    )
+
+
+def test_every_documented_setting_is_read_by_the_code(mdx):
     """Read means that a config reads the documented name from the environment,
     and that the attribute it reads it into is used beyond its declaration."""
     uses = _identifier_uses()
@@ -165,7 +209,7 @@ def test_every_documented_setting_is_read_by_the_code():
     )
     unread = {
         key
-        for key, _ in _sections(_MDX.read_text())
+        for key, _ in _sections(mdx)
         if not any(
             uses[attribute] > declarations[attribute]
             for _, attribute in _READERS.get(key, [])
