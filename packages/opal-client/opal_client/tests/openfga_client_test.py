@@ -13,6 +13,7 @@ from aiohttp import web
 from opal_client.config import opal_client_config
 from opal_client.policy_store.openfga_client import (
     OpenFGAClient,
+    build_sdk_write_request,
     normalize_openfga_write_payload,
     parse_fga_dsl_to_json,
 )
@@ -134,3 +135,39 @@ def test_openfga_auth_validation_errors():
             auth_type=PolicyStoreAuth.OAUTH,
             oauth_client_id="only-id",
         )
+
+
+class _MockSdkClient:
+    def __init__(self):
+        self.models = []
+        self.writes = []
+
+    async def write_authorization_model(self, body):
+        self.models.append(body)
+        return {"authorization_model_id": "01SDKMODEL"}
+
+    async def write(self, body):
+        self.writes.append(body)
+        return {}
+
+
+@pytest.mark.asyncio
+async def test_openfga_sdk_client_delegation():
+    mock_sdk = _MockSdkClient()
+    client = OpenFGAClient(
+        openfga_server_url="http://localhost:8080",
+        store_id="01STORE",
+        sdk_client=mock_sdk,
+    )
+    assert client.create_sdk_client() is mock_sdk
+
+    res = await client.set_policy("model.fga", SAMPLE_FGA_DSL)
+    assert res.status_code == 201
+    assert client._authorization_model_id == "01SDKMODEL"
+    assert len(mock_sdk.models) == 1
+
+    tuples = [{"user": "user:alice", "relation": "owner", "object": "document:1"}]
+    data_res = await client.set_policy_data(tuples)
+    assert data_res.status_code == 200
+    assert len(mock_sdk.writes) == 1
+    assert build_sdk_write_request({"writes": {"tuple_keys": tuples}}) is not None
