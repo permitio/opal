@@ -49,23 +49,6 @@ _PLACEHOLDERS = {
     ("AUTH_PUBLIC_KEY", "your-rsa-public-key"),
 }
 
-# Documented settings that do nothing when set, as no code reads them. Each
-# waits for a follow-up that takes it out of the reference or makes it a
-# setting; the test fails once one of them is read, or no longer documented,
-# so that it leaves this list too.
-_DOCUMENTED_BUT_NOT_READ = {
-    "PROCESS_NAME": "a class constant, not read from the environment",
-    "POLICY_REPO_WEBHOOK_TOPIC": "a class constant, not read from the environment",
-    "OPA_HEALTH_CHECK_POLICY_PATH": "a class constant, not read from the environment",
-    "OPAL_POLICY_REPO_URL": "a deprecated name no config declares",
-    "OPAL_POLICY_REPO_SSH_KEY": "a deprecated name no config declares",
-    "OPAL_POLICY_REPO_CLONE_PATH": "a deprecated name no config declares",
-    "OPAL_POLICY_REPO_MAIN_BRANCH": "a deprecated name no config declares",
-    "OPAL_BUNDLE_IGNORE": "a deprecated name no config declares",
-    "LOG_SHOW_CODE_LINE": "declared, and its value is used nowhere",
-    "OPA_HEALTH_CHECK_TRANSACTION_LOG_PATH": "declared, and its value is used nowhere",
-}
-
 
 def _sections(mdx: str):
     """(key, body) of each `#### OPAL_<key>` section."""
@@ -189,14 +172,8 @@ def test_every_documented_setting_is_read_by_the_code():
         )
     }
 
-    not_read = sorted(unread - _DOCUMENTED_BUT_NOT_READ.keys())
-    assert not not_read, (
-        f"{_MDX.name} documents {not_read}, and setting them does nothing: no "
-        "config reads the name, or no code uses what it read. Declare and use "
+    assert not unread, (
+        f"{_MDX.name} documents {sorted(unread)}, and setting them does nothing: "
+        "no config reads the name, or no code uses what it read. Declare and use "
         "the setting, or take it out of the reference."
-    )
-    fixed = sorted(_DOCUMENTED_BUT_NOT_READ.keys() - unread)
-    assert not fixed, (
-        f"{fixed} are read now, or no longer documented: take them out of "
-        "_DOCUMENTED_BUT_NOT_READ."
     )

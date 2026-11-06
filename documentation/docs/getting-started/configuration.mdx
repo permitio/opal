@@ -114,12 +114,6 @@ Default: `*`
 
 Comma-separated list of allowed origins for CORS. Use `*` to allow all origins.
 
-#### OPAL_PROCESS_NAME
-
-Default: `opal`
-
-The process name to be shown in logs.
-
 #### OPAL_CLIENT_SELF_SIGNED_CERTIFICATES_ALLOWED
 
 Default: `False`
@@ -256,12 +250,6 @@ Default: `False`
 Serialize log messages into JSON format (useful for log aggregation platforms).
 
 _Added in OPAL v0.6.0_
-
-#### OPAL_LOG_SHOW_CODE_LINE
-
-Default: `True`
-
-Whether to include the source code line number in log messages.
 
 #### OPAL_LOG_LEVEL
 
@@ -953,12 +941,6 @@ Secret for validating webhook requests from the policy repository.
 
 For more information, see [tracking a Git repository](/tutorials/track_a_git_repo).
 
-#### OPAL_POLICY_REPO_WEBHOOK_TOPIC
-
-Default: `webhook`
-
-Topic for policy repository webhook events.
-
 #### OPAL_POLICY_REPO_WEBHOOK_ENFORCE_BRANCH
 
 Default: `False`
@@ -982,58 +964,6 @@ Default:
 Additional parameters for webhook processing.
 
 For more information, see [tracking a Git repository](/tutorials/track_a_git_repo).
-
-#### OPAL_OPAL_POLICY_REPO_URL
-
-Default: `None`
-
-:::note
-**DEPRECATED** - Use [OPAL_POLICY_REPO_URL](#opal_policy_repo_url) instead.
-:::
-
-The repository URL where the policy repository is located. Must be available from the machine running OPAL (prefer public internet addresses). Supported URI schemes: `https://` and `ssh` (i.e., `git@`).
-
-#### OPAL_OPAL_POLICY_REPO_SSH_KEY
-
-Default: `None`
-
-:::note
-**DEPRECATED** - Use [OPAL_POLICY_REPO_SSH_KEY](#opal_policy_repo_ssh_key) instead.
-:::
-
-The content of the SSH private key. You will need to register the matching public key with your repository. The passed value must be the contents of the SSH key in one line (replace newlines with underscores, i.e., `\n` with `_`).
-
-#### OPAL_OPAL_POLICY_REPO_CLONE_PATH
-
-Default: `/tmp/opal_policy_repo`
-
-:::note
-**DEPRECATED** - Use [OPAL_POLICY_REPO_CLONE_PATH](#opal_policy_repo_clone_path) instead.
-:::
-
-Where to clone the repository in your Docker filesystem (not important unless you mount a Docker volume).
-
-#### OPAL_OPAL_POLICY_REPO_MAIN_BRANCH
-
-Default: `main`
-
-:::note
-**DEPRECATED** - Use [OPAL_POLICY_REPO_MAIN_BRANCH](#opal_policy_repo_main_branch) instead.
-:::
-
-Name of the git branch to track for policy files.
-
-#### OPAL_OPAL_BUNDLE_IGNORE
-
-Default: `[]`
-
-:::note
-**DEPRECATED** - Use [OPAL_BUNDLE_IGNORE](#opal_bundle_ignore) instead.
-:::
-
-Paths to omit from policy bundle. List of glob-style paths, or paths without wildcards but ending with "/**" indicating a parent path (ignoring all under it).
-
-_Added in OPAL v0.5.0_
 
 ### Data Configuration
 
@@ -1323,22 +1253,6 @@ Which policy paths pushed to the client should be ignored. List of glob-style pa
 Default: `False`
 
 Should we load a special healthcheck policy into OPA that checks that OPA was synced correctly and is ready to answer authorization queries.
-
-For more information, see [monitoring OPAL](/tutorials/monitoring_opal).
-
-#### OPAL_OPA_HEALTH_CHECK_TRANSACTION_LOG_PATH
-
-Default: `system/opal/transactions`
-
-Path to OPA document that stores the OPA write transactions.
-
-For more information, see [monitoring OPAL](/tutorials/monitoring_opal).
-
-#### OPAL_OPA_HEALTH_CHECK_POLICY_PATH
-
-Default: `engine/healthcheck/opal.rego`
-
-Path to the custom healthcheck policy file.
 
 For more information, see [monitoring OPAL](/tutorials/monitoring_opal).
 
