@@ -727,9 +727,22 @@ def remove_dead_op_leftovers(repo_path: Path) -> bool:
     """Remove what any git op of ``repo_path`` whose process died can have
     left: what a killed fetch leaves in the clone (remove_kill_leftovers)
     and the directories its clones were being made in (_remove_clone_dirs);
-    whether all of it is gone. For the holder of the clone's lock."""
+    whether all of it is gone. For the holder of the clone's lock.
+
+    A git dir that cannot be looked at (EACCES, EIO) counts as not all
+    gone, so that the dead op stays recorded: Path.is_dir() raises then
+    on Python 3.11 and 3.12, and os.path.isdir() says there is none.
+    """
+    git_dir = repo_path / ".git"
     complete = True
-    if (repo_path / ".git").is_dir():
+    try:
+        has_git_dir = stat.S_ISDIR(os.stat(git_dir).st_mode)
+    except (FileNotFoundError, NotADirectoryError):
+        has_git_dir = False
+    except OSError as e:
+        logger.warning("Could not look at {path}: {err!r}", path=git_dir, err=e)
+        has_git_dir = complete = False
+    if has_git_dir:
         complete = remove_kill_leftovers(repo_path)
     return _remove_clone_dirs(repo_path) and complete
 

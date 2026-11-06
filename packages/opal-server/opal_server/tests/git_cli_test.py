@@ -1005,6 +1005,31 @@ async def test_an_op_that_cannot_record_itself_keeps_a_dead_op_s_record(
 
 
 @pytest.mark.asyncio
+async def test_a_dead_op_s_clone_that_cannot_be_looked_at_keeps_its_record(
+    git_origin, tmp_path
+):
+    """The next op on a clone whose git dir cannot be looked at (EACCES here,
+    EIO on a failing disk) cannot remove what a dead op left there: it fails as
+    a local error, and the clone stays recorded as having an op that never
+    finished, for an op after it to try again."""
+    clone = tmp_path / "cli"
+    await _clone(git_origin.url, clone)
+    clone_lock_path(clone).write_text("4194303\n")
+    clone.chmod(0o600)
+    try:
+        if os.access(clone, os.X_OK):
+            pytest.skip("this user reads every directory (root)")
+        assert git_cli.remove_dead_op_leftovers(clone) is False
+        with pytest.raises(GitCliLocalError):
+            await _clone(git_origin.url, clone)
+    finally:
+        clone.chmod(0o700)
+
+    assert clone_lock_path(clone).read_bytes() != b""
+    assert git_cli._lock_fds == {}
+
+
+@pytest.mark.asyncio
 async def test_a_killed_git_s_leftover_that_cannot_be_removed_keeps_its_op_recorded(
     git_origin, tmp_path, monkeypatch
 ):
