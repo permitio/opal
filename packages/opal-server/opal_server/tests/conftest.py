@@ -363,6 +363,9 @@ class _GitHttpHandler(BaseHTTPRequestHandler):
         env = {
             "PATH": os.environ["PATH"],
             "HOME": os.environ.get("HOME", "/"),
+            # As the root conftest gives every git of the test process.
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_CONFIG_GLOBAL": os.devnull,
             "GIT_PROJECT_ROOT": str(server.root),
             "GIT_HTTP_EXPORT_ALL": "1",
             "PATH_INFO": path,
@@ -596,9 +599,13 @@ class Sshd:
         authorized.write_text((base / "client_key.pub").read_text())
         authorized.chmod(0o600)
         shell = base / "git-shell.sh"
+        # sshd builds the session's env afresh: git-shell and upload-pack get
+        # the root conftest's git config isolation only from here.
         shell.write_text(
             "#!/bin/sh\n"
             f"PATH={os.path.dirname(git)}:/usr/bin:/bin; export PATH\n"
+            "GIT_CONFIG_NOSYSTEM=1; export GIT_CONFIG_NOSYSTEM\n"
+            f"GIT_CONFIG_GLOBAL={os.devnull}; export GIT_CONFIG_GLOBAL\n"
             f'exec {exec_path}/git-shell -c "$SSH_ORIGINAL_COMMAND"\n'
         )
         shell.chmod(0o755)

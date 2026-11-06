@@ -18,10 +18,12 @@ load that plugin (`-p no:ddtrace`).
 Every git the tests run, directly or through the code under test, reads no system git config
 and an empty global one (GIT_CONFIG_NOSYSTEM, GIT_CONFIG_GLOBAL), so that nothing of the
 machine running them comes into play: not its init.defaultBranch, not its fetch.prune, and not
-its credential helpers, which could store a test's credentials in the machine's keychain. A
-test that needs a global or system config sets GIT_CONFIG_GLOBAL or GIT_CONFIG_SYSTEM itself.
-libgit2 reads neither variable, so where pygit2 is installed its global, XDG and system config
-search paths are an empty directory instead.
+its credential helpers, which could store a test's credentials in the machine's keychain. The
+git servers of opal_server's test fixtures, whose env is built afresh, set both themselves. A
+test that needs a global config sets GIT_CONFIG_GLOBAL itself; one that needs a system config
+unsets GIT_CONFIG_NOSYSTEM as well as setting GIT_CONFIG_SYSTEM, which git ignores while
+GIT_CONFIG_NOSYSTEM is set. libgit2 reads none of these variables, so where pygit2 is
+installed its global, XDG and system config search paths are an empty directory instead.
 """
 
 import atexit
