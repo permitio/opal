@@ -151,13 +151,15 @@ def test_record_logged_straight_from_c_keeps_the_last_frame(
     with _captured_records(ModuleFilter(exclude_list=["other"])) as records:
         _thread.start_new_thread(stdlib_logger.warning, ("probe",))
         deadline = time.monotonic() + 5
-        while not records and time.monotonic() < deadline:
+        while (
+            not any(r["message"] == "probe" for r in records)
+            and time.monotonic() < deadline
+        ):
             time.sleep(0.01)
 
-    (record,) = records
+    (record,) = [r for r in records if r["message"] == "probe"]
     assert record["name"] == "logging"
     assert record["function"] == "warning"
-    assert record["message"] == "probe"
 
 
 def test_record_without_a_module_name_reaches_the_sink(
