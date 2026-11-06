@@ -17,6 +17,7 @@ catches.
 """
 import asyncio
 import math
+import os
 import re
 import time
 from pathlib import Path
@@ -34,6 +35,7 @@ from opal_common.schemas.policy_source import GitPolicyScopeSource, NoAuthData
 from opal_common.schemas.scopes import Scope
 from opal_server import config as server_config_module
 from opal_server.config import opal_server_config
+from opal_server.git_cli import drop_clone_lock, take_clone_lock
 from opal_server.git_fetcher import (
     BranchHeadNotFoundError,
     CloneNotPopulatedError,
@@ -757,6 +759,85 @@ def test_no_wait_when_the_first_attempt_is_not_a_clone_in_progress(
     assert not sleeps, f"the route waited for a fault waiting cannot fix: {sleeps}"
     assert not _wait_outcomes(emitted), "counted a wait that never happened"
     assert elapsed < bed.wait, "the route held the request anyway"
+
+
+# --- a git command-line clone --------------------------------------------
+
+
+class _CliClone:
+    """A scope on ``origin``, and its clone as a git command-line clone leaves
+    it just before it is put in place: complete, in the directory beside the
+    clone's path, with the clone's lock held."""
+
+    def __init__(self, origin, base_dir):
+        source = GitPolicyScopeSource(
+            source_type="git",
+            url=origin.url,
+            branch="master",
+            auth=NoAuthData(auth_type="none"),
+        )
+        self.fetcher = GitPolicyFetcher(Path(base_dir), "live", source)
+        self.repo_path = GitPolicyFetcher.repo_clone_path(Path(base_dir), source)
+        self.repo_path.parent.mkdir(parents=True)
+        self.beside = self.repo_path.parent / f".{self.repo_path.name}.clone-{'0' * 16}"
+        pygit2.clone_repository(origin.url, str(self.beside)).free()
+        self.head = str(origin.repo.references["refs/heads/master"].target)
+        self._lock = take_clone_lock(self.repo_path)
+        assert self._lock is not None
+
+    def put_in_place(self):
+        """What git_cli does once the clone is complete: rename it into place,
+        then release the clone's lock."""
+        os.rename(self.beside, self.repo_path)
+        self.release()
+
+    def release(self):
+        if self._lock is not None:
+            drop_clone_lock(self._lock)
+            self._lock = None
+
+
+@pytest.fixture
+def cli_clone(git_origin, tmp_path):
+    clone = _CliClone(git_origin, tmp_path / "opal")
+    yield clone
+    clone.release()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("lands_at", [1, 2], ids=["first-attempt", "first-poll"])
+async def test_a_cli_clone_put_in_place_mid_check_is_served(
+    cli_clone, monkeypatch, emitted, lands_at
+):
+    """git_cli puts a clone in place with one rename, which can land after
+    make_bundle found no clone and before clone_under_way lists the directory
+    beside it: then neither sees a clone. The request is served the clone
+    now in place, on the first attempt or at a poll of a held request,
+    rather than answered 503 the moment its clone becomes servable.
+
+    Mutation: dropping the second look at the clone's path in _make_bundle
+    re-raises NoSuchPathError, and fails both cases.
+    """
+    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", 5.0)
+    monkeypatch.setattr("opal_server.scopes.api._CLONE_WAIT_POLL_SECONDS", 0.02)
+    real_clone_under_way = scopes_api.clone_under_way
+    looked = []
+
+    def lands_while_looking(repo_path):
+        looked.append(repo_path)
+        if len(looked) == lands_at:
+            cli_clone.put_in_place()
+        return real_clone_under_way(repo_path)
+
+    monkeypatch.setattr(scopes_api, "clone_under_way", lands_while_looking)
+
+    bundle = await scopes_api._make_bundle_waiting_for_clone(
+        cli_clone.fetcher, None, "live"
+    )
+
+    assert bundle.hash == cli_clone.head
+    assert len(looked) == lands_at
+    assert _wait_outcomes(emitted) == ([] if lands_at == 1 else ["served"])
 
 
 # --- what a retried attempt is allowed to do -----------------------------

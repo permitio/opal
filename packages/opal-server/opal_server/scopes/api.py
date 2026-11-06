@@ -403,9 +403,15 @@ def _make_bundle(fetcher: GitPolicyFetcher, base_hash: Optional[str]) -> PolicyB
         return fetcher.make_bundle(base_hash)
     except NoSuchPathError as exc:
         # GitPython's NoSuchPathError holds the path it did not find.
-        if not clone_under_way(pathlib.Path(str(exc))):
+        path = pathlib.Path(str(exc))
+        if clone_under_way(path):
+            raise CloneNotPopulatedError(f"A clone into {exc} is under way") from exc
+        # The rename can land after make_bundle looked and before the
+        # directory beside the path was listed. It is atomic, so by now the
+        # clone is either in place or was never being made.
+        if not path.exists():
             raise
-        raise CloneNotPopulatedError(f"A clone into {exc} is under way") from exc
+    return fetcher.make_bundle(base_hash)
 
 
 async def _make_bundle_waiting_for_clone(
