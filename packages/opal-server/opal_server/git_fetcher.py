@@ -143,8 +143,10 @@ class BranchHeadNotFoundError(ValueError):
 
 
 class GitRepackError(RuntimeError):
-    """``git repack`` on a scope clone exited non-zero (or ``command``, the git
-    pack-refs, or git config, of a run of the ref steps alone).
+    """``git repack`` on a scope clone exited non-zero, or ``command``, the git
+    pack-refs or git config of a run of the ref steps alone, failed: exited
+    non-zero, or for git pack-refs exited 0 and left refs in files of their own
+    (``returncode`` 0).
 
     ``stderr_tail`` is the end of what git wrote to stderr (the ``fatal:``
     line comes last), capped so a chatty failure cannot flood the log line
@@ -1304,8 +1306,9 @@ def _packing_refs() -> bool:
     but rewrites the whole packed-refs file for each ref it prunes from
     it. A fetch that pruned 3,000 refs from a clone of a repository with
     25,000 branches took 16 s with them packed and 0.5 s with them
-    loose, and that grows with both counts, past
-    SCOPES_GIT_FETCH_TIMEOUT, where a libgit2 fetch cannot be stopped.
+    loose, and one that pruned 6,000 from a clone of a repository with
+    63,000 branches 79 s against 2.4 s, about 13 ms per ref;
+    SCOPES_GIT_FETCH_TIMEOUT cannot stop a libgit2 fetch.
     """
     return git_cli_enabled() or not opal_server_config.SCOPES_GIT_FETCH_PRUNE
 
@@ -1582,9 +1585,11 @@ async def remove_clone_dir_exclusive(path: str) -> bool:
     event loop (no executor thread held), for at most as long as one can
     hold it (the repack timeout plus its stop and sweep), and returns
     False without removing anything if it is still held then, or while a
-    git command-line op of another process holds the clone's own lock.
-    Where the lock cannot be taken at all, removes the clone without it
-    only as _removes_without_lock allows.
+    git op holds the clone's own lock (_rmtree_unless_locked): a git
+    command-line op, or, with the git command-line fetch off, a libgit2
+    fetch looking for an op that never finished, for a moment before it
+    starts. Where the lock cannot be taken at all, removes the clone
+    without it only as _removes_without_lock allows.
 
     Raises what rmtree raises, FileNotFoundError when the clones'
     directory is gone, and otherwise what taking the lock raises.
@@ -1622,9 +1627,9 @@ def _rmtree_unless_locked(path: str) -> bool:
     """``_remove_clone_tree(path)`` of a scope clone under the clone's own lock
     (git_cli.take_clone_lock): whether it ran. False, having removed nothing,
     while a git op holds that lock (a git command-line op of another process,
-    one whose worker died included, or a repack). Blocking. Where the lock
-    cannot be taken at all, runs without it only as _removes_without_lock
-    allows.
+    one whose worker died included, a repack, or a libgit2 fetch looking for an
+    op that never finished before it starts). Blocking. Where the lock cannot
+    be taken at all, runs without it only as _removes_without_lock allows.
 
     Raises what rmtree raises, FileNotFoundError when the clone is gone
     included (the clones' directory with it, for the lock file), and
@@ -1670,14 +1675,17 @@ def _removes_without_lock(path: str, err: OSError) -> bool:
     not FileNotFoundError: flock failing on NFS mounted without
     local_lock=flock, say), is removed without it.
 
-    Only with SCOPES_GIT_FETCH_WITH_CLI off, logged. A libgit2 fetch or
-    clone takes no lock then, and a repack, which takes this one, cannot
-    run where it cannot be taken: removing the clone is what invalid-repo
-    recovery and a DELETE did before the lock existed. With it on every git
-    fetch and clone takes the lock and fails without it, so a clone removed
-    could not be cloned again, and where the failure passes (a lock table
-    that was full) a git op of another process may hold the lock and still
-    be writing in the clone.
+    Only with SCOPES_GIT_FETCH_WITH_CLI off, logged. A libgit2 clone takes
+    no lock then; a libgit2 fetch takes the clone's lock only to look,
+    before it starts, for an op that never finished
+    (git_cli.clean_up_unfinished_op), and skips the look where the lock
+    cannot be taken; and a repack, which takes both locks, cannot run
+    there. Removing the clone is what invalid-repo recovery and a DELETE
+    did before the lock existed. With it on every git fetch and clone takes
+    the lock and fails without it, so a clone removed could not be cloned
+    again, and where the failure passes (a lock table that was full) a git
+    op of another process may hold the lock and still be writing in the
+    clone.
     """
     if isinstance(err, FileNotFoundError):
         return False
@@ -1796,7 +1804,8 @@ def _repack_clone(
     another repack holds it: in this process or any other, a previous
     leader's orphaned git included. It holds the clone's own lock
     (git_cli.take_clone_lock) as well, and raises GitCliBusyError, having
-    run nothing, while a git command-line fetch or clone holds that.
+    run nothing, while another git op holds that (a git command-line fetch
+    or clone, say).
     Returns True once the clone is repacked. What repacks that died left
     in the pack dir (git temp files, packs without their index) is removed
     first, and so is what a git op that never finished left in the clone
@@ -2000,8 +2009,9 @@ def _repack_steps(
         # A pack-refs that left packed-refs.lock behind fails every later
         # pack-refs, and every fetch that rewrites packed-refs, while it is
         # there. Only then: with no such record, a lock in the clone may be
-        # a live op's. A libgit2 op takes no clone lock, and one the pre-fork
-        # preload started can still be running in the forked processes.
+        # a live op's. A libgit2 op does not hold the clone's lock while it
+        # runs, and one the pre-fork preload started can still be running in
+        # the gunicorn master after it forks the workers.
         logger.warning(
             "The last git op on {path} never finished (its process died): "
             "removing what it left",
@@ -2175,17 +2185,21 @@ def _tidy_refs(
     ``clone``, has it twice, clone's own true and then false, and git config
     refuses to set a key that has more than one value (status 5).
 
-    Every step that fails, or leaves the refs loose, is a WARNING, counted
-    as git_ref_step_failures, and the repack runs all the same: its packs
-    matter more than its refs. That includes the ref steps running past
-    their share of the repack's timeout: the running one is stopped, and
-    git repack gets the rest. With ``refs_only`` there is nothing after
-    them, so pack-refs failing or leaving the refs loose (git config
-    failing, when the refs are not packed) raises GitRepackError instead,
-    and running out of time TimeoutError, counted all the same, as is a
-    step whose git outlives its stop, which raises
+    Every step whose git runs and fails, or leaves the refs loose, is a
+    WARNING, counted as git_ref_step_failures, and the repack runs all the
+    same: its packs matter more than its refs. That includes the ref steps
+    running past their share of the repack's timeout: the running one is
+    stopped, and git repack gets the rest. With ``refs_only`` there is
+    nothing after them, so pack-refs failing or leaving the refs loose (git
+    config failing, when the refs are not packed) raises GitRepackError
+    instead, and running out of time TimeoutError, counted all the same, as
+    is a step whose git outlives its stop, which raises
     TimeoutError too: the run then waits out the repack's cooldown rather
-    than running again on every pass.
+    than running again on every pass. A step whose git cannot be started
+    at all (Popen raising OSError: a fork short of memory, too many open
+    files) is not counted as a ref step: the OSError ends the run before
+    git repack, and the run is counted and cooled down as a failed repack
+    (git_repack, or git_pack_refs for a run of the ref steps alone).
 
     The locks a git left are removed only when it was stopped or killed by
     a signal (git_cli.killed_by_signal): git removes its own when it exits
