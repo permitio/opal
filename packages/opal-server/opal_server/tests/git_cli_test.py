@@ -1070,6 +1070,35 @@ async def test_a_dead_op_s_clone_that_cannot_be_looked_at_keeps_its_record(
 
 
 @pytest.mark.asyncio
+async def test_a_dead_op_s_git_dir_that_fails_to_stat_keeps_what_the_op_left(
+    git_origin, tmp_path, monkeypatch
+):
+    """The same with EIO, injected rather than made with permissions, so that
+    it runs as root too: the clean-up removes nothing in a git dir it cannot
+    look at, and says not all of it is gone, so the dead op stays recorded.
+    Once the git dir can be looked at, the next clean-up removes it."""
+    clone = tmp_path / "cli"
+    await _clone(git_origin.url, clone)
+    leftover = clone / ".git" / "packed-refs.lock"
+    leftover.write_text("")
+    git_dir = os.fspath(clone / ".git")
+    real_stat = os.stat
+
+    def _stat(path, *args, **kwargs):
+        if os.fspath(path) == git_dir:
+            raise OSError(errno.EIO, os.strerror(errno.EIO))
+        return real_stat(path, *args, **kwargs)
+
+    with monkeypatch.context() as m:
+        m.setattr(git_cli.os, "stat", _stat)
+        assert git_cli.remove_dead_op_leftovers(clone) is False
+    assert leftover.exists()
+
+    assert git_cli.remove_dead_op_leftovers(clone) is True
+    assert not leftover.exists()
+
+
+@pytest.mark.asyncio
 async def test_an_op_that_cannot_clear_its_record_still_succeeds(
     git_origin, tmp_path, monkeypatch
 ):

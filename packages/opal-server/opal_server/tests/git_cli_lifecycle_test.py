@@ -1505,6 +1505,33 @@ def test_the_sweep_removes_a_key_dir_with_no_key_once_it_is_old_enough(
     assert not old.exists()
 
 
+def test_a_key_dir_whose_age_cannot_be_read_is_judged_by_its_lock(
+    tmp_path, monkeypatch
+):
+    """A new key directory with no key, whose age the sweep cannot read (it
+    went meanwhile, or the lstat fails): it is not taken for one being set up,
+    so its lock decides, and a dead process's directory goes."""
+    monkeypatch.setattr(git_cli, "_SHM", str(tmp_path))
+    monkeypatch.setattr(git_cli.tempfile, "tempdir", str(tmp_path))
+    new = tmp_path / f"opal-git-ssh-{_dead_pid()}-x1"
+    new.mkdir()
+    real_lstat = os.lstat
+    failed = []
+
+    def _lstat_fails_once(path, *args, **kwargs):
+        if os.fspath(path) == os.fspath(new) and not failed:
+            failed.append(path)
+            raise OSError(errno.EIO, os.strerror(errno.EIO))
+        return real_lstat(path, *args, **kwargs)
+
+    monkeypatch.setattr(git_cli.os, "lstat", _lstat_fails_once)
+
+    git_cli.remove_dead_key_dirs()
+
+    assert failed
+    assert not new.exists()
+
+
 def test_a_key_dir_the_sweep_cannot_lock_is_logged_and_left(tmp_path, monkeypatch):
     """Where the filesystem refuses an flock (ENOLCK), the sweep cannot tell
     whether a live process uses a key directory: it leaves it, and says so."""
