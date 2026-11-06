@@ -70,10 +70,10 @@ jobs:
           pip install -r requirements.txt
         fi
     # opa_argv_real_binary_test.py hands the argv OPAL generates to the REAL
-    # binary. Without it those assertions SKIP, and the inline-OPA regression
-    # they exist for depends on the python version (Enum.__format__ changed in
-    # 3.11), so they need to run on every leg of this matrix, not just
-    # wherever a developer happens to have opa installed.
+    # binary. Without it those assertions SKIP. How the enums in that argv
+    # render has changed with the python version before (Enum.__format__ in
+    # 3.11), so they run on every leg of this matrix, 3.11 to 3.13, and not
+    # only on the 3.12 the images run.
     - name: Install OPA (for the inline-OPA argv tests)
       run: |
         # --retry: a dropped connection mid-download failed a whole leg once (curl: (56))
