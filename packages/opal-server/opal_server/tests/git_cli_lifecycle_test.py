@@ -1372,8 +1372,20 @@ def test_a_fetch_keep_goes_under_the_clone_s_lock_whatever_pid_and_host_it_names
     _clone_at(clone, git_origin.url, git_origin.url)
     for _ in range(2):
         git_origin.commit("master")
+        # Without --no-auto-maintenance, git 2.56's fetch starts a detached
+        # `git maintenance run --auto`, whose repack of these packs races
+        # the one below.
         subprocess.run(
-            ["git", "-C", str(clone), "-c", "fetch.unpackLimit=1", "fetch", "-q"],
+            [
+                "git",
+                "-C",
+                str(clone),
+                "-c",
+                "fetch.unpackLimit=1",
+                "fetch",
+                "--no-auto-maintenance",
+                "-q",
+            ],
             check=True,
         )
     pack_dir = clone / ".git" / "objects" / "pack"

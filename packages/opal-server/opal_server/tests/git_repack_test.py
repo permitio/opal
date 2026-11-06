@@ -5192,7 +5192,16 @@ async def _clone_whose_pack_refs_was_killed(tmp_path, monkeypatch):
     assert _wait_gone(git_pid), "the watchdog did not take git with its process"
     assert (git_dir / "packed-refs.lock").exists() and ref_lock.exists()
     scope.remote.references.delete("refs/heads/env2")
-    stuck = _git(clone, "fetch", "--prune", "--no-tags", "-q", "origin", check=False)
+    stuck = _git(
+        clone,
+        "fetch",
+        "--prune",
+        "--no-tags",
+        "--no-auto-maintenance",
+        "-q",
+        "origin",
+        check=False,
+    )
     assert stuck.returncode != 0, "the premise: a pruning fetch fails on the lock"
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_PRUNE", True)
     return scope, ref_lock
