@@ -3919,6 +3919,29 @@ async def test_a_clone_whose_refs_were_packed_since_its_mark_is_left_alone(
 
 
 @pytest.mark.asyncio
+async def test_a_clone_gone_since_its_mark_is_left_alone(tmp_path, emitted):
+    """A later sync of the pass can find the clone invalid and delete it, and
+    its clone again fail: the mark stays, for a clone that is no longer
+    there. The due run does nothing for it, and counts nothing.
+
+    Mutation: without the check that the clone is there, the ref steps run
+    on the missing path, fail, and cool the source down for an hour.
+    """
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.sync()
+    assert set(git_fetcher._repacks_due) == {scope.source_id}
+    GitPolicyFetcher.forget_repo(str(scope.clone_path))
+    shutil.rmtree(scope.clone_path)
+
+    await GitPolicyFetcher.run_due_repacks({scope.source_id})
+
+    assert _pack_refs_outcomes(emitted) == []
+    assert _repack_outcomes(emitted) == []
+    assert git_fetcher._repack_failed_at == {}
+    assert git_fetcher._repacks_due == {}
+
+
+@pytest.mark.asyncio
 async def test_a_git_clone_is_not_marked_for_its_refs(tmp_path, monkeypatch):
     """Git clone writes the refs into packed-refs itself, so a clone made with
     SCOPES_GIT_FETCH_WITH_CLI on is marked only at the pack limit."""
