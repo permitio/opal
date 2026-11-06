@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 class PolicyStoreTypes(Enum):
     OPA = "OPA"
     CEDAR = "CEDAR"
+    OPENFGA = "OPENFGA"
     MOCK = "MOCK"
 
 
