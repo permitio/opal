@@ -10,7 +10,6 @@ the stand-in, so whatever it recorded reached the default handler before
 logging was configured.
 """
 
-import asyncio
 import contextlib
 import importlib.abc
 import importlib.util
@@ -181,29 +180,28 @@ class _FakeScopesService:
             )
 
 
-def _fake_redis_db(url):
-    # Logs its URL on construction, as opal_server.redis_utils.RedisDB does. The
-    # fake passes it raw, so only the master's own log setup can mask it.
-    logger.debug("Connecting to Redis: {url}", url=url)
-    return object()
+class _FakeRedisDB:
+    def __init__(self, url):
+        # Logs its URL on construction, as opal_server.redis_utils.RedisDB
+        # does. The fake passes it raw, so only the master's own log setup can
+        # mask it.
+        logger.debug("Connecting to Redis: {url}", url=url)
+
+    async def close(self):
+        pass
 
 
 @pytest.fixture
 def stub_preload(monkeypatch, preload_sandbox):
     monkeypatch.setattr(opal_server_config, "REDIS_URL", CREDENTIALED_REDIS_URL)
     monkeypatch.setattr(task_module, "configure_server_metrics", lambda: None)
-    monkeypatch.setattr(task_module, "RedisDB", _fake_redis_db)
+    monkeypatch.setattr(task_module, "RedisDB", _FakeRedisDB)
     monkeypatch.setattr(task_module, "ScopesService", _FakeScopesService)
     monkeypatch.setattr(task_module, "drain_git_ops", lambda timeout: True)
     monkeypatch.setattr(task_module, "shutdown_git_executor", lambda: None)
     monkeypatch.setattr(
         task_module.GitPolicyFetcher, "reset_caches", staticmethod(lambda: None)
     )
-    yield
-    # preload_scopes' asyncio.run() leaves the main thread without a current
-    # loop; give it one back for later tests (same as the preload_*_test.py
-    # files).
-    asyncio.set_event_loop(asyncio.new_event_loop())
 
 
 def _run_when_ready(gunicorn_conf, master_logs, monkeypatch, scopes):
@@ -391,6 +389,67 @@ def test_preload_scopes_configures_logging_when_nothing_did(
     assert CREDENTIAL not in master_logs.stream.getvalue()
     # Recorded, so a later preload in this process keeps these sinks.
     assert opal_logger.logs_configured()
+
+
+def _ignored_known_hosts(monkeypatch, tmp_path) -> None:
+    """Settings on which the git settings check logs an ERROR (an ignored
+    SCOPES_GIT_SSH_KNOWN_HOSTS) and starts the server all the same."""
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", False)
+    monkeypatch.setattr(
+        opal_server_config, "SCOPES_GIT_SSH_KNOWN_HOSTS", str(tmp_path / "known")
+    )
+
+
+def _known_hosts_errors(records) -> list:
+    return [
+        m
+        for level, m in records
+        if level == "ERROR" and "SCOPES_GIT_SSH_KNOWN_HOSTS" in m
+    ]
+
+
+def test_preload_scopes_checks_the_git_settings_once_logging_is_configured(
+    master_logs, stub_preload, monkeypatch, tmp_path
+):
+    """With nothing having configured logging, the preload configures it before
+    its git settings check, so what the check logs never goes out through the
+    default handler.
+
+    Mutation: checking before configuring sends the check's ERROR there.
+    """
+    monkeypatch.setattr(opal_server_config, "SCOPES", True)
+    _ignored_known_hosts(monkeypatch, tmp_path)
+
+    with master_logs.streams():
+        task_module.ScopesPolicyWatcherTask.preload_scopes()
+
+    assert _known_hosts_errors(master_logs.default_records) == []
+    assert len(_known_hosts_errors(master_logs.configured())) == 1
+
+
+# server.py's own startup handlers use FastAPI's deprecated on_event; not what
+# this test is about.
+@pytest.mark.filterwarnings("ignore:\\s*on_event is deprecated:DeprecationWarning")
+def test_a_server_checks_the_git_settings_once_logging_is_configured(
+    master_logs, monkeypatch, tmp_path
+):
+    """A server started without a gunicorn master that configured logging
+    (uvicorn on its own, say) configures it before its git settings check, so
+    what the check logs never goes out through the default handler.
+
+    Mutation: checking before configuring sends the check's ERROR there.
+    """
+    import opal_server.server as server_module
+
+    _ignored_known_hosts(monkeypatch, tmp_path)
+
+    with master_logs.streams():
+        server_module.OpalServer(
+            init_policy_watcher=False, broadcaster_uri=None, enable_jwks_endpoint=False
+        )
+
+    assert _known_hosts_errors(master_logs.default_records) == []
+    assert len(_known_hosts_errors(master_logs.configured())) == 1
 
 
 def test_preload_scopes_keeps_logging_already_configured(

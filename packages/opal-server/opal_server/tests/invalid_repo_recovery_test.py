@@ -97,7 +97,7 @@ async def test_clone_clears_partial_dir_before_cloning(monkeypatch, tmp_path):
     (fetcher._repo_path / "leftover.pack").write_text("partial clone debris")
     seen = {}
 
-    def fake_clone(url, path, callbacks=None):
+    def fake_clone(url, path, repository=None, callbacks=None):
         p = Path(path)
         seen["nonempty"] = p.exists() and any(p.iterdir())
         return object()

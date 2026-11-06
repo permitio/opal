@@ -41,7 +41,7 @@ export OPAL_SERVER_URL=http://localhost:7002
 export OPAL_CLIENT_TOKEN=your-secret-token
 
 # Policy engine type (OPA is default, Cedar also available)
-export OPAL_POLICY_STORE_TYPE=opa
+export OPAL_POLICY_STORE_TYPE=OPA
 ```
 
 ### Production Configuration
@@ -114,12 +114,6 @@ Default: `*`
 
 Comma-separated list of allowed origins for CORS. Use `*` to allow all origins.
 
-#### OPAL_PROCESS_NAME
-
-Default: `opal`
-
-The process name to be shown in logs.
-
 #### OPAL_CLIENT_SELF_SIGNED_CERTIFICATES_ALLOWED
 
 Default: `False`
@@ -154,7 +148,7 @@ For more information, see [monitoring OPAL](/tutorials/monitoring_opal).
 
 Default: `False`
 
-Enable tracing with DataDog APM. **Note:** OPAL uses ddtrace v4.8.2+ (below 5). ddtrace itself supports Python 3.9+; OPAL requires Python 3.10+.
+Enable tracing with DataDog APM. **Note:** OPAL uses ddtrace v4.8.2+ (below 5). ddtrace itself supports Python 3.9+; OPAL requires Python 3.11+.
 
 For more information, see [monitoring OPAL](/tutorials/monitoring_opal).
 
@@ -165,6 +159,12 @@ Default: `aiohttp`
 The client to use for fetching data. Options: `aiohttp`, `httpx`.
 
 _Added in OPAL v0.7.7_
+
+#### OPAL_HTTP_FETCHER_TIMEOUT
+
+Default: `5`
+
+Timeout in seconds for the requests of the HTTP fetch provider, which fetches data sources over `http` and `https`. With `aiohttp` (see `OPAL_HTTP_FETCHER_PROVIDER_CLIENT`) it bounds the whole request; with `httpx` it bounds each of connecting, writing the request, reading the response and waiting for a pooled connection.
 
 #### OPAL_GIT_SSH_KEY_FILE
 
@@ -251,12 +251,6 @@ Serialize log messages into JSON format (useful for log aggregation platforms).
 
 _Added in OPAL v0.6.0_
 
-#### OPAL_LOG_SHOW_CODE_LINE
-
-Default: `True`
-
-Whether to include the source code line number in log messages.
-
 #### OPAL_LOG_LEVEL
 
 Default: `INFO`
@@ -335,9 +329,9 @@ The minimum log level for file logging.
 
 #### OPAL_AUTH_PUBLIC_KEY_FORMAT
 
-Default: `SSH`
+Default: `ssh`
 
-Format of the public key. Options: `PEM`, `JWK`, `SSH`.
+Format of the public key. Options: `pem`, `ssh`, `der`.
 
 Read more about [secure mode setup](/getting-started/running-opal/as-python-package/secure-mode-setup).
 
@@ -409,9 +403,9 @@ These configuration variables are specific to the OPAL Server.
 
 #### OPAL_SERVER_WORKER_COUNT
 
-Default: `auto` (calculated based on CPU cores)
+Default: `None`
 
-Worker count for the server (when run using CLI).
+Worker count for the server when it is started with `opal-server run`. When it is not set, `opal-server run --engine-type gunicorn` starts (CPU cores × 2) + 1 workers, and the default engine, uvicorn, starts one.
 
 #### OPAL_SERVER_HOST
 
@@ -439,13 +433,19 @@ _Added in OPAL v0.6.0_
 
 Default: `~/.local/state/opal`
 
-Base directory for OPAL server.
+Base directory for OPAL server. In scopes mode the scope clones are in its `git_sources` directory. Two running servers must not share it, with [OPAL_SCOPES_GIT_FETCH_WITH_CLI](#opal_scopes_git_fetch_with_cli) on or off: at each start the pre-fork scope preload removes the lock files and partial packs it finds in every clone there, and the clones half made beside them, whichever server's git op they belong to.
 
 #### OPAL_NO_RPC_LOGS
 
 Default: `True`
 
 Suppress DEBUG logs of the websocket RPC/pub-sub libraries (`fastapi_websocket_rpc`, `fastapi_websocket_pubsub`), which include message payloads. Their INFO and higher logs (connection lifecycle) are kept. Set to `False` to see them when debugging with `OPAL_LOG_LEVEL=DEBUG`.
+
+#### OPAL_DEBUG_INTERNAL_STATS
+
+Default: `False`
+
+Expose `GET /internal/git-fetcher-cache-stats`, which reports the sizes of the scopes git fetcher's in-memory caches and the server process's resident memory. The route requires the same authentication as the server's other APIs (none when `OPAL_AUTH_PUBLIC_KEY` is unset). For diagnostics only; keep it off in production.
 
 #### OPAL_WS_LOCAL_URL
 
@@ -483,13 +483,31 @@ The max number of local clones to use for the same repo (reused across scopes).
 
 Default: `120.0`
 
-Soft timeout in seconds for a single scope git clone/fetch: the awaiting operation is abandoned (the event loop and the sync pass move on) and the op is logged and skipped, retried next cycle. It is a SOFT timeout: the underlying git call keeps running on its own thread, and the pinned libgit2 sets no socket/server read timeout, so a black-holed remote can keep that thread — and the source's in-flight marker — alive for the life of the process (that source is then skipped until it recovers or the process restarts); SCOPES_GIT_MAX_ZOMBIES bounds how many such threads accumulate. Either way one unreachable repo never blocks boot or other scopes (0 = no timeout).
+Soft timeout in seconds for a single scope git clone/fetch: the awaiting operation is abandoned (the event loop and the sync pass move on) and the op is logged and skipped, retried next cycle. It is a SOFT timeout: the underlying git call keeps running on its own thread, and the pinned libgit2 sets no socket/server read timeout, so a black-holed remote can keep that thread — and the source's in-flight marker — alive for the life of the process (that source is then skipped until it recovers or the process restarts); SCOPES_GIT_MAX_ZOMBIES bounds how many such threads accumulate. Either way one unreachable repo never blocks boot or other scopes (0 = no timeout). With SCOPES_GIT_FETCH_WITH_CLI on it is a HARD timeout instead: git is stopped at the timeout (see SCOPES_GIT_CLI_KILL_GRACE).
+
+#### OPAL_SCOPES_GIT_FETCH_WITH_CLI
+
+Default: `False`
+
+Whether scope fetches and clones run the git command line (git fetch) instead of libgit2. A libgit2 fetch runs on a thread that cannot be stopped, so one that hangs keeps its clone from syncing until it returns or the process restarts. With this on each op runs git in a process group of its own, and SCOPES_GIT_FETCH_TIMEOUT is hard: at the timeout the group gets SIGTERM, then SIGKILL SCOPES_GIT_CLI_KILL_GRACE seconds later, the lock files and partial pack git left in the clone are removed, and the next sync fetches the clone again. The group also ends itself when the server process that started it dies. Each op holds a lock on its clone (the file `.SOURCE_ID.lock` beside it) that git and the git processes it starts inherit, so no other op, repack or cleanup touches the clone while any of them lives; a sync that finds a clone locked skips it and counts opal_server.scopes.git_op_skipped (reason clone_busy). The lock is an flock: where the filesystem holding the clones refuses one, every fetch and clone fails with reason `local`. What an op that ended early left in its clone is removed by the next op on that clone, and by the pre-fork scope preload for every clone, with this on or off. Remote timeouts and failures are logged, counted and backed off as libgit2's are; failures on the server's own side (no git, a clone that cannot be set up, an unreadable SCOPES_GIT_SSH_KNOWN_HOSTS) are logged at ERROR and counted with reason `local`, without backoff. A source whose URL or credentials cannot be given to git without a credential on its command line or in what it prints is logged and counted the same way, and backed off as well, since only a change of the source fixes it. A new clone is fetched into a directory beside its final path and renamed into place once complete. A clone keeps what the scopes fetcher reads from a libgit2 clone (the same remote, its `refs/remotes/<remote>/*` refs, a FETCH_HEAD rewritten only by a fetch that succeeded), so this can be switched either way without cloning again, and bundles are built from it as before; a clone made by git has no checkout, which nothing reads. Fetches skip tags and prune when SCOPES_GIT_FETCH_PRUNE is on. git reads neither the system's nor the user's git config, which libgit2 does read, so whatever else they set (a url.insteadOf, say) is lost with this on; only their safe.directory is given to git, which git 2.38 or later honours. As libgit2 does, git runs no hooks, reads no ~/.netrc, speaks only http, https, ssh, git and file, and uses no proxy; the CA certificates of SSL_CERT_FILE and SSL_CERT_DIR reach it as GIT_SSL_CAINFO and GIT_SSL_CAPATH. Credentials reach git through its environment, for http(s) through a credential helper that answers only for the source's own host, over the source's protocol or, for an http source, https (where a redirect to https takes git), or, for an SSH key, a file only the server's user can read, removed when the op ends; never through its command line. git speaks protocol v2, whatever a clone's own config says, and ssh gives up on a connect after 30 seconds and on a link the server stays silent on after about a minute (4 keepalives, 15 seconds apart, unanswered), with an error of its own rather than at the timeout. Each op starts git from the server process, which under uvloop forks it: the more memory the server holds, the longer that takes. Needs git 2.32 or later on PATH, /bin/sh (git runs under it, which reports git's exit status), and ssh for SSH sources; the official images, Debian and Alpine, have all three, and the server does not start without git 2.32 or /bin/sh. Unlike libgit2, ssh needs the server's uid to have an entry in the user database (/etc/passwd): under a uid with none, an arbitrary one given at runtime say, every SSH fetch fails, which the server logs at ERROR at start; add an entry, or use nss_wrapper, whose LD_PRELOAD and `NSS_WRAPPER_*` variables git and ssh are given. ssh from OpenSSH 8.8 on, which the official images have, refuses ssh-rsa (SHA-1) signatures: a git server that offers only an ssh-rsa host key, which libgit2 accepts, works with this off and fails with it on. One that takes only ssh-rsa signatures of the user's RSA key fails with this on, and with it off too unless it lists only ssh-rsa in its server-sig-algs (as the sshd of OpenSSH 10 does). SSH key files go to /dev/shm where it is writable, else to the temp dir (TMPDIR); the server does not start when that path holds % or $, which ssh would expand. SSH host keys: see SCOPES_GIT_SSH_KNOWN_HOSTS.
+
+#### OPAL_SCOPES_GIT_CLI_KILL_GRACE
+
+Default: `5.0`
+
+With SCOPES_GIT_FETCH_WITH_CLI on: seconds a git fetch or clone that ran past SCOPES_GIT_FETCH_TIMEOUT gets to exit on SIGTERM, which lets git remove its own lock files and temporary pack, before its process group gets SIGKILL. OPAL then waits up to 10 seconds more for the group to exit, and once it has, removes what git left in the clone (for a clone, its partial directory) before the op ends. The timeout counts from git's start, after the op has taken the clone's lock and removed what an earlier op left, so an op ends at most this plus 10 seconds, plus that removal, past its timeout. A git stuck in uninterruptible I/O even after SIGKILL keeps its clone from being synced until it exits, as a hung libgit2 fetch does. 0 sends SIGKILL at once. With SCOPES_GIT_FETCH_WITH_CLI on, the server does not start when this is negative, nan or inf.
+
+#### OPAL_SCOPES_GIT_SSH_KNOWN_HOSTS
+
+Default: `None`
+
+With SCOPES_GIT_FETCH_WITH_CLI on: the path of a known_hosts file to verify the git host's SSH key against. When set, a scope fetch or clone over SSH goes ahead only if the host's key is in this file (ssh's StrictHostKeyChecking=yes), and the file is never written to. Its lines are OpenSSH known_hosts lines; a host on a port other than 22 is written `[host]:port`. When unset (the default), host keys are handled as by the libgit2 fetch. A relative path is resolved against the server's working directory on each op. With SCOPES_GIT_FETCH_WITH_CLI on, the server does not start when this names no readable file or its path holds whitespace, % or $, a quote or a backslash (ssh would read the path as a list, expand it, or take it as quoting); a file that becomes unreadable later fails each SSH fetch at once (counted with reason `local`). With SCOPES_GIT_FETCH_WITH_CLI off it is ignored, and logged at ERROR.
 
 #### OPAL_SCOPES_GIT_MAX_WORKERS
 
 Default: `10`
 
-Maximum number of concurrent scope git operations. It bounds phase 1 (the network clone/fetch of each distinct repo) AND phase 2 (the local change-check of scopes that reuse an already-cloned repo), so it sets how many scopes are synced at once in either phase. A timed-out operation stops counting against this limit, so one hung remote does not hold a concurrency slot — its lingering daemon thread persists on its own (a black-holed remote's can persist for the life of the process). That tail is bounded by SCOPES_GIT_MAX_ZOMBIES, which is a GLOBAL ceiling: read its description, because at that ceiling new git ops are refused for every scope, healthy ones included.
+Maximum number of concurrent scope git operations. It bounds phase 1 (the network clone/fetch of each distinct repo) AND phase 2 (the local change-check of scopes that reuse an already-cloned repo), so it sets how many clones a sync pass syncs at once in either phase. In phase 1 that is one scope per clone. In phase 2 a clone's slot syncs up to 8 of its scopes at once, in lanes of their own: they read their records from the store side by side, and take the clone's sync lock one at a time for the change-check, so up to 8 times this many scopes are in flight, while each clone's git work still runs one scope at a time. Those reads each take a connection from the leader worker's Redis connection pool, which therefore grows to about 8 times this many connections at a pass's peak, and does not shrink. With SCOPES_GIT_FETCH_WITH_CLI off, a timed-out operation stops counting against this limit, so one hung remote does not hold a concurrency slot — its lingering daemon thread persists on its own (a black-holed remote's can persist for the life of the process). That tail is bounded by SCOPES_GIT_MAX_ZOMBIES, which is a GLOBAL ceiling: read its description, because at that ceiling new git ops are refused for every scope, healthy ones included. With SCOPES_GIT_FETCH_WITH_CLI on, a timed-out op leaves no thread behind, and holds its slot until git is stopped: up to SCOPES_GIT_CLI_KILL_GRACE plus 10 seconds, plus the removal of what git left, past the timeout.
 
 #### OPAL_SCOPES_PURGE_CHANNEL
 
@@ -501,13 +519,13 @@ Pub/sub channel (worker-to-worker, over the broadcaster) used to purge GitPolicy
 
 Default: `10.0`
 
-Max seconds the pre-fork scope preload waits for in-flight git ops to finish before tearing down and forking workers. Ops still lingering past this bound are left running on their daemon threads and their cached handles are left unfreed by the pre-fork cache reset, avoiding a use-after-free (0 = don't wait).
+Max seconds the pre-fork scope preload waits for in-flight git ops to finish before tearing down and forking workers. Ops still lingering past this bound are left running on their daemon threads and their cached handles are left unfreed by the pre-fork cache reset, avoiding a use-after-free (0 = don't wait). With SCOPES_GIT_FETCH_WITH_CLI on, the preload's event loop also waits up to this long for git command-line ops still being stopped; those not done by then get SIGKILL as the loop ends, their clones stay recorded as unfinished, and the next op on each clone removes what git left.
 
 #### OPAL_SCOPES_GIT_RECLONE_HUNG_ON_START
 
 Default: `False`
 
-Whether a server start clones again the scope clones on which a git op was still hung when its server process ended. A fetch or clone that runs past SCOPES_GIT_FETCH_TIMEOUT keeps running on its daemon thread, and the clone is not fetched again while it lasts. With this on (and SCOPES_GIT_FETCH_TIMEOUT positive), such an op writes a marker file of its own, with a unique name, in a directory beside the clone (git_sources/SOURCE_ID.hung/, SOURCE_ID being the clone's directory name) and removes it when it returns. A marker whose process ended first (a container restart, or a worker killed mid-op) stays until a fetch or clone of that source succeeds within its timeout, which removes them all; a fetch that fails quickly (revoked credentials, a deleted repository) or succeeds only after its timeout does not remove it. With this off a start removes them all. A container restarted while an op was still hung (by an orchestrator's health check, say) keeps its clones on its volume and would otherwise go back to that clone, while a new pod (empty volume) clones fresh. The pre-fork scope preload, which scripts/gunicorn_conf.py runs in the gunicorn master before any worker exists (as the Docker image does; opal-server run has no preload), deletes every clone with a marker before its sync, so the sync clones it fresh, as on a new pod: if that clone fails or hangs too (the remote is still unreachable), the source has no clone, and its scopes no policy, until a clone succeeds, again as on a new pod. When the marked clones of the current scopes' sources span at least two of the repositories those scopes have a clone of on disk, and at least half of them, the hang is most likely the git provider's and nothing is deleted, so every scope keeps its last fetched policy; nothing is deleted either when no clone on disk is one the current scopes use. Do not share BASE_DIR between running servers with this on: any marker counts, whoever wrote it. Each clone deleted increments opal_server.scopes.hung_clone_recloned.
+Whether a server start clones again the scope clones on which a git op was still hung when its server process ended. A fetch or clone that runs past SCOPES_GIT_FETCH_TIMEOUT keeps running on its daemon thread, and the clone is not fetched again while it lasts. With this on (and SCOPES_GIT_FETCH_TIMEOUT positive), such an op writes a marker file of its own, with a unique name, in a directory beside the clone (git_sources/SOURCE_ID.hung/, SOURCE_ID being the clone's directory name) and removes it when it returns. A marker whose process ended first (a container restart, or a worker killed mid-op) stays until a fetch or clone of that source succeeds within its timeout, which removes them all; a fetch that fails quickly (revoked credentials, a deleted repository) or succeeds only after its timeout does not remove it. With this off a start removes them all. A container restarted while an op was still hung (by an orchestrator's health check, say) keeps its clones on its volume and would otherwise go back to that clone, while a new pod (empty volume) clones fresh. The pre-fork scope preload, which scripts/gunicorn_conf.py runs in the gunicorn master before any worker exists (as the Docker image does; opal-server run has no preload), deletes every clone with a marker before its sync, so the sync clones it fresh, as on a new pod: if that clone fails or hangs too (the remote is still unreachable), the source has no clone, and its scopes no policy, until a clone succeeds, again as on a new pod. When the marked clones of the current scopes' sources span at least two of the repositories those scopes have a clone of on disk, and at least half of them, the hang is most likely the git provider's and nothing is deleted, so every scope keeps its last fetched policy; nothing is deleted either when no clone on disk is one the current scopes use. Do not share BASE_DIR between running servers (see BASE_DIR); with this on, any marker counts, whoever wrote it. Each clone deleted increments opal_server.scopes.hung_clone_recloned.
 
 #### OPAL_SCOPES_GIT_MAX_ZOMBIES
 
@@ -519,7 +537,7 @@ Maximum number of in-flight scope git operations (live plus lingering timed-out)
 
 Default: `False`
 
-Whether a scope fetch prunes: a branch deleted on the remote then leaves the clone, so a scope naming it misses instead of being served the deleted branch's last head. Off by default: a pruned fetch compares every local and remote ref, which on a clone with tens of thousands of branches adds seconds per fetch under the lock every scope on that clone shares (about 2 s on 5.5 s at 61,000 refs). Only `refs/remotes/<remote>/*` are pruned; the scopes' `refs/heads/scopes/*` stay.
+Whether a scope fetch prunes: a branch deleted on the remote then leaves the clone, so a scope naming it misses instead of being served the deleted branch's last head. Off by default: a pruned fetch compares every local and remote ref, which on a clone with tens of thousands of branches adds seconds per fetch under the lock every scope on that clone shares. libgit2 (SCOPES_GIT_FETCH_WITH_CLI off) removes a pruned ref kept in a file of its own in well under a millisecond, but rewrites the whole packed-refs file for each ref it prunes from it, and that file grows with the repository's branches: about 13 ms per ref on a clone of a repository with 63,000 branches (79 seconds for 6,000 deleted refs). With this on and SCOPES_GIT_FETCH_WITH_CLI off, the repack therefore leaves a clone's refs in files of their own instead of packing them (see SCOPES_GIT_REPACK_PACK_LIMIT); a clone whose refs are packed already (one made with SCOPES_GIT_FETCH_WITH_CLI on) keeps them packed, and its fetches pay that cost. Only `refs/remotes/<remote>/*` are pruned; the scopes' `refs/heads/scopes/*` stay.
 
 #### OPAL_SCOPES_GIT_BACKOFF_BASE_SECONDS
 
@@ -537,13 +555,13 @@ Optional cap on the per-source doubling backoff of SCOPES_GIT_BACKOFF_BASE_SECON
 
 Default: `50`
 
-Pack-file count at which a scope clone is repacked: once a successful fetch leaves the clone holding at least this many pack files, git repack -a -d -k runs on it at the end of the sync pass, after the pass has sent its notifications, merging them into a single pack and dropping the duplicate objects. A refresh of a single scope (POST /scopes/:scope_id/refresh, or a PUT /scopes) repacks its clone right after its own sync, once its notification is out, so it repacks even when no periodic pass runs (POLICY_REFRESH_INTERVAL=0). A pass never waits for a clone another sync or refresh is using: it leaves that clone to the next pass or refresh. No repack starts while a sync pass runs in the same process: the pass that ends last repacks what the others left. Objects no branch reaches any more, those of branches deleted upstream included, are kept in the merged pack rather than deleted, so that a repack never removes an object a fetch in another process is about to point a branch at; the cost is that they stay until the clone is cloned again. It exists because the scopes git fetcher (pygit2 on libgit2) writes one new pack file per fetch and never consolidates them, and a fetch of a repository with many branches can re-download history the clone already has, so without it the clone's disk grows without bound until the volume holding the clones fills. It only affects scopes mode (SCOPES=true): the classic policy-repo path fetches with the git command line, which cleans up its own packs. The git binary must be on PATH (the official images ship it). The repack runs inside the opal-server container, one clone at a time per pod, enforced with an flock on the directory holding the clones: that directory must be on a local filesystem, or on NFS mounted with local_lock=flock, since where flock fails every repack fails and is retried once an hour. Its memory counts against the container's limit: allow about 0.5 KB per object of the repository (measured 1.2 GB for a 61k-branch repository of 2.3 million objects, 0.8 GB for 1.6 million). On Linux git runs with oom_score_adj 1000, so when the container runs out of memory the kernel picks the repack before an opal-server worker. Where the whole container is the unit of an OOM kill (Kubernetes on cgroup v2, unless the kubelet sets singleProcessOOMKill) the container restarts instead. The repack's attempt marker in the clone then keeps the restarted server from repacking that clone for an hour (plus the repack timeout), so the restarts come at most hourly rather than in a loop, and an INFO line names the clone; they stop only once the memory limit leaves room for the repack. Size it with that room. It needs disk too: git writes the merged pack before it deletes the old ones, so the volume holding the clones needs free space for about one more copy of the clone's packs. On a volume that fills up for real, a repack that runs out of space fails, is logged and is not retried for an hour, and while it writes, fetches of other clones on that volume can fail as well. On a Kubernetes emptyDir with a sizeLimit nothing fails: the kubelet EVICTS the pod (skipping its preStop hook) once the volume passes the limit, so size the limit with room for one more copy of the largest clone's packs above its usual peak. A repack that fails, or never finishes because its process died, is not retried for an hour by any process of the pod, a new leader included. While sync passes keep running back to back, a due repack waits for a gap (each wait counted as opal_server.scopes.git_op_skipped with reason pass_in_flight); once it has waited 30 minutes, the next attempt runs it beside a pass, which can then stall that pass for as long as the repack runs. Raise the limit to repack less often; 0 or negative disables repacking, and 1 counts as 2, since a clone always holds a pack after a fetch.
+Pack-file count at which a scope clone is repacked: once a successful fetch leaves the clone holding at least this many pack files, git repack -a -d -k runs on it at the end of the sync pass, after the pass has sent its notifications, merging them into a single pack and dropping the duplicate objects. Before it, git pack-refs --all moves the clone's refs, which libgit2 keeps in a file each, into one packed-refs file, and the clone's reflogs, which OPAL never reads, are turned off (core.logAllRefUpdates=false in the clone's config, which new scope clones are made with) and removed (moved aside within the repack's timeout, and deleted once the repack has let go of the clone): with a file of at least one filesystem block per ref, the reflogs of a clone with tens of thousands of branches can take many times the disk of its objects. With the libgit2 fetch pruning (SCOPES_GIT_FETCH_WITH_CLI off, SCOPES_GIT_FETCH_PRUNE on) the refs stay in their files and only the reflogs go: see SCOPES_GIT_FETCH_PRUNE. A clone whose refs are not packed (a fresh libgit2 clone, or one made by an earlier version), or, with the libgit2 fetch pruning, one that still has reflogs (made by an earlier version), gets these ref steps alone at the end of the next sync pass after its clone or fetch, without waiting for the limit. They are counted as opal_server.scopes.git_pack_refs by outcome, with a git_pack_refs_seconds distribution, and a git pack-refs (git config, when the refs stay in their files) that fails there holds off the clone's repacks for an hour, as a failed repack does. Before a repack, a ref step that fails is a warning and the repack still runs; every ref step that fails, runs past its share of SCOPES_GIT_REPACK_TIMEOUT or leaves the refs in files of their own is counted as opal_server.scopes.git_ref_step_failures, tagged by step (config, reflogs or pack_refs). A refresh of a single scope (POST /scopes/:scope_id/refresh, or a PUT /scopes) repacks its clone right after its own sync, once its notification is out, so it repacks even when no periodic pass runs (POLICY_REFRESH_INTERVAL=0). A pass never waits for a clone another sync or refresh is using: it leaves that clone to the next pass or refresh. No repack starts while a sync pass runs in the same process: the pass that ends last repacks what the others left. Objects no branch reaches any more, those of branches deleted upstream included, are kept in the merged pack rather than deleted, so that a repack never removes an object a fetch in another process is about to point a branch at; the cost is that they stay until the clone is cloned again. It exists because the scopes git fetcher (pygit2 on libgit2) writes one new pack file per fetch and never consolidates them, and a fetch of a repository with many branches can re-download history the clone already has, so without it the clone's disk grows without bound until the volume holding the clones fills. It only affects scopes mode (SCOPES=true): the classic policy-repo path fetches with the git command line, which cleans up its own packs. The git binary must be on PATH, and /bin/sh must exist, since each git of a repack runs under it (the official images ship both); without /bin/sh every repack fails, and is retried once an hour. The repack runs inside the opal-server container, one clone at a time per pod, enforced with an flock on the directory holding the clones: that directory must be on a local filesystem, or on NFS mounted with local_lock=flock, since where flock fails every repack fails and is retried once an hour. Its memory counts against the container's limit: allow about 0.5 KB per object of the repository. On Linux git runs with oom_score_adj 1000, so when the container runs out of memory the kernel picks the repack before an opal-server worker. Where the whole container is the unit of an OOM kill (Kubernetes on cgroup v2, unless the kubelet sets singleProcessOOMKill) the container restarts instead. The repack's attempt marker in the clone then keeps the restarted server from repacking that clone for an hour (plus the repack timeout), so the restarts come at most hourly rather than in a loop, and an INFO line names the clone; they stop only once the memory limit leaves room for the repack. Size it with that room. It needs disk too: git writes the merged pack before it deletes the old ones, so the volume holding the clones needs free space for about one more copy of the clone's packs. On a volume that fills up for real, a repack that runs out of space fails, is logged and is not retried for an hour, and while it writes, fetches of other clones on that volume can fail as well. On a Kubernetes emptyDir with a sizeLimit nothing fails: the kubelet EVICTS the pod (skipping its preStop hook) once the volume passes the limit, so size the limit with room for one more copy of the largest clone's packs above its usual peak. A repack that fails, or never finishes because its process died, is not retried for an hour by any process of the pod, a new leader included. While sync passes keep running back to back, a due repack waits for a gap (each wait counted as opal_server.scopes.git_op_skipped with reason pass_in_flight); once it has waited 30 minutes, the next attempt runs it beside a pass, which can then stall that pass for as long as the repack runs. Raise the limit to repack less often; 0 or negative disables repacking, and 1 counts as 2, since a clone always holds a pack after a fetch.
 
 #### OPAL_SCOPES_GIT_REPACK_TIMEOUT
 
 Default: `120.0`
 
-Hard timeout in seconds for one scope clone repack (see SCOPES_GIT_REPACK_PACK_LIMIT). Unlike SCOPES_GIT_FETCH_TIMEOUT it is HARD: when it expires git gets SIGTERM, then SIGKILL 10 seconds later, the files it left in the pack directory are removed, and the clone keeps the packs it already had. Stopping git can take up to 20 seconds past the timeout, and OPAL waits for it up to 30 seconds past the timeout, so once git starts the repack holds the clone's sync lock for at most the timeout plus 30 seconds (150 seconds with the default). Two cases outlive that bound: a git stuck in uninterruptible I/O survives SIGKILL, and a git whose opal-server worker exits mid-repack keeps running with no time limit. Either one keeps the pod-wide repack lock, so no other repack starts in the pod until it exits. It must stay bounded because the repack holds the clone's sync lock while it runs. Repacks run one at a time at the end of a sync pass, after its notifications, so within one pass a repack delays none of them, and a refresh of a single scope runs its repack right after its own notification. No repack starts while another sync pass runs (the boot sync next to the first periodic pass, or a POST /scopes/refresh), whose syncs would otherwise queue on the clone's lock while holding their SCOPES_GIT_MAX_WORKERS slots and stall the whole pass, every other clone's scopes included; the pass that ends last runs it. A pass that starts while a repack is already running still waits for it in the same way, as it does for a slow fetch. The next periodic pass starts only once the repacks are done. The default is about 7x a repack measured on a production clone (16s for 61k branches, most of it CPU); too low a value is worse than too high, since a repack that always times out never reclaims any disk. Watch opal_server.scopes.git_repack with outcome:timeout and the git_repack_seconds distribution. 0, negative, nan or inf fall back to the default of 120 seconds, and a value over 86400 (a day) is capped at 86400 with a warning, because a wait of more than about 24 days overflows and fails every repack; there is no way to set no limit.
+Hard timeout in seconds for one scope clone repack (see SCOPES_GIT_REPACK_PACK_LIMIT), its git pack-refs included, and for a run of its ref steps alone. Before a repack the ref steps get half of it: past that the one running is stopped, and git repack gets the rest. Unlike SCOPES_GIT_FETCH_TIMEOUT it is HARD: when it expires git gets SIGTERM, then SIGKILL 10 seconds later, the files and locks it left in the clone are removed, and the clone keeps the packs it already had. Stopping git can take up to 20 seconds past the timeout, and OPAL waits for it up to 30 seconds past the timeout, so once git starts the repack holds the clone's sync lock for at most the timeout plus 30 seconds (150 seconds with the default), and then for a walk of the clone's refs/ and logs/ that sizes its log line (as before git starts), which the timeout does not bound: a walk of the 126,000 files of a clone of a repository with 63,000 branches took about 0.7 seconds on a local disk with a warm cache. One case outlives that bound: a git stuck in uninterruptible I/O survives SIGKILL, and keeps the pod-wide repack lock, so no other repack starts in the pod until it exits. A git whose opal-server worker exits mid-repack does not outlive it: git runs under a watchdog that kills its whole process group once that worker is gone. It must stay bounded because the repack holds the clone's sync lock while it runs. Repacks run one at a time at the end of a sync pass, after its notifications, so within one pass a repack delays none of them, and a refresh of a single scope runs its repack right after its own notification. No repack starts while another sync pass runs (the boot sync next to the first periodic pass, or a POST /scopes/refresh), whose syncs would otherwise queue on the clone's lock while holding their SCOPES_GIT_MAX_WORKERS slots and stall the whole pass, every other clone's scopes included; the pass that ends last runs it. A pass that starts while a repack is already running still waits for it in the same way, as it does for a slow fetch. The next periodic pass starts only once the repacks are done. The default leaves several times the time a repack of a clone with tens of thousands of branches takes, most of it CPU; too low a value is worse than too high, since a repack that always times out never reclaims any disk. Watch opal_server.scopes.git_repack with outcome:timeout and the git_repack_seconds distribution. 0, negative, nan or inf fall back to the default of 120 seconds, and a value over 86400 (a day) is capped at 86400 with a warning, because a wait of more than about 24 days overflows and fails every repack; there is no way to set no limit.
 
 #### OPAL_SCOPES_STORE_READ_TIMEOUT
 
@@ -555,7 +573,7 @@ Timeout for a scope-store read taken while holding a source's lock — the sibli
 
 Default: `20.0`
 
-How long GET /scopes/:scope_id/policy holds a request while that scope's clone is still being populated, before falling through to the 503 + Retry-After it answers today. The route re-checks once a second and returns the bundle the moment the clone is usable. It exists because the opal-client PDP ignores Retry-After: it makes five attempts with random-exponential backoff capped at 10s (~20-40s of coverage) and then stays quiet until the next pub/sub policy message or a reconnect, so a clone that outlives those attempts strands that PDP with no policy — and the update-all published when a clone completes names only the scope that was syncing, so siblings sharing the same clone are not woken. Holding the request converts that gap into latency the client already tolerates: five client attempts against a 20s hold cover about two minutes of clone time, so short and medium re-clones — meaning the download phase; the rmtree-and-init window before it answers 503 + Retry-After 5 and is not waited on — produce no client-visible gap. What this bounds is the WAIT plus at most one more bundle attempt: time queued behind other bundle builds on the shared executor is outside the deadline, which is what SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT bounds instead. The budget matters in both directions — 20s is well under the 60s ALB idle timeout (a longer hold surfaces as a 504, which the client cannot tell apart from a dead server) and far under the client's 300s aiohttp total timeout. Readiness is derived from DISK (the clone still has no remote-tracking refs), never from an in-process marker, so every worker answers alike: the clone runs in the leader while this route is served by any worker. The hold is an awaited sleep loop, so it occupies no thread between polls and leaves the event loop and the gunicorn worker heartbeat unaffected; it is abandoned early if the client disconnects. 0 or negative disables the wait (answer 503 immediately), and with it the branch wait of SCOPES_POLICY_BRANCH_REFRESH_INTERVAL. nan, inf and -inf are treated as disabled too: unlike a non-numeric value, which fails this process at startup when the environment is parsed, they parse cleanly — inf would otherwise mean the clamped maximum hold on every clone-in-progress request, and nan is not a budget at all. Values above 55s are clamped to 55s so the hold can never outlive the load balancer's idle timeout.
+How long GET /scopes/:scope_id/policy holds a request while that scope's clone is still being populated, before falling through to the 503 + Retry-After it answers today. The route re-checks once a second and returns the bundle the moment the clone is usable. It exists because the opal-client PDP ignores Retry-After: it makes five attempts with random-exponential backoff capped at 10s (~20-40s of coverage) and then stays quiet until the next pub/sub policy message or a reconnect, so a clone that outlives those attempts strands that PDP with no policy — and the update-all published when a clone completes names only the scope that was syncing, so siblings sharing the same clone are not woken. Holding the request converts that gap into latency the client already tolerates: five client attempts against a 20s hold cover about two minutes of clone time, so short and medium re-clones — meaning the download phase; the rmtree-and-init window before it answers 503 + Retry-After 5 and is not waited on — produce no client-visible gap. What this bounds is the WAIT plus at most one more bundle attempt: time queued behind other bundle builds on the shared executor is outside the deadline, which is what SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT bounds instead. The budget matters in both directions — 20s is well under the 60s ALB idle timeout (a longer hold surfaces as a 504, which the client cannot tell apart from a dead server) and far under the client's 300s aiohttp total timeout. Readiness is derived from DISK (the clone still has no remote-tracking refs), never from an in-process marker, so every worker answers alike: the clone runs in the leader while this route is served by any worker. The wait covers a git command-line clone in progress too (SCOPES_GIT_FETCH_WITH_CLI): git clones into a directory beside the clone's path and renames it into place once complete, so a clone path that does not exist yet, with that directory beside it and the clone's lock held, counts as a clone still being populated (a directory left by a clone whose process died does not count). The hold is an awaited sleep loop, so it occupies no thread between polls and leaves the event loop and the gunicorn worker heartbeat unaffected; it is abandoned early if the client disconnects. 0 or negative disables the wait (answer 503 immediately), and with it the branch wait of SCOPES_POLICY_BRANCH_REFRESH_INTERVAL. nan, inf and -inf are treated as disabled too: unlike a non-numeric value, which fails this process at startup when the environment is parsed, they parse cleanly — inf would otherwise mean the clamped maximum hold on every clone-in-progress request, and nan is not a budget at all. Values above 55s are clamped to 55s so the hold can never outlive the load balancer's idle timeout.
 
 #### OPAL_SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT
 
@@ -673,6 +691,12 @@ Default: `2.0`
 
 Grace period after a broadcaster reconnect before replaying buffered broadcasts and resyncing clients, to let peer servers re-subscribe.
 
+#### OPAL_BROADCAST_FREEZE_ON_DISCONNECT
+
+Default: `True`
+
+While the broadcaster's backbone is disconnected, freeze client-facing publishes on every worker instead of applying them on the worker that received them, so that an update that cannot reach the whole fleet is never served by just one worker. The reconnect resync (`OPAL_BROADCAST_RESYNC_ON_RECONNECT`) is the recovery: clients re-fetch their configured data sources and policy, so the updates those cover are reconciled, while one-off updates outside them (inline data payloads, ad-hoc fetch URLs) published during the gap are dropped, not deferred. Internal coordination topics (statistics, keepalive, the git webhook trigger) are not frozen, and keep being delivered locally and buffered for replay. It takes effect only with `OPAL_BROADCAST_RECONNECT_ENABLED` on (without the reconnecting broadcaster there is no gap to detect), and only with `OPAL_BROADCAST_RESYNC_ON_RECONNECT` on: with the resync off, the server does not freeze and logs a warning. Set to `False` for the earlier behavior, where the receiving worker's own clients get an update at once and the other workers' only after the reconnect.
+
 #### OPAL_BROADCAST_HEALTHCHECK_ENABLED
 
 Default: `True`
@@ -707,9 +731,9 @@ Redis connection URL.
 
 #### OPAL_AUTH_PRIVATE_KEY_FORMAT
 
-Default: `PEM`
+Default: `pem`
 
-Format of the private key. Options: `PEM`, `JWK`.
+Format of the private key. Options: `pem`, `ssh`, `der`.
 
 Read more about [secure mode setup](/getting-started/running-opal/as-python-package/secure-mode-setup).
 
@@ -917,12 +941,6 @@ Secret for validating webhook requests from the policy repository.
 
 For more information, see [tracking a Git repository](/tutorials/track_a_git_repo).
 
-#### OPAL_POLICY_REPO_WEBHOOK_TOPIC
-
-Default: `webhook`
-
-Topic for policy repository webhook events.
-
 #### OPAL_POLICY_REPO_WEBHOOK_ENFORCE_BRANCH
 
 Default: `False`
@@ -947,63 +965,11 @@ Additional parameters for webhook processing.
 
 For more information, see [tracking a Git repository](/tutorials/track_a_git_repo).
 
-#### OPAL_OPAL_POLICY_REPO_URL
-
-Default: `None`
-
-:::note
-**DEPRECATED** - Use [OPAL_POLICY_REPO_URL](#opal_policy_repo_url) instead.
-:::
-
-The repository URL where the policy repository is located. Must be available from the machine running OPAL (prefer public internet addresses). Supported URI schemes: `https://` and `ssh` (i.e., `git@`).
-
-#### OPAL_OPAL_POLICY_REPO_SSH_KEY
-
-Default: `None`
-
-:::note
-**DEPRECATED** - Use [OPAL_POLICY_REPO_SSH_KEY](#opal_policy_repo_ssh_key) instead.
-:::
-
-The content of the SSH private key. You will need to register the matching public key with your repository. The passed value must be the contents of the SSH key in one line (replace newlines with underscores, i.e., `\n` with `_`).
-
-#### OPAL_OPAL_POLICY_REPO_CLONE_PATH
-
-Default: `/tmp/opal_policy_repo`
-
-:::note
-**DEPRECATED** - Use [OPAL_POLICY_REPO_CLONE_PATH](#opal_policy_repo_clone_path) instead.
-:::
-
-Where to clone the repository in your Docker filesystem (not important unless you mount a Docker volume).
-
-#### OPAL_OPAL_POLICY_REPO_MAIN_BRANCH
-
-Default: `main`
-
-:::note
-**DEPRECATED** - Use [OPAL_POLICY_REPO_MAIN_BRANCH](#opal_policy_repo_main_branch) instead.
-:::
-
-Name of the git branch to track for policy files.
-
-#### OPAL_OPAL_BUNDLE_IGNORE
-
-Default: `[]`
-
-:::note
-**DEPRECATED** - Use [OPAL_BUNDLE_IGNORE](#opal_bundle_ignore) instead.
-:::
-
-Paths to omit from policy bundle. List of glob-style paths, or paths without wildcards but ending with "/**" indicating a parent path (ignoring all under it).
-
-_Added in OPAL v0.5.0_
-
 ### Data Configuration
 
 #### OPAL_ALL_DATA_TOPIC
 
-Default: `data`
+Default: `policy_data`
 
 Top-level topic for data updates.
 
@@ -1023,7 +989,9 @@ URL for all data configuration (if you choose to have it all in one place).
 
 Default: `/data/config`
 
-URL to fetch the full basic configuration of data.
+URL to fetch the full basic configuration of data. A POST to it triggers a data update event.
+
+For more information, see [triggering data updates](/tutorials/trigger_data_updates).
 
 #### OPAL_DATA_CALLBACK_DEFAULT_ROUTE
 
@@ -1048,14 +1016,6 @@ Default:
 Configuration of data sources by topics.
 
 For more information, see [configuring external data sources](/tutorials/configure_external_data_sources) and [data source configuration](/getting-started/running-opal/run-opal-server/data-sources).
-
-#### OPAL_DATA_UPDATE_TRIGGER_ROUTE
-
-Default: `/data/update`
-
-URL to trigger data update events.
-
-For more information, see [triggering data updates](/tutorials/trigger_data_updates).
 
 ## OPAL Client Configs
 
@@ -1159,13 +1119,21 @@ Interval in seconds to backup policy store's data.
 
 _Added in OPAL v0.6.0_
 
+#### OPAL_DEFAULT_OPAL_SERVER_CONNECTIVITY_DISABLED
+
+Default: `False`
+
+With `OPAL_OFFLINE_MODE_ENABLED` on, start the client without connecting to the OPAL server: once the backup at `OPAL_STORE_BACKUP_PATH` is loaded into the policy store, the client serves it and receives no policy or data updates. When no valid backup can be loaded, the client logs a warning and connects to the server as usual. Ignored with offline mode off. The connectivity can be read with `GET /opal-server/connectivity` and switched at runtime with `POST /opal-server/connectivity/disable` and `POST /opal-server/connectivity/enable`, which refetches policy and data as a reconnect does.
+
+For more information, see [OPAL server connectivity control](/tutorials/opal_server_connectivity).
+
 ### Policy Store Configuration
 
 #### OPAL_POLICY_STORE_TYPE
 
-Default: `opa`
+Default: `OPA`
 
-Type of policy store to use. Options: `opa`, `cedar`.
+Type of policy store to use. Options: `OPA`, `CEDAR`.
 
 For more information, see [Cedar and OPAL](/tutorials/cedar).
 
@@ -1239,9 +1207,9 @@ _Added in OPAL v0.7.8_
 
 #### OPAL_POLICY_STORE_CONN_RETRY
 
-Default: `{"retries": 3, "backoff_factor": 0.3}`
+Default: `{"wait_strategy": "fixed", "wait_time": 2, "attempts": 2}`
 
-Retry options when connecting to the policy store (i.e., the agent that handles the policy, e.g., OPA).
+Retry options when connecting to the policy store (i.e., the agent that handles the policy, e.g., OPA). Keys: `wait_strategy` (`fixed`, `exponential` or `random_exponential`), `wait_time` in seconds, `attempts`, and `max_wait`, the most to wait between attempts with an exponential strategy (no limit by default).
 
 #### OPAL_POLICY_STORE_LIVENESS_PROBE_ENABLED
 
@@ -1285,22 +1253,6 @@ Which policy paths pushed to the client should be ignored. List of glob-style pa
 Default: `False`
 
 Should we load a special healthcheck policy into OPA that checks that OPA was synced correctly and is ready to answer authorization queries.
-
-For more information, see [monitoring OPAL](/tutorials/monitoring_opal).
-
-#### OPAL_OPA_HEALTH_CHECK_TRANSACTION_LOG_PATH
-
-Default: `system/opal/transactions`
-
-Path to OPA document that stores the OPA write transactions.
-
-For more information, see [monitoring OPAL](/tutorials/monitoring_opal).
-
-#### OPAL_OPA_HEALTH_CHECK_POLICY_PATH
-
-Default: `engine/healthcheck/opal.rego`
-
-Path to the custom healthcheck policy file.
 
 For more information, see [monitoring OPAL](/tutorials/monitoring_opal).
 
@@ -1424,7 +1376,7 @@ If set to `FALSE`, OPAL Client will not listen to dynamic data updates.
 
 #### OPAL_DATA_TOPICS
 
-Default: `["data"]`
+Default: `["policy_data"]`
 
 Data topics to subscribe to.
 
@@ -1457,7 +1409,7 @@ For more information, see [monitoring OPAL](/tutorials/monitoring_opal).
 Default:
 ```json
 {
-  "method": "POST",
+  "method": "post",
   "headers": {
     "content-type": "application/json"
   },

@@ -23,11 +23,6 @@ from git import Repo
 from git.objects import Commit
 from opal_common.sources.git_policy_source import GitPolicySource
 
-try:
-    from asyncio.exceptions import TimeoutError
-except ImportError:
-    from asyncio import TimeoutError
-
 VALID_REPO_REMOTE_URL_HTTPS = "https://github.com/permitio/fastapi_websocket_pubsub.git"
 
 INVALID_REPO_REMOTE_URL = "git@github.com:permitio/no_such_repo.git"

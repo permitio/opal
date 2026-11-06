@@ -234,7 +234,120 @@ class OpalServerConfig(Confi):
         "marker — alive for the life of the process (that source is then skipped "
         "until it recovers or the process restarts); SCOPES_GIT_MAX_ZOMBIES "
         "bounds how many such threads accumulate. Either way one unreachable repo "
-        "never blocks boot or other scopes (0 = no timeout).",
+        "never blocks boot or other scopes (0 = no timeout). With "
+        "SCOPES_GIT_FETCH_WITH_CLI on it is a HARD timeout instead: git is "
+        "stopped at the timeout (see SCOPES_GIT_CLI_KILL_GRACE).",
+    )
+    SCOPES_GIT_FETCH_WITH_CLI = confi.bool(
+        "SCOPES_GIT_FETCH_WITH_CLI",
+        False,
+        description="Whether scope fetches and clones run the git command line "
+        "(git fetch) instead of libgit2. A libgit2 fetch runs on a thread that "
+        "cannot be stopped, so one that hangs keeps its clone from syncing until "
+        "it returns or the process restarts. With this on each op runs git in a "
+        "process group of its own, and SCOPES_GIT_FETCH_TIMEOUT is hard: at the "
+        "timeout the group gets SIGTERM, then SIGKILL SCOPES_GIT_CLI_KILL_GRACE "
+        "seconds later, the lock files and partial pack git left in the clone "
+        "are removed, and the next sync fetches the clone again. The group also "
+        "ends itself when the server process that started it dies. Each op holds "
+        "a lock on its clone (the file `.SOURCE_ID.lock` beside it) that git "
+        "and the git processes it starts inherit, so no other op, repack or "
+        "cleanup touches the clone while any of them lives; a sync that finds a "
+        "clone locked skips it and counts opal_server.scopes.git_op_skipped "
+        "(reason clone_busy). The lock is an flock: where the filesystem holding "
+        "the clones refuses one, every fetch and clone fails with reason `local`. "
+        "What an op that ended early left in its clone is "
+        "removed by the next op on that clone, and by the pre-fork scope preload "
+        "for every clone, with this on or off. Remote timeouts and failures are "
+        "logged, counted and backed off as libgit2's are; failures on the "
+        "server's own side (no git, a clone that cannot be set up, an "
+        "unreadable SCOPES_GIT_SSH_KNOWN_HOSTS) are logged at ERROR and counted "
+        "with reason `local`, without backoff. A source whose URL or "
+        "credentials cannot be given to git without a credential on its "
+        "command line or in what it prints is logged and counted the same "
+        "way, and backed off as well, since only a change of the source fixes "
+        "it. A new "
+        "clone is fetched into a directory beside its final path and renamed "
+        "into place once complete. A clone keeps what the scopes fetcher reads "
+        "from a libgit2 clone (the same remote, its `refs/remotes/<remote>/*` "
+        "refs, a FETCH_HEAD rewritten only by a fetch that succeeded), so this "
+        "can be switched either way without cloning again, and bundles are "
+        "built from it as before; a clone made by git has no checkout, which "
+        "nothing reads. Fetches skip tags and prune when SCOPES_GIT_FETCH_PRUNE "
+        "is on. git reads neither the system's nor the user's git config, which "
+        "libgit2 does read, so whatever else they set (a url.insteadOf, say) is "
+        "lost with this on; only their safe.directory is given to git, which "
+        "git 2.38 or later honours. As libgit2 does, git runs no hooks, reads "
+        "no ~/.netrc, speaks only http, https, ssh, git and file, and uses no "
+        "proxy; the CA certificates of SSL_CERT_FILE and "
+        "SSL_CERT_DIR reach it as GIT_SSL_CAINFO and GIT_SSL_CAPATH. "
+        "Credentials reach git through its environment, for http(s) through a "
+        "credential helper that answers only for the source's own host, over "
+        "the source's protocol or, for an http source, https (where a "
+        "redirect to https takes git), or, for "
+        "an SSH key, a file only the server's user can read, removed when the "
+        "op ends; never through its command line. git speaks protocol v2, "
+        "whatever a clone's own config says, and ssh gives up on a connect "
+        "after 30 seconds and on a link the server stays silent on after about "
+        "a minute (4 keepalives, 15 seconds apart, unanswered), with an error "
+        "of its own rather than at the timeout. Each op starts git from the "
+        "server process, which under uvloop forks it: the more memory the "
+        "server holds, the longer that takes. Needs git 2.32 or later on PATH, "
+        "/bin/sh (git runs under it, which reports git's exit status), and "
+        "ssh for SSH sources; the official "
+        "images, Debian and Alpine, have all three, and the server does not "
+        "start without git 2.32 or /bin/sh. "
+        "Unlike libgit2, ssh needs the server's uid to have an entry in the "
+        "user database (/etc/passwd): under a uid with none, an arbitrary one "
+        "given at runtime say, every SSH fetch fails, which the server logs at "
+        "ERROR at start; add an entry, or use nss_wrapper, whose LD_PRELOAD "
+        "and `NSS_WRAPPER_*` variables git and ssh are given. "
+        "ssh from OpenSSH 8.8 on, which the official images have, refuses "
+        "ssh-rsa (SHA-1) signatures: a git server that offers only an ssh-rsa "
+        "host key, which libgit2 accepts, works with this off and fails with it "
+        "on. One that takes only ssh-rsa signatures of the user's RSA key fails "
+        "with this on, and with it off too unless it lists only ssh-rsa in its "
+        "server-sig-algs (as the sshd of OpenSSH 10 does). "
+        "SSH key files go to /dev/shm where it is writable, else to the temp "
+        "dir (TMPDIR); the server does not start when that path holds % or $, "
+        "which ssh would expand. "
+        "SSH host keys: see SCOPES_GIT_SSH_KNOWN_HOSTS.",
+    )
+    SCOPES_GIT_SSH_KNOWN_HOSTS = confi.str(
+        "SCOPES_GIT_SSH_KNOWN_HOSTS",
+        None,
+        description="With SCOPES_GIT_FETCH_WITH_CLI on: the path of a "
+        "known_hosts file to verify the git host's SSH key against. When set, "
+        "a scope fetch or clone over SSH goes ahead only if the host's key is "
+        "in this file (ssh's StrictHostKeyChecking=yes), and the file is never "
+        "written to. Its lines are OpenSSH known_hosts lines; a host on a port "
+        "other than 22 is written `[host]:port`. When unset (the default), host "
+        "keys are handled as by the libgit2 fetch. A relative path is resolved "
+        "against the server's working directory on each op. With "
+        "SCOPES_GIT_FETCH_WITH_CLI on, the server does not start when this "
+        "names no readable file or its path holds whitespace, % or $, a quote "
+        "or a backslash (ssh would read the path as a list, expand it, or take "
+        "it as quoting); a file that "
+        "becomes unreadable later fails each SSH fetch at once (counted with "
+        "reason `local`). With SCOPES_GIT_FETCH_WITH_CLI off it is ignored, "
+        "and logged at ERROR.",
+    )
+    SCOPES_GIT_CLI_KILL_GRACE = confi.float(
+        "SCOPES_GIT_CLI_KILL_GRACE",
+        5.0,
+        description="With SCOPES_GIT_FETCH_WITH_CLI on: seconds a git fetch or "
+        "clone that ran past SCOPES_GIT_FETCH_TIMEOUT gets to exit on SIGTERM, "
+        "which lets git remove its own lock files and temporary pack, before its "
+        "process group gets SIGKILL. OPAL then waits up to 10 seconds more for "
+        "the group to exit, and once it has, removes what git left in the "
+        "clone (for a clone, its partial directory) before the op ends. The "
+        "timeout counts from git's start, after the op has taken the clone's "
+        "lock and removed what an earlier op left, so an op ends at most this "
+        "plus 10 seconds, plus that removal, past its timeout. A git stuck in "
+        "uninterruptible I/O even after SIGKILL keeps "
+        "its clone from being synced until it exits, as a hung libgit2 fetch "
+        "does. 0 sends SIGKILL at once. With SCOPES_GIT_FETCH_WITH_CLI on, the "
+        "server does not start when this is negative, nan or inf.",
     )
     SCOPES_GIT_FETCH_PRUNE = confi.bool(
         "SCOPES_GIT_FETCH_PRUNE",
@@ -244,27 +357,48 @@ class OpalServerConfig(Confi):
         "served the deleted branch's last head. Off by default: a pruned fetch "
         "compares every local and remote ref, which on a clone with tens of "
         "thousands of branches adds seconds per fetch under the lock every scope "
-        "on that clone shares (about 2 s on 5.5 s at 61,000 refs). Only "
-        "`refs/remotes/<remote>/*` are pruned; the scopes' "
-        "`refs/heads/scopes/*` stay.",
+        "on that clone shares. libgit2 (SCOPES_GIT_FETCH_WITH_CLI off) removes "
+        "a pruned ref kept in a file of its own in well under a millisecond, but "
+        "rewrites the whole packed-refs file for each ref it prunes from it, and "
+        "that file grows with the repository's branches: about 13 ms per ref on "
+        "a clone of a repository with 63,000 branches (79 seconds for 6,000 "
+        "deleted refs). With this on and "
+        "SCOPES_GIT_FETCH_WITH_CLI off, the repack therefore leaves a clone's "
+        "refs in files of their own instead of packing them (see "
+        "SCOPES_GIT_REPACK_PACK_LIMIT); a clone whose refs are packed already "
+        "(one made with SCOPES_GIT_FETCH_WITH_CLI on) keeps them packed, and its "
+        "fetches pay that cost. Only `refs/remotes/<remote>/*` are pruned; the "
+        "scopes' `refs/heads/scopes/*` stay.",
     )
     SCOPES_GIT_MAX_WORKERS = confi.int(
         "SCOPES_GIT_MAX_WORKERS",
         # Worst-case OS-thread count during an outage is this limit plus the
-        # number of lingering timed-out ("zombie") ops: a timed-out op releases
-        # its concurrency slot but keeps a daemon thread running on its own.
-        # SCOPES_GIT_MAX_ZOMBIES bounds that tail.
+        # number of lingering timed-out ("zombie") libgit2 ops: a timed-out
+        # libgit2 op releases its concurrency slot but keeps a daemon thread
+        # running on its own. SCOPES_GIT_MAX_ZOMBIES bounds that tail.
         10,
         description="Maximum number of concurrent scope git operations. It bounds "
         "phase 1 (the network clone/fetch of each distinct repo) AND phase 2 (the "
         "local change-check of scopes that reuse an already-cloned repo), so it "
-        "sets how many scopes are synced at once in either phase. A timed-out "
-        "operation stops counting against this limit, so one hung remote does not "
+        "sets how many clones a sync pass syncs at once in either phase. In "
+        "phase 1 that is one scope per clone. In phase 2 a clone's slot syncs "
+        "up to 8 of its scopes at once, in lanes of their own: they read their "
+        "records from the store side by side, and take the clone's sync lock one "
+        "at a time for the change-check, so up to 8 times this many scopes are in "
+        "flight, while each clone's git work still runs one scope at a time. "
+        "Those reads each take a connection from the leader worker's Redis "
+        "connection pool, which therefore grows to about 8 times this many "
+        "connections at a pass's peak, and does not shrink. With "
+        "SCOPES_GIT_FETCH_WITH_CLI off, a timed-out operation stops counting "
+        "against this limit, so one hung remote does not "
         "hold a concurrency slot — its lingering daemon thread persists on its own "
         "(a black-holed remote's can persist for the life of the process). That "
         "tail is bounded by SCOPES_GIT_MAX_ZOMBIES, which is a GLOBAL ceiling: "
         "read its description, because at that ceiling new git ops are refused "
-        "for every scope, healthy ones included.",
+        "for every scope, healthy ones included. With SCOPES_GIT_FETCH_WITH_CLI "
+        "on, a timed-out op leaves no thread behind, and holds its slot until "
+        "git is stopped: up to SCOPES_GIT_CLI_KILL_GRACE plus 10 seconds, plus "
+        "the removal of what git left, past the timeout.",
     )
     SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT = confi.float(
         "SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT",
@@ -273,7 +407,11 @@ class OpalServerConfig(Confi):
         "ops to finish before tearing down and forking workers. Ops still lingering "
         "past this bound are left running on their daemon threads and their cached "
         "handles are left unfreed by the pre-fork cache reset, avoiding a use-after-free "
-        "(0 = don't wait).",
+        "(0 = don't wait). With SCOPES_GIT_FETCH_WITH_CLI on, the preload's event "
+        "loop also waits up to this long for git command-line ops still being "
+        "stopped; those not done by then get SIGKILL as the loop ends, their "
+        "clones stay recorded as unfinished, and the next op on each clone "
+        "removes what git left.",
     )
     SCOPES_GIT_RECLONE_HUNG_ON_START = confi.bool(
         "SCOPES_GIT_RECLONE_HUNG_ON_START",
@@ -306,8 +444,9 @@ class OpalServerConfig(Confi):
         "least half of them, the hang is most likely the git provider's and "
         "nothing is deleted, so every scope keeps its last fetched policy; "
         "nothing is deleted either when no clone on disk is one the current "
-        "scopes use. Do not share BASE_DIR between running servers with this "
-        "on: any marker counts, whoever wrote it. Each clone deleted "
+        "scopes use. Do not share BASE_DIR between running servers (see "
+        "BASE_DIR); with this on, any marker counts, whoever wrote it. Each "
+        "clone deleted "
         "increments opal_server.scopes.hung_clone_recloned.",
     )
     SCOPES_GIT_MAX_ZOMBIES = confi.int(
@@ -389,7 +528,31 @@ class OpalServerConfig(Confi):
         "successful fetch leaves the clone holding at least this many pack files, "
         "git repack -a -d -k runs on it at the end of the sync pass, after the "
         "pass has sent its notifications, merging them into a single pack and "
-        "dropping the duplicate objects. A refresh of a single scope (POST "
+        "dropping the duplicate objects. Before it, git pack-refs --all moves the "
+        "clone's refs, which libgit2 keeps in a file each, into one packed-refs "
+        "file, and the clone's reflogs, which OPAL never reads, are turned off "
+        "(core.logAllRefUpdates=false in the clone's config, which new scope "
+        "clones are made with) and removed (moved aside within the repack's "
+        "timeout, and deleted once the repack has let go of the clone): with a "
+        "file of at least one filesystem block per ref, the reflogs of a clone "
+        "with tens of thousands of branches can take many times the disk of its "
+        "objects. With the libgit2 fetch pruning (SCOPES_GIT_FETCH_WITH_CLI off, "
+        "SCOPES_GIT_FETCH_PRUNE on) the refs stay in their files and only the "
+        "reflogs go: see SCOPES_GIT_FETCH_PRUNE. A clone whose refs "
+        "are not packed (a fresh libgit2 clone, or one made by an earlier "
+        "version), or, with the libgit2 fetch pruning, one that still has "
+        "reflogs (made by an earlier version), gets these ref steps alone at the "
+        "end of the next sync pass after its clone or fetch, without waiting for "
+        "the limit. They are "
+        "counted as opal_server.scopes.git_pack_refs by outcome, with a "
+        "git_pack_refs_seconds distribution, and a git pack-refs (git config, "
+        "when the refs stay in their files) that fails "
+        "there holds off the clone's repacks for an hour, as a failed repack "
+        "does. Before a repack, a ref step that fails is a warning and the "
+        "repack still runs; every ref step that fails, runs past its share of "
+        "SCOPES_GIT_REPACK_TIMEOUT or leaves the refs in files of their own is "
+        "counted as opal_server.scopes.git_ref_step_failures, tagged by step "
+        "(config, reflogs or pack_refs). A refresh of a single scope (POST "
         "/scopes/:scope_id/refresh, or a PUT /scopes) repacks its clone right "
         "after its own sync, once its notification is out, so it repacks even "
         "when no periodic pass runs (POLICY_REFRESH_INTERVAL=0). A pass never "
@@ -407,14 +570,15 @@ class OpalServerConfig(Confi):
         "disk grows without bound until the volume holding the clones fills. It "
         "only affects scopes mode (SCOPES=true): the classic policy-repo path "
         "fetches with the git command line, which cleans up its own packs. The "
-        "git binary must be on PATH (the official images ship it). The repack "
+        "git binary must be on PATH, and /bin/sh must exist, since each git of a "
+        "repack runs under it (the official images ship both); without /bin/sh "
+        "every repack fails, and is retried once an hour. The repack "
         "runs inside the opal-server container, one clone at a time per pod, "
         "enforced with an flock on the directory holding the clones: that "
         "directory must be on a local filesystem, or on NFS mounted with "
         "local_lock=flock, since where flock fails every repack fails and is "
         "retried once an hour. Its memory counts against the container's limit: "
-        "allow about 0.5 KB per object of the repository (measured 1.2 GB for a "
-        "61k-branch repository of 2.3 million objects, 0.8 GB for 1.6 million). On "
+        "allow about 0.5 KB per object of the repository. On "
         "Linux git runs with oom_score_adj 1000, so when the container runs out "
         "of memory the kernel picks the repack before an opal-server worker. "
         "Where the whole container is the unit of an OOM kill (Kubernetes on "
@@ -447,17 +611,27 @@ class OpalServerConfig(Confi):
         "SCOPES_GIT_REPACK_TIMEOUT",
         120.0,
         description="Hard timeout in seconds for one scope clone repack (see "
-        "SCOPES_GIT_REPACK_PACK_LIMIT). Unlike SCOPES_GIT_FETCH_TIMEOUT it is "
+        "SCOPES_GIT_REPACK_PACK_LIMIT), its git pack-refs included, and for a "
+        "run of its ref steps alone. Before a repack the ref steps get half of "
+        "it: past that the one running is stopped, and git repack gets the "
+        "rest. Unlike "
+        "SCOPES_GIT_FETCH_TIMEOUT it is "
         "HARD: when it expires git gets SIGTERM, then SIGKILL 10 seconds later, "
-        "the files it left in the pack directory are removed, and the clone keeps "
+        "the files and locks it left in the clone are removed, and the clone keeps "
         "the packs it already had. Stopping git can take up to 20 seconds past "
         "the timeout, and OPAL waits for it up to 30 seconds past the timeout, so "
         "once git starts the repack holds the clone's sync lock for at most the "
-        "timeout plus 30 seconds (150 seconds with the default). Two cases "
-        "outlive that bound: a git stuck in uninterruptible I/O survives SIGKILL, "
-        "and a git whose opal-server worker exits mid-repack keeps running with "
-        "no time limit. Either one keeps the pod-wide repack lock, so no other "
-        "repack starts in the pod until it exits. It must stay bounded because "
+        "timeout plus 30 seconds (150 seconds with the default), and then for "
+        "a walk of the clone's refs/ and logs/ that sizes its log line (as "
+        "before git starts), which the timeout does not bound: a walk of the "
+        "126,000 files of a clone of a repository with 63,000 branches took "
+        "about 0.7 seconds on a local disk with a warm cache. One case "
+        "outlives that bound: a git stuck in uninterruptible I/O survives "
+        "SIGKILL, and keeps the pod-wide repack lock, so no other repack starts "
+        "in the pod until it exits. A git whose opal-server worker exits "
+        "mid-repack does not outlive it: git runs under a watchdog that kills "
+        "its whole process group once that worker is gone. It must stay bounded "
+        "because "
         "the repack holds the clone's sync lock while it runs. Repacks run one at "
         "a time at the end of a sync pass, after its notifications, so within one "
         "pass a repack delays none of them, and a refresh of a single scope runs "
@@ -468,8 +642,9 @@ class OpalServerConfig(Confi):
         "the whole pass, every other clone's scopes included; the pass that ends "
         "last runs it. A pass that starts while a repack is already running still "
         "waits for it in the same way, as it does for a slow fetch. The next "
-        "periodic pass starts only once the repacks are done. The default is about 7x a repack measured on a production clone "
-        "(16s for 61k branches, most of it CPU); too low a value is worse than "
+        "periodic pass starts only once the repacks are done. The default leaves "
+        "several times the time a repack of a clone with tens of thousands of "
+        "branches takes, most of it CPU; too low a value is worse than "
         "too high, since a repack that always times out never reclaims any disk. "
         "Watch opal_server.scopes.git_repack with outcome:timeout and the "
         "git_repack_seconds distribution. 0, negative, nan or inf fall back to the default of "
@@ -504,7 +679,14 @@ class OpalServerConfig(Confi):
         "client's 300s aiohttp total timeout. Readiness is derived from DISK (the "
         "clone still has no remote-tracking refs), never from an in-process "
         "marker, so every worker answers alike: the clone runs in the leader "
-        "while this route is served by any worker. The hold is an awaited sleep "
+        "while this route is served by any worker. The wait covers a git "
+        "command-line clone in progress too (SCOPES_GIT_FETCH_WITH_CLI): git "
+        "clones into a directory beside the clone's path and renames it into "
+        "place once complete, so a clone path that does not exist yet, with "
+        "that directory beside it and the clone's lock held, counts as a clone "
+        "still being populated (a directory left by a clone whose process died "
+        "does not count). "
+        "The hold is an awaited sleep "
         "loop, so it occupies no thread between polls and leaves the event loop "
         "and the gunicorn worker heartbeat unaffected; it is abandoned early if "
         "the client disconnects. 0 or negative disables the wait (answer 503 "
@@ -719,7 +901,8 @@ class OpalServerConfig(Confi):
     DATA_CONFIG_ROUTE = confi.str(
         "DATA_CONFIG_ROUTE",
         "/data/config",
-        description="URL to fetch the full basic configuration of data",
+        description="URL to fetch the full basic configuration of data. A POST to it "
+        "triggers a data update event",
     )
     DATA_CALLBACK_DEFAULT_ROUTE = confi.str(
         "DATA_CALLBACK_DEFAULT_ROUTE",
@@ -738,12 +921,6 @@ class OpalServerConfig(Confi):
             }
         ),
         description="Configuration of data sources by topics",
-    )
-
-    DATA_UPDATE_TRIGGER_ROUTE = confi.str(
-        "DATA_CONFIG_ROUTE",
-        "/data/update",
-        description="URL to trigger data update events",
     )
 
     # Git service webhook (Default is Github)
@@ -850,7 +1027,7 @@ class OpalServerConfig(Confi):
     SCOPES_REPO_CLONES_SHARDS = confi.int(
         "SCOPES_REPO_CLONES_SHARDS",
         1,
-        description="The max number of local clones to use for the same repo (reused across scopes)",
+        description="The max number of local clones to use for the same repo (reused across scopes).",
     )
 
     REDIS_URL = confi.str(
@@ -862,7 +1039,12 @@ class OpalServerConfig(Confi):
     BASE_DIR = confi.str(
         "BASE_DIR",
         default=pathlib.Path.home() / ".local/state/opal",
-        description="The base directory for OPAL",
+        description="The base directory for OPAL. In scopes mode the scope "
+        "clones are in its git_sources directory. Two running servers must not "
+        "share it, with SCOPES_GIT_FETCH_WITH_CLI on or off: at each start the "
+        "pre-fork scope preload removes the lock files and partial packs it "
+        "finds in every clone there, and the clones half made beside them, "
+        "whichever server's git op they belong to.",
     )
 
     POLICY_REFRESH_INTERVAL = confi.int(

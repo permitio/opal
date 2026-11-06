@@ -22,6 +22,12 @@ API (`/scopes`)
 >
 > The server must be started with the environment variable
 > `OPAL_SCOPES=1`.
+>
+> The scope clones are kept under
+> [`OPAL_BASE_DIR`](/getting-started/configuration#opal_base_dir), which two
+> running servers must not share: at each start, the pre-fork scope preload
+> removes the lock files and partial packs in every clone there, whichever
+> server's git op left them.
 
 ### Use a REST API call to create or change a scope
 
@@ -94,6 +100,14 @@ curl --request PUT 'http://opal_server/scopes'
   }
 }'
 ```
+
+`PUT /scopes` refuses, with 422, a branch name git can't fetch (such as `x~1`
+or an empty name), since such a scope can't follow a branch. A scope stored
+with such a name before this release keeps being served as it was until it is
+changed. A scope whose branch is not on the remote gets no policy
+(`GET /scopes/<scope_id>/policy` answers 409), and the server logs
+`Did not find target branch on remote: <branch> (<url>)` at ERROR; a sync pass
+logs it once for each branch of each clone.
 
 ### Launch OPAL Client with a scope
 

@@ -27,6 +27,29 @@ def _wait_until(predicate, timeout=30, interval=0.5):
     return False
 
 
+_CACHE_COUNTS = ("repo_locks", "repos", "repos_last_fetched")
+
+
+def _settled_stats(opal, quiet=3.0, timeout=120.0):
+    """The stats once the three cache counts have not changed for ``quiet``
+    seconds (the last snapshot if they keep changing past ``timeout``)."""
+    deadline = time.time() + timeout
+    last, since, stats = None, time.time(), None
+    while time.time() < deadline:
+        try:
+            stats = opal.stats(samples=1)
+        except requests.RequestException:
+            time.sleep(0.5)
+            continue
+        counts = tuple(stats[k] for k in _CACHE_COUNTS)
+        if counts != last:
+            last, since = counts, time.time()
+        elif time.time() - since >= quiet:
+            return stats
+        time.sleep(0.5)
+    return stats if stats is not None else opal.stats()
+
+
 def _load_scopes(opal, prefix, names):
     """PUT a scope per repo, then force a second sync so all three caches fill.
 
@@ -36,7 +59,17 @@ def _load_scopes(opal, prefix, names):
     that second sync, so after this returns all three caches reflect the N
     scopes and the drain assertions test a cache the sync path actually fills.
 
-    Returns the per-key load count reached (max over a wait).
+    A fresh libgit2 clone also gets one pass of the ref steps alone, which
+    releases its cached handle (``repos``) once it is done (PER-16330); one
+    that lands after the refresh's fetch leaves ``repos`` short until a later
+    sync. So each round waits for ``repos`` to fill and the counts to settle
+    (those passes done), and refreshes again while ``repos`` is short, for at
+    most three rounds before the final wait. Without those passes (no
+    packed-refs housekeeping) the first round already holds.
+
+    Returns the stats once the counts have settled, from a single read; if
+    ``repos`` is still short after the rounds, the per-key max over a few
+    reads once it fills.
     """
     n = len(names)
     for i, name in enumerate(names):
@@ -46,7 +79,12 @@ def _load_scopes(opal, prefix, names):
     locked = _wait_until(lambda: opal.stats()["repo_locks"] >= n, timeout=600)
     assert locked, f"initial load never locked {n} repos: {opal.stats()}"
     # force the discover/fetch path so `repos` / `repos_last_fetched` fill too
-    opal.refresh_all()
+    for _ in range(3):
+        opal.refresh_all()
+        _wait_until(lambda: opal.stats()["repos"] >= n, timeout=30)
+        stats = _settled_stats(opal)
+        if stats["repos"] >= n:
+            return stats
     fetched = _wait_until(lambda: opal.stats()["repos"] >= n, timeout=600)
     assert fetched, f"refresh never populated {n} repos: {opal.stats()}"
     return opal.stats()

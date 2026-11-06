@@ -7,8 +7,6 @@ Observed after the 0.9.9-rc.2 staging rollout: ``opal_server.scopes.count`` /
 DogStatsD client, so its gauges went out bare and no dashboard/monitor built on
 the namespaced names could see the boot phase.
 """
-import asyncio
-
 import datadog
 import opal_common.logger as opal_common_logger
 import pytest
@@ -90,7 +88,9 @@ def test_gauge_after_configure_is_namespaced_on_the_wire(monkeypatch, statsd_res
     ), payloads
 
 
-def test_preload_configures_metrics_before_syncing(monkeypatch, preload_sandbox):
+def test_preload_configures_metrics_before_syncing(
+    monkeypatch, preload_sandbox, no_redis
+):
     """The master's preload path is the one that was missing it: it must
     configure the client BEFORE the first sync emits anything."""
     order = []
@@ -110,20 +110,12 @@ def test_preload_configures_metrics_before_syncing(monkeypatch, preload_sandbox)
             order.append("sync")
 
     monkeypatch.setattr(task_module, "ScopesService", _FakeService)
-    monkeypatch.setattr(task_module, "RedisDB", lambda url: object())
     monkeypatch.setattr(task_module, "drain_git_ops", lambda t: True)
     monkeypatch.setattr(task_module, "shutdown_git_executor", lambda: None)
     monkeypatch.setattr(
         task_module.GitPolicyFetcher, "reset_caches", staticmethod(lambda: None)
     )
 
-    try:
-        task_module.ScopesPolicyWatcherTask.preload_scopes()
-    finally:
-        # preload_scopes runs asyncio.run(), which unsets the main thread's
-        # event loop on exit; on Python 3.9 the next sync test that builds an
-        # asyncio primitive would raise "no current event loop". Restore one
-        # so this test never poisons whatever sorts after it.
-        asyncio.set_event_loop(asyncio.new_event_loop())
+    task_module.ScopesPolicyWatcherTask.preload_scopes()
 
     assert order == ["configure", "sync"], order

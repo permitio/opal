@@ -1,11 +1,13 @@
-"""Public config reference must quote config.py verbatim for the scopes keys
-this series added.
+"""Public config reference must say exactly what config.py says for every
+SCOPES_* key: its section is the heading, the declared default and the
+description, and nothing else.
 
 OPAL_SCOPES_GIT_FETCH_TIMEOUT's description has now drifted twice
 (commit adade574 existed solely to re-sync it, and the round-2 fix
 commit re-broke it with three rewordings). Operators read the public
 config reference, so a paraphrase there is a doc bug that no reviewer
-should have to catch by hand a third time.
+should have to catch by hand a third time. Either side may be the one
+edited; the other has to get the same text in the same commit.
 """
 import re
 from pathlib import Path
@@ -18,7 +20,7 @@ _CONFIG_PY_PATH = Path(server_config_module.__file__)
 
 
 def _tracked_keys(_source_unused=None):
-    """Every SCOPES_* key the running config actually exposes.
+    r"""Every SCOPES_* key the running config actually exposes.
 
     Derived, not hand-listed: the version before that carried a comment stating
     the invariant ("a new key belongs in the public reference AND in this list")
@@ -154,10 +156,10 @@ def _require_mdx():
 
 
 @pytest.mark.parametrize("key", _TRACKED_KEYS)
-def test_scopes_key_description_is_verbatim_in_the_public_reference(key):
+def test_scopes_key_section_matches_config_py(key):
     _require_mdx()
 
-    description = _declared_description(_CONFIG_PY.read_text(), key)
+    source = _CONFIG_PY.read_text()
     # Slice to this key's own section: asserting the heading and the description
     # exist independently anywhere in the file passes even when the text sits
     # under a different key's heading and this key's body is a paraphrase.
@@ -171,18 +173,24 @@ def test_scopes_key_description_is_verbatim_in_the_public_reference(key):
         f"OPAL_{key} has more than one `#### ` section in {_MDX.name}; the "
         f"later one renders but this guard only ever reads the first"
     )
-    assert _normalize(description) in _normalize(section), (
-        f"OPAL_{key}'s description in {_MDX.name} is a paraphrase, not the "
-        f"config.py text. Copy it verbatim:\n\n{description}"
-    )
     # The DECLARED literal, not getattr(opal_server_config, key): the latter is
     # the effective value after Confi has consulted OPAL_<KEY>, so exporting one
     # (this repo's own bed does) reddened a test about doc-vs-source drift with a
     # doc-vs-environment mismatch, pointing the reader at an .mdx that was right.
-    declared = _declared_default(_CONFIG_PY.read_text(), key)
+    declared = _declared_default(source, key)
     assert f"Default: `{declared}`" in section, (
         f"OPAL_{key}'s documented default does not match the literal declared in "
         f"{_CONFIG_PY.name} (expected 'Default: `{declared}`')"
+    )
+    # The whole section, not the description as a substring of it: a sentence
+    # added on either side, before or after the shared text, is drift too.
+    expected = _normalize(
+        f"#### OPAL_{key} Default: `{declared}` {_declared_description(source, key)}"
+    )
+    assert _normalize(section) == expected, (
+        f"OPAL_{key}'s section in {_MDX.name} and its description in "
+        f"{_CONFIG_PY.name} say different things. Make them say the same, in "
+        f"whichever file holds the right text."
     )
 
 

@@ -4,7 +4,6 @@ import os
 import signal
 import sys
 import traceback
-from functools import partial
 from pathlib import Path
 from typing import List, Optional
 
@@ -30,6 +29,7 @@ from opal_server.config import opal_server_config
 from opal_server.data.api import init_data_updates_router
 from opal_server.data.data_update_publisher import DataUpdatePublisher
 from opal_server.debug_stats import register_internal_stats_route
+from opal_server.git_cli import remove_dead_key_dirs, validate_git_cli_settings
 from opal_server.loadlimiting import init_loadlimit_router
 from opal_server.metrics_setup import configure_server_metrics
 from opal_server.policy.bundles.api import router as bundles_router
@@ -142,6 +142,14 @@ class OpalServer:
         self._policy_remote_url = policy_remote_url
 
         self._configure_monitoring()
+        # Once logging is configured, so that what they log never goes out
+        # through loguru's default handler (no gunicorn master configured it
+        # when uvicorn runs the server on its own).
+        validate_git_cli_settings()
+        if opal_server_config.SCOPES_GIT_FETCH_WITH_CLI:
+            # SSH key files of a worker that died (SIGKILL, an OOM kill) before
+            # it could remove them; the pre-fork preload sweeps them too.
+            remove_dead_key_dirs()
         metrics.increment("startup")
 
         self.data_sources_config: ServerDataSourceConfig = (
@@ -210,9 +218,9 @@ class OpalServer:
         #   - statistics: workers synchronise their own view over the backbone
         #   - scopes: the fleet purge broadcast (scopes/purge.py) must reach
         #     EVERY worker so it drops its GitPolicyFetcher caches for a
-        #     deleted/repointed source. Measured on staging (~23 WS conns over
-        #     16 workers): 5 of 8 workers per pod never received a single purge
-        #     and kept stale repo_locks entries for the life of the process.
+        #     deleted/repointed source. With ~23 WS conns over 16 workers, 5
+        #     of 8 workers per pod never received a single purge and kept
+        #     stale repo_locks entries for the life of the process.
         # So the "global" listening context is held whenever either is on and a
         # broadcaster exists (single-process deployments have nothing to read).
         self.broadcast_listening_context: Optional[
@@ -414,8 +422,8 @@ class OpalServer:
             ):
                 healthy = broadcaster.is_reader_healthy()
                 # Publish what the probe already decided. A wedged reader is
-                # otherwise invisible outside this handler: staging runs no
-                # liveness probe, so nothing acts on the 503 below.
+                # otherwise invisible outside this handler: where no liveness
+                # probe runs, nothing acts on the 503 below.
                 metrics.gauge(
                     "opal_server.broadcaster_reader_healthy",
                     1 if healthy else 0,

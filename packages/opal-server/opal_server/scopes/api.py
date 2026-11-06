@@ -49,6 +49,7 @@ from opal_common.topics.publisher import (
 from opal_common.urls import set_url_query_param
 from opal_server.config import opal_server_config
 from opal_server.data.data_update_publisher import DataUpdatePublisher
+from opal_server.git_cli import clone_under_way, drop_clone_lock, take_clone_lock
 from opal_server.git_fetcher import (
     BranchHeadNotFoundError,
     CloneNotPopulatedError,
@@ -389,6 +390,54 @@ async def _branch_wait_claim(
     return claim
 
 
+def _make_bundle(fetcher: GitPolicyFetcher, base_hash: Optional[str]) -> PolicyBundle:
+    """``fetcher.make_bundle``, with no clone while a git command-line clone of
+    it is under way taken for a clone not populated yet.
+
+    That clone is made in a directory beside the clone's path and
+    renamed into place once complete, so the path is not there
+    meanwhile; a libgit2 clone is made in place, where the empty clone
+    gives CloneNotPopulatedError.
+    """
+    try:
+        return fetcher.make_bundle(base_hash)
+    except NoSuchPathError as exc:
+        # GitPython's NoSuchPathError holds the path it did not find.
+        path = pathlib.Path(str(exc))
+        if _cli_clone_running(path):
+            raise CloneNotPopulatedError(f"A clone into {exc} is under way") from exc
+        # The rename can land after make_bundle looked and before the check
+        # above. It is atomic and made under the clone's lock, so by now the
+        # clone is either in place or not coming.
+        if not path.exists():
+            raise
+    return fetcher.make_bundle(base_hash)
+
+
+def _cli_clone_running(repo_path: pathlib.Path) -> bool:
+    """Whether a git command-line clone of ``repo_path`` is under way: a
+    directory a clone is made in sits beside it (clone_under_way), and the
+    clone's lock is held, as cli_clone holds it from before it makes that
+    directory until after it renames it into place.
+
+    A directory whose lock is free was left by a clone whose process
+    died, and nothing will put it in place. Taken for a clone under way
+    when the lock cannot be tried (a filesystem that refuses flock).
+    """
+    if not clone_under_way(repo_path):
+        return False
+    try:
+        fd = take_clone_lock(repo_path)
+    except OSError:
+        return True
+    if fd is None:
+        return True
+    # Held for no longer than this: a git op that starts meanwhile finds the
+    # clone busy and skips it, as for any other holder.
+    drop_clone_lock(fd)
+    return False
+
+
 async def _make_bundle_waiting_for_clone(
     fetcher: GitPolicyFetcher,
     base_hash: Optional[str],
@@ -465,7 +514,7 @@ async def _make_bundle_waiting_for_clone(
 
     waiting_for = "clone"
     try:
-        return await run_sync(fetcher.make_bundle, base_hash)
+        return await run_sync(_make_bundle, fetcher, base_hash)
     except CloneNotPopulatedError as first_exc:
         wait = _bounded_clone_wait()
         if wait <= 0:
@@ -573,7 +622,7 @@ async def _make_bundle_waiting_for_clone(
                     fetcher.has_branch_ref
                 ):
                     try:
-                        bundle = await run_sync(fetcher.make_bundle, base_hash)
+                        bundle = await run_sync(_make_bundle, fetcher, base_hash)
                     except (
                         CloneNotPopulatedError,
                         BranchHeadNotFoundError,
@@ -595,7 +644,7 @@ async def _make_bundle_waiting_for_clone(
                     continue
             else:
                 try:
-                    bundle = await run_sync(fetcher.make_bundle, base_hash)
+                    bundle = await run_sync(_make_bundle, fetcher, base_hash)
                 except CloneNotPopulatedError as exc:
                     pending = exc
                     continue
@@ -728,6 +777,31 @@ def verify_private_key_or_throw(scope_in: Scope):
             )
 
 
+def verify_branch_or_throw(scope_in: Scope):
+    """Refuse a git branch that cannot name a ref: an empty name, or ``x~1``,
+    say.
+
+    Such a name is not a branch name git can fetch, so the scope could not
+    follow a branch. ``x~1`` still resolves, as a revision expression (the
+    parent of ``origin/x``), and a scope stored with one before this check
+    is served that commit; a PUT of such a scope, new or an update, gets
+    the 422.
+    """
+    if not isinstance(scope_in.policy, GitPolicyScopeSource):
+        return
+    fetcher = GitPolicyFetcher(
+        pathlib.Path(opal_server_config.BASE_DIR), scope_in.scope_id, scope_in.policy
+    )
+    if not fetcher.branch_can_be_a_ref():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={
+                "error": f"policy.branch {scope_in.policy.branch!r} "
+                "cannot be a git branch name"
+            },
+        )
+
+
 def init_scope_router(
     scopes: ScopeRepository,
     authenticator: JWTAuthenticator,
@@ -791,6 +865,7 @@ def init_scope_router(
             )
 
         verify_private_key_or_throw(scope_in)
+        verify_branch_or_throw(scope_in)
 
         new_source_id = (
             GitPolicyFetcher.source_id(scope_in.policy)
@@ -1052,11 +1127,13 @@ def init_scope_router(
                 ),
             )
         except CloneNotPopulatedError as exc:
-            # The clone has no refs/remotes/<remote>/* at all, so it is being
-            # populated right now — _clone() rmtree's the destination and clones
-            # INTO the final path, so this window is the whole clone. Telling a
-            # client its configuration is permanently wrong during the recovery
-            # that fixes it is the opposite of the truth.
+            # The clone has no refs/remotes/<remote>/* at all, or is not there
+            # while a git command-line clone of it is under way (_make_bundle),
+            # so it is being populated right now — _clone() rmtree's the
+            # destination and libgit2 clones INTO the final path, so this window
+            # is the whole clone. Telling a client its configuration is
+            # permanently wrong during the recovery that fixes it is the
+            # opposite of the truth.
             #
             # Derived from disk, NOT from the in-flight marker: that marker is a
             # per-process global written only by the leader's sync, while this
