@@ -28,6 +28,20 @@ class PolicyStoreClientFactory:
         oauth_client_secret: Optional[str] = None,
         oauth_server: Optional[str] = None,
     ) -> BasePolicyStoreClient:
+        """Same as self.create() but with caching.
+
+        Args:
+            store_type (PolicyStoreTypes, optional): The type of policy-store to use. Defaults to opal_client_config.POLICY_STORE_TYPE.
+            url (str, optional): the URL of the policy store. Defaults to opal_client_config.POLICY_STORE_URL.
+            save_to_cache (bool, optional): Should the created value be saved to cache (To be obtained via the get method).
+
+        Raises:
+            InvalidPolicyStoreTypeException: Raised when the factory doesn't have a store-client matching the given type
+
+        Returns:
+            BasePolicyStoreClient: the policy store client interface
+        """
+        # get from cache if available - else create anew
         key = cls.get_cache_key(store_type, url)
         value = cls.CACHE.get(key, None)
         if value is None:
@@ -62,6 +76,21 @@ class PolicyStoreClientFactory:
         tls_client_key: Optional[str] = None,
         tls_ca: Optional[str] = None,
     ) -> BasePolicyStoreClient:
+        """
+        Factory method - create a new policy store by type.
+
+        Args:
+            store_type (PolicyStoreTypes, optional): The type of policy-store to use. Defaults to opal_client_config.POLICY_STORE_TYPE.
+            url (str, optional): the URL of the policy store. Defaults to opal_client_config.POLICY_STORE_URL.
+            save_to_cache (bool, optional): Should the created value be saved to cache (To be obtained via the get method).
+
+        Raises:
+            InvalidPolicyStoreTypeException: Raised when the factory doesn't have a store-client matching the given type
+
+        Returns:
+            BasePolicyStoreClient: the policy store client interface
+        """
+        # load defaults
         store_type = store_type or opal_client_config.POLICY_STORE_TYPE
         url = url or opal_client_config.POLICY_STORE_URL
         store_token = token or opal_client_config.POLICY_STORE_AUTH_TOKEN
@@ -150,8 +179,10 @@ class PolicyStoreClientFactory:
                 f"{store_type} is not a valid policy store type"
             )
 
+        # save to cache
         if save_to_cache:
             cls.CACHE[cls.get_cache_key(store_type, url)] = res
+        # return the result
         return res
 
     @staticmethod
