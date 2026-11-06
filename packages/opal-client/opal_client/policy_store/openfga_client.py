@@ -27,6 +27,28 @@ from opal_common.schemas.store import StoreTransaction, TransactionType
 from pydantic import BaseModel
 from tenacity import retry
 
+try:
+    from openfga_sdk import ClientConfiguration, OpenFgaClient
+    from openfga_sdk.client.models import (
+        ClientCheckRequest,
+        ClientExpandRequest,
+        ClientTuple,
+        ClientWriteRequest,
+    )
+    from openfga_sdk.credentials import CredentialConfiguration, Credentials
+
+    HAS_OPENFGA_SDK = True
+except ImportError:  # pragma: no cover
+    ClientConfiguration = None  # type: ignore[assignment]
+    OpenFgaClient = None  # type: ignore[assignment]
+    ClientCheckRequest = None  # type: ignore[assignment]
+    ClientExpandRequest = None  # type: ignore[assignment]
+    ClientTuple = None  # type: ignore[assignment]
+    ClientWriteRequest = None  # type: ignore[assignment]
+    CredentialConfiguration = None  # type: ignore[assignment]
+    Credentials = None  # type: ignore[assignment]
+    HAS_OPENFGA_SDK = False
+
 
 def parse_fga_dsl_to_json(dsl_text: str) -> Dict[str, Any]:
     """Convert a simple OpenFGA DSL (`model\\n  schema 1.1\\ntype ...`) or JSON
@@ -165,6 +187,37 @@ def normalize_openfga_write_payload(
     return payload
 
 
+def build_sdk_write_request(write_payload: Dict[str, Any]) -> Any:
+    """Build an openfga_sdk ClientWriteRequest when SDK is available."""
+    if not HAS_OPENFGA_SDK or ClientWriteRequest is None or ClientTuple is None:
+        return write_payload
+
+    writes_raw = (write_payload.get("writes") or {}).get("tuple_keys", [])
+    deletes_raw = (write_payload.get("deletes") or {}).get("tuple_keys", [])
+    writes = [
+        ClientTuple(
+            user=item["user"],
+            relation=item["relation"],
+            object=item["object"],
+        )
+        for item in writes_raw
+    ]
+    deletes = [
+        ClientTuple(
+            user=item["user"],
+            relation=item["relation"],
+            object=item["object"],
+        )
+        for item in deletes_raw
+    ]
+    kwargs: Dict[str, Any] = {}
+    if writes:
+        kwargs["writes"] = writes
+    if deletes:
+        kwargs["deletes"] = deletes
+    return ClientWriteRequest(**kwargs)
+
+
 class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
     """OPAL Policy Store client for OpenFGA."""
 
@@ -179,6 +232,7 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
         store_id: Optional[str] = None,
         store_name: Optional[str] = None,
         authorization_model_id: Optional[str] = None,
+        sdk_client: Optional[Any] = None,
     ):
         base_url = (
             openfga_server_url
@@ -211,6 +265,7 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
         self._oauth_client_id = oauth_client_id
         self._oauth_client_secret = oauth_client_secret
         self._oauth_server = oauth_server
+        self._sdk_client: Optional[Any] = sdk_client
 
         self._had_successful_data_transaction = False
         self._had_successful_policy_transaction = False
@@ -237,6 +292,52 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
                 raise TypeError("required variables for oauth are not set")
 
         logger.info(f"Authentication mode for OpenFGA policy store: {auth_type}")
+
+    def _build_sdk_configuration(self) -> Any:
+        """Create an openfga_sdk ClientConfiguration for this store."""
+        if not HAS_OPENFGA_SDK or ClientConfiguration is None:
+            return None
+
+        credentials = None
+        if (
+            self._auth_type == PolicyStoreAuth.TOKEN
+            and self._token is not None
+            and Credentials is not None
+            and CredentialConfiguration is not None
+        ):
+            credentials = Credentials(
+                method="api_token",
+                configuration=CredentialConfiguration(api_token=self._token),
+            )
+        elif (
+            self._auth_type == PolicyStoreAuth.OAUTH
+            and Credentials is not None
+            and CredentialConfiguration is not None
+        ):
+            credentials = Credentials(
+                method="client_credentials",
+                configuration=CredentialConfiguration(
+                    api_issuer=self._oauth_server,
+                    client_id=self._oauth_client_id,
+                    client_secret=self._oauth_client_secret,
+                ),
+            )
+
+        return ClientConfiguration(
+            api_url=self._openfga_url,
+            store_id=self._store_id,
+            authorization_model_id=self._authorization_model_id,
+            credentials=credentials,
+        )
+
+    def create_sdk_client(self) -> Optional[Any]:
+        """Instantiate an official openfga_sdk OpenFgaClient when available."""
+        if self._sdk_client is not None:
+            return self._sdk_client
+        if not HAS_OPENFGA_SDK or OpenFgaClient is None:
+            return None
+        config = self._build_sdk_configuration()
+        return OpenFgaClient(config) if config is not None else None
 
     async def _get_auth_headers(
         self, session: Optional[aiohttp.ClientSession] = None
@@ -323,6 +424,20 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
             return Response(status_code=status.HTTP_200_OK)
 
         model_payload = parse_fga_dsl_to_json(policy_code)
+
+        if self._sdk_client is not None:
+            sdk_res = await self._sdk_client.write_authorization_model(model_payload)
+            model_id = (
+                getattr(sdk_res, "authorization_model_id", None)
+                if not isinstance(sdk_res, dict)
+                else sdk_res.get("authorization_model_id")
+            )
+            if model_id:
+                self._authorization_model_id = model_id
+                self._policy_version = model_id
+                self._policy_models[policy_id] = model_id
+            self._policies[policy_id] = policy_code
+            return Response(status_code=status.HTTP_201_CREATED)
 
         async with aiohttp.ClientSession(trust_env=True) as session:
             try:
@@ -512,6 +627,11 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
             policy_data, authorization_model_id=self._authorization_model_id
         )
         if write_payload is None:
+            return Response(status_code=status.HTTP_200_OK)
+
+        if self._sdk_client is not None:
+            sdk_req = build_sdk_write_request(write_payload)
+            await self._sdk_client.write(sdk_req)
             return Response(status_code=status.HTTP_200_OK)
 
         async with aiohttp.ClientSession(trust_env=True) as session:
