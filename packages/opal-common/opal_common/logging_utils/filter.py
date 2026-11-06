@@ -21,7 +21,7 @@ class ModuleFilter:
         self._include_list = include_list or []
 
     def filter(self, record):
-        name: str = record["name"]
+        name: str = record["name"] or ""
         for module in self._include_list:
             if name.startswith(module):
                 return True

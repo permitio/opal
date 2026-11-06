@@ -1,3 +1,4 @@
+import inspect
 import logging
 
 from loguru import logger
@@ -11,10 +12,16 @@ class InterceptHandler(logging.Handler):
         except ValueError:
             level = record.levelno
 
-        # Find caller from where originated the logged message
-        frame, depth = logging.currentframe(), 2
-        while frame.f_code.co_filename == logging.__file__:
-            if frame.f_back is None:
+        # Find caller from where originated the logged message: walk up from
+        # this frame, past the logging module and any import machinery. A logging
+        # method called straight from C has no frame outside them, so the walk
+        # stops at the last frame.
+        frame, depth = inspect.currentframe(), 0
+        while frame and frame.f_back:
+            filename = frame.f_code.co_filename
+            is_logging = filename == logging.__file__
+            is_frozen = "importlib" in filename and "_bootstrap" in filename
+            if depth > 0 and not (is_logging or is_frozen):
                 break
             frame = frame.f_back
             depth += 1
