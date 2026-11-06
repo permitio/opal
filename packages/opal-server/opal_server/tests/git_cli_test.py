@@ -1845,7 +1845,9 @@ async def test_a_hundred_timeouts_leave_the_process_and_descriptor_counts_flat(
     for _ in range(100):
         await _time_out()
 
-    assert _children() == children
+    # <=: a child of an earlier test (a git http-backend a server thread runs)
+    # may end meanwhile.
+    assert _children() <= children
     assert _open_pipes_and_files() <= fds  # sh's pipes and the lock's: all closed
     assert processes_with(marker) == []
     assert git_cli.background_ops() == 0

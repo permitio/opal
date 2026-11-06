@@ -21,10 +21,12 @@ import stat
 import subprocess
 import sys
 import textwrap
+import threading
 import time
 import uuid
 from functools import partial
 from pathlib import Path
+from typing import Optional
 
 import opal_common.logger as opal_common_logger
 import opal_server.scopes.task as task_module
@@ -521,53 +523,71 @@ def test_a_cancelled_op_whose_git_outlives_sigkill_keeps_its_clone_until_it_exit
 @pytest.mark.skipif(not os.path.isdir("/proc/self"), reason="needs /proc to be quick")
 @_LOOPS
 def test_a_cancel_while_git_is_being_started_still_ends_its_group(
-    loop, git_origin, tmp_path, blackhole, processes_with
+    loop, git_origin, tmp_path, blackhole, monkeypatch, processes_with, git_groups
 ):
-    """Cancelled while create_subprocess_exec still sets up sh's pipes, the
-    event loop kills sh only, and the op has no group to stop.
+    """Cancelled while create_subprocess_exec still sets up sh's pipes, with
+    git already running, the event loop kills sh only, and the op has no group
+    to stop.
 
     The watchdog in sh's group kills the rest as sh's stdin closes, and
     the op is over (on_gone, the clone cleaned up) only once nothing
     holds the clone's lock any more: no process of it is left by then.
+
+    The cancel is made to land there: a callback queued before the
+    loop's own for the new process holds the loop until git runs, then
+    cancels the op.
     """
     pytest.importorskip(loop)
-    mid_spawn = []
+    marker = f"spawn-{uuid.uuid4().hex}"
+    clone = tmp_path / "cli"
+    _clone_at(clone, git_origin.url, f"http://127.0.0.1:{blackhole}/{marker}.git")
+    spawn = asyncio.create_subprocess_exec
+    ops = []
+    left_at_gone = []
 
-    async def trial(i):
-        marker = f"spawn{i}-{uuid.uuid4().hex}"
-        clone = tmp_path / f"cli{i}"
-        _clone_at(clone, git_origin.url, f"http://127.0.0.1:{blackhole}/{marker}.git")
-        left_at_gone = []
-
-        def _gone(succeeded):
-            left_at_gone.append(processes_with(marker))
-
-        task = asyncio.ensure_future(
-            cli_fetch(
-                clone,
-                "origin",
-                _source(git_origin.url),
-                prune=False,
-                timeout=60,
-                on_gone=_gone,
-            )
+    def _git_runs() -> bool:
+        return any(
+            not args.startswith(git_cli._SH) for _, _, args in processes_with(marker)
         )
-        while not processes_with(marker):
-            await asyncio.sleep(0)
-        await _cancelled_within(task, 10)
-        # A cancel that came once sh was started waits for the stop; one in
-        # the middle of the start leaves the op to finish on a task of its own.
-        mid_spawn.append(git_cli.background_ops() == 1)
-        await _until(lambda: left_at_gone)
-        assert left_at_gone == [[]]
-        assert clone_lock_path(clone).read_bytes() == b""
+
+    def _cancel_once_git_runs() -> None:
+        _wait_until(_git_runs)
+        ops[0].cancel()
+
+    async def _cancelled_mid_start(*args, **kwargs):
+        asyncio.get_running_loop().call_soon(_cancel_once_git_runs)
+        return await spawn(*args, **kwargs)
+
+    monkeypatch.setattr(git_cli.asyncio, "create_subprocess_exec", _cancelled_mid_start)
+
+    def _gone(succeeded):
+        left_at_gone.append(processes_with(marker))
 
     async def main():
-        for i in range(5):
-            await trial(i)
+        ops.append(
+            asyncio.ensure_future(
+                cli_fetch(
+                    clone,
+                    "origin",
+                    _source(git_origin.url),
+                    prune=False,
+                    timeout=60,
+                    on_gone=_gone,
+                )
+            )
+        )
+        done, _ = await asyncio.wait(ops, timeout=10)
+        assert done and ops[0].cancelled()
+        # The start was given up on (no group was made): the op finishes on a
+        # task of its own.
+        assert git_groups == []
+        assert git_cli.background_ops() == 1
+        await _until(lambda: left_at_gone)
 
     _run(loop, main)
-    assert any(mid_spawn), "no cancel came in the middle of a start"
+
+    assert left_at_gone == [[]]
+    assert clone_lock_path(clone).read_bytes() == b""
 
 
 def _open_pipes_and_files() -> set:
@@ -590,11 +610,19 @@ def _open_pipes_and_files() -> set:
     return found
 
 
-async def _cancelled_within(task: "asyncio.Future", seconds: float) -> None:
+async def _cancelled_within(
+    task: "asyncio.Future", seconds: float, then: Optional[asyncio.Event] = None
+) -> None:
     """Cancel ``task`` and wait up to ``seconds`` for it to end, cancelled: an
     op that never ends fails the test rather than hang it (the event loop's end
-    then cancels it again)."""
+    then cancels it again).
+
+    ``then`` is set once the cancel is requested, before the task has
+    run again.
+    """
     task.cancel()
+    if then is not None:
+        then.set()
     done, _ = await asyncio.wait({task}, timeout=seconds)
     assert done, f"the op was still running {seconds}s after its cancel"
     assert task.cancelled()
@@ -613,9 +641,10 @@ def test_a_cancel_before_asyncio_has_connected_sh_s_pipes_ends_the_group(
     cancel comes before asyncio has connected any.
     """
     real = asyncio.base_subprocess.BaseSubprocessTransport._connect_pipes
+    connect = asyncio.Event()
 
     async def _late(self, waiter):
-        await asyncio.sleep(0.5)
+        await connect.wait()
         await real(self, waiter)
 
     monkeypatch.setattr(
@@ -638,7 +667,7 @@ def test_a_cancel_before_asyncio_has_connected_sh_s_pipes_ends_the_group(
             )
         )
         await _until(lambda: processes_with(marker))
-        await _cancelled_within(task, 10)
+        await _cancelled_within(task, 10, then=connect)
         await _until(lambda: gone)
 
     fds = _open_pipes_and_files()
@@ -764,11 +793,12 @@ def test_an_op_the_loop_s_end_overtakes_is_still_finished(
     while what its end set going may still run: the stop of an op it
     cancelled, or the clean-up after a start it cancelled. The op's files are
     then seen to on the loop's own thread, and the op is finished."""
+    connect = asyncio.Event()
     if cancelled == "starting":
         real = asyncio.base_subprocess.BaseSubprocessTransport._connect_pipes
 
         async def _late(self, waiter):
-            await asyncio.sleep(0.5)
+            await connect.wait()
             await real(self, waiter)
 
         monkeypatch.setattr(
@@ -794,7 +824,7 @@ def test_an_op_the_loop_s_end_overtakes_is_still_finished(
             lambda: processes_with(marker) and (cancelled == "starting" or git_groups)
         )
         await asyncio.get_running_loop().shutdown_default_executor()
-        await _cancelled_within(task, 10)
+        await _cancelled_within(task, 10, then=connect)
         await _until(lambda: gone)
 
     fds = _open_pipes_and_files()
@@ -2060,15 +2090,17 @@ async def test_a_cancel_while_the_clone_lock_is_taken_leaves_it_free_and_clear(
     over (on_gone) only once that thread's work is."""
     real = git_cli._take_and_record
     events = []
+    taking, release = threading.Event(), threading.Event()
 
-    def _slow(repo_path):
-        time.sleep(0.3)
+    def _held(repo_path):
+        taking.set()
+        release.wait(_READY_SECONDS)
         try:
             return real(repo_path)
         finally:
             events.append("lock taken")
 
-    monkeypatch.setattr(git_cli, "_take_and_record", _slow)
+    monkeypatch.setattr(git_cli, "_take_and_record", _held)
     clone = tmp_path / "cli"
     _clone_at(clone, git_origin.url, git_origin.url)
     task = asyncio.ensure_future(
@@ -2081,9 +2113,11 @@ async def test_a_cancel_while_the_clone_lock_is_taken_leaves_it_free_and_clear(
             on_gone=events.append,
         )
     )
-    await asyncio.sleep(0.1)
+    loop = asyncio.get_running_loop()
+    assert await loop.run_in_executor(None, taking.wait, _READY_SECONDS)
 
     task.cancel()
+    release.set()
     with pytest.raises(asyncio.CancelledError):
         await task
     await _until(lambda: len(events) == 2)
@@ -2105,17 +2139,19 @@ def test_the_loop_ending_while_a_given_up_start_takes_the_lock_leaves_no_fd(
     """
     real = git_cli.take_clone_lock
     calls = []
+    taking, release = threading.Event(), threading.Event()
 
-    def _slow_after_the_first(repo_path):
+    def _held_after_the_first(repo_path):
         calls.append(repo_path)
         if len(calls) > 1:  # not start's own, the finish's
-            time.sleep(0.3)
+            taking.set()
+            release.wait(_READY_SECONDS)
         return real(repo_path)
 
     async def _refused(*args, **kwargs):
         raise OSError(24, "Too many open files")
 
-    monkeypatch.setattr(git_cli, "take_clone_lock", _slow_after_the_first)
+    monkeypatch.setattr(git_cli, "take_clone_lock", _held_after_the_first)
     monkeypatch.setattr(git_cli.asyncio, "create_subprocess_exec", _refused)
     clone = tmp_path / "cli"
     _clone_at(clone, git_origin.url, git_origin.url)
@@ -2125,7 +2161,12 @@ def test_the_loop_ending_while_a_given_up_start_takes_the_lock_leaves_no_fd(
             await cli_fetch(
                 clone, "origin", _source(git_origin.url), prune=False, timeout=60
             )
-        await asyncio.sleep(0.1)  # the finish's thread is taking the lock
+        loop = asyncio.get_running_loop()
+        assert await loop.run_in_executor(None, taking.wait, _READY_SECONDS)
+        # The finish's thread is taking the lock: it may go on once the loop's
+        # end has cancelled the finish.
+        (finish,) = [t for t in git_cli._background if t.get_loop() is loop]
+        finish.add_done_callback(lambda _: release.set())
 
     _run("asyncio", main)
 
