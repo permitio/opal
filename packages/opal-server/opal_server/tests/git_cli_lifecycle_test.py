@@ -951,6 +951,111 @@ async def test_a_given_up_start_cleans_up_after_an_op_that_held_the_clone_meanwh
     assert lock.read_bytes() == (b"4194303\n" if stuck else b"")
 
 
+@pytest.mark.parametrize(
+    "error",
+    [OSError(errno.EMFILE, "Too many open files"), RuntimeError("lock broke")],
+    ids=["EMFILE", "other"],
+)
+@pytest.mark.asyncio
+async def test_a_given_up_start_whose_lock_cannot_be_taken_again_still_ends(
+    error, git_origin, tmp_path, monkeypatch
+):
+    """The clean-up after a start given up on is the only thing left that ends
+    the op.
+
+    When it cannot take the clone's lock again (EMFILE comes in
+    clusters, so the spawn's failure is likely to be followed by the
+    lock's; or anything else goes wrong there), the op still ends:
+    on_gone is told it failed, no fd is left, and the op stays recorded
+    in the lock file for the next op on the clone to clean up after.
+    """
+    clone = tmp_path / "cli"
+    _clone_at(clone, git_origin.url, git_origin.url)
+
+    def _lock_fails(repo_path):
+        raise error
+
+    async def _given_up_on(*args, **kwargs):
+        monkeypatch.setattr(git_cli, "take_clone_lock", _lock_fails)
+        raise OSError(errno.EMFILE, "Too many open files")
+
+    monkeypatch.setattr(git_cli.asyncio, "create_subprocess_exec", _given_up_on)
+    gone = []
+    errors = []
+    sink = opal_common_logger.logger.add(
+        lambda m: errors.append(m.record["message"]), level="ERROR"
+    )
+    try:
+        with pytest.raises(GitCliLocalError):
+            await cli_fetch(
+                clone,
+                "origin",
+                _source(git_origin.url),
+                prune=False,
+                timeout=60,
+                on_gone=gone.append,
+            )
+        await _until(lambda: gone)
+        await _until(lambda: git_cli.background_ops() == 0)
+    finally:
+        opal_common_logger.logger.remove(sink)
+
+    assert gone == [False]
+    assert git_cli._lock_fds == {}
+    assert clone_lock_path(clone).read_text() == f"{os.getpid()}\n"
+    assert [m for m in errors if "Could not lock" in m and repr(error) in m]
+
+
+@pytest.mark.parametrize("ending", ["success", "failure", "timeout"])
+@pytest.mark.asyncio
+async def test_an_on_gone_that_raises_still_lets_the_op_release_its_clone(
+    ending, git_origin, tmp_path, blackhole
+):
+    """What on_gone raises is logged; the op still releases its clone's lock
+    and clears its record."""
+    clone = tmp_path / "cli"
+    url = git_origin.url
+    if ending == "failure":
+        url = str(tmp_path / "missing.git")
+    elif ending == "timeout":
+        url = f"http://127.0.0.1:{blackhole}/hung.git"
+    _clone_at(clone, git_origin.url, url)
+    calls = []
+
+    def _gone(succeeded):
+        calls.append(succeeded)
+        raise RuntimeError("on_gone broke")
+
+    errors = []
+    sink = opal_common_logger.logger.add(
+        lambda m: errors.append(m.record["message"]), level="ERROR"
+    )
+    try:
+        fetch = cli_fetch(
+            clone,
+            "origin",
+            _source(url),
+            prune=False,
+            timeout=0.5 if ending == "timeout" else 60,
+            on_gone=_gone,
+        )
+        if ending == "success":
+            await fetch
+        else:
+            with pytest.raises((GitCliError, GitCliTimeoutError)):
+                await fetch
+        await _until(lambda: calls)
+        await _until(lambda: git_cli.background_ops() == 0)
+    finally:
+        opal_common_logger.logger.remove(sink)
+
+    assert calls == [ending == "success"]
+    logged = f"on_gone of git fetch of {clone} raised: RuntimeError('on_gone broke')"
+    assert logged in errors
+    assert _lock_is_free(clone)
+    assert clone_lock_path(clone).read_bytes() == b""
+
+
 @_LOOPS
 def test_the_event_loop_ending_mid_stop_kills_git_and_leaves_the_clone_to_the_next_op(
     loop, git_origin, tmp_path, monkeypatch, processes_with, released_keys, git_groups

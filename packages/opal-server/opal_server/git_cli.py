@@ -1308,9 +1308,13 @@ class _Op:
         except asyncio.CancelledError:
             self._call_on_gone(None)
             raise
-        except OSError as e:
+        except Exception as e:
+            # Nothing else will ever end this op: on_gone is called here, and
+            # the op stays recorded in the lock file for the next op to clean
+            # up after.
             logger.error(
-                "Could not lock {path} to clean up after a cancelled git op: {err!r}",
+                "Could not lock {path} to clean up after a git op whose start "
+                "was given up on: {err!r}",
                 path=self.repo_path,
                 err=e,
             )
