@@ -56,6 +56,7 @@ from opal_server.git_fetcher import (
     git_op_in_flight,
     run_git_cli_op,
 )
+from opal_server.tests.git_repack_test import _flock_fails_with
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
 
@@ -1462,6 +1463,28 @@ def test_the_sweep_removes_a_key_dir_with_no_key_once_it_is_old_enough(
     assert not old.exists()
 
 
+def test_a_key_dir_the_sweep_cannot_lock_is_logged_and_left(tmp_path, monkeypatch):
+    """Where the filesystem refuses an flock (ENOLCK), the sweep cannot tell
+    whether a live process uses a key directory: it leaves it, and says so."""
+    monkeypatch.setattr(git_cli, "_SHM", str(tmp_path))
+    monkeypatch.setattr(git_cli.tempfile, "tempdir", str(tmp_path))
+    left = tmp_path / f"opal-git-ssh-{_dead_pid()}-x1"
+    left.mkdir()
+    (left / "id").write_text("key")
+    _flock_fails_with(monkeypatch, errno.ENOLCK)
+    warnings = []
+    sink = opal_common_logger.logger.add(
+        lambda m: warnings.append(m.record["message"]), level="WARNING"
+    )
+    try:
+        git_cli.remove_dead_key_dirs()
+    finally:
+        opal_common_logger.logger.remove(sink)
+
+    assert (left / "id").exists()
+    assert [m for m in warnings if str(left) in m and "leaving it" in m]
+
+
 # --- the clean-up a libgit2 fetch runs first ------------------------------------
 
 
@@ -1543,11 +1566,20 @@ def test_unfinished_op_clean_up_with_no_op_recorded_removes_nothing(
     assert [p for p in left if not p.exists()] == []
 
 
-def test_unfinished_op_clean_up_of_a_clone_it_cannot_lock_is_a_debug_line(tmp_path):
-    """A lock file that cannot be opened (its directory gone, or on NFS without
-    flock) fails every fetch's clean-up the same way, so it is logged at DEBUG
-    only, and the fetch goes on."""
-    clone = tmp_path / "gone" / "src"
+@pytest.mark.parametrize("why", ["directory gone", "flock fails"])
+def test_unfinished_op_clean_up_of_a_clone_it_cannot_lock_is_a_debug_line(
+    why, git_origin, tmp_path, monkeypatch
+):
+    """A lock file that cannot be opened (its directory gone) or locked (on NFS
+    without local_lock=flock, ENOLCK) fails every fetch's clean-up the same
+    way, so it is logged at DEBUG only, no fd is left, and the fetch goes
+    on."""
+    if why == "directory gone":
+        clone = tmp_path / "gone" / "src"
+    else:
+        clone = tmp_path / "git_sources" / "src"
+        _clone_at(clone, git_origin.url, git_origin.url)
+        _flock_fails_with(monkeypatch, errno.ENOLCK)
     debug: list = []
     sink = opal_common_logger.logger.add(
         lambda m: debug.append(m.record["message"]), level="DEBUG"
@@ -1558,6 +1590,7 @@ def test_unfinished_op_clean_up_of_a_clone_it_cannot_lock_is_a_debug_line(tmp_pa
         opal_common_logger.logger.remove(sink)
 
     assert [m for m in debug if "Could not lock" in m and str(clone) in m]
+    assert git_cli._lock_fds == {}
 
 
 @pytest.mark.parametrize("recorded", [False, True], ids=["no-record", "record"])

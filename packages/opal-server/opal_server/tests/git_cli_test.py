@@ -45,6 +45,7 @@ from opal_server.git_cli import (
     validate_git_cli_settings,
 )
 from opal_server.git_fetcher import GitCallback
+from opal_server.tests.git_repack_test import _flock_fails_with
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
 
@@ -1027,6 +1028,44 @@ async def test_a_dead_op_s_clone_that_cannot_be_looked_at_keeps_its_record(
 
     assert clone_lock_path(clone).read_bytes() != b""
     assert git_cli._lock_fds == {}
+
+
+@pytest.mark.asyncio
+async def test_an_op_that_cannot_clear_its_record_still_succeeds(
+    git_origin, tmp_path, monkeypatch
+):
+    """An op that cannot clear its own record from the lock file as it ends
+    (the ftruncate fails) still succeeds, and says so.
+
+    It stays recorded, so the next op on the clone cleans up once more
+    before it runs, and clears it.
+    """
+    clone = tmp_path / "cli"
+    await _clone(git_origin.url, clone)
+    truncate = os.ftruncate
+
+    def _cannot_clear(fd, length):
+        if length == 0:
+            raise OSError(errno.EIO, os.strerror(errno.EIO))
+        truncate(fd, length)
+
+    warnings = []
+    sink = logger.add(lambda m: warnings.append(m.record["message"]), level="WARNING")
+    gone = _Gone()
+    try:
+        with monkeypatch.context() as patched:
+            patched.setattr(git_cli.os, "ftruncate", _cannot_clear)
+            await _fetch(clone, _source(git_origin.url), on_gone=gone)
+    finally:
+        logger.remove(sink)
+    kept = clone_lock_path(clone).read_bytes()
+    await _fetch(clone, _source(git_origin.url))
+
+    assert gone.calls == [True]
+    assert kept == f"{os.getpid()}\n".encode()
+    assert [m for m in warnings if "Could not clear a finished git op" in m]
+    assert git_cli._lock_fds == {}
+    assert clone_lock_path(clone).read_bytes() == b""
 
 
 @pytest.mark.asyncio
@@ -2336,6 +2375,44 @@ def test_ssh_key_files_go_to_dev_shm_only_where_it_is_a_writable_directory(
             assert git_cli._key_dir_parent() == str(tmp_path / "tmp")
     finally:
         shm.chmod(0o700)
+
+
+def _open_directories() -> set:
+    """This process's fds open on directories, as (fd, device, inode); compare
+    with ``<=``, as for _open_pipes_and_files."""
+    found = set()
+    for name in os.listdir("/dev/fd"):
+        try:
+            st = os.fstat(int(name))
+        except OSError as e:
+            if e.errno != errno.EBADF:
+                raise
+            continue  # closed since the listing: the listing's own
+        if stat.S_ISDIR(st.st_mode):
+            found.add((int(name), st.st_dev, st.st_ino))
+    return found
+
+
+def test_an_ssh_key_dir_whose_lock_fails_is_removed_and_fails_the_op_locally(
+    tmp_path, monkeypatch
+):
+    """Where the filesystem the key files go to refuses an flock (ENOLCK), the
+    op's key directory cannot be held against the sweep: it is removed, its fd
+    closed, and the op fails as a local error before git runs."""
+    keys = tmp_path / "shm"
+    keys.mkdir()
+    monkeypatch.setattr(git_cli, "_SHM", str(keys))
+    url = "ssh://git@127.0.0.1:22/repo.git"
+    source = _source(url, SSHAuthData(username="git", private_key=_FAKE_KEY))
+    directories = _open_directories()
+    _flock_fails_with(monkeypatch, errno.ENOLCK)
+
+    with pytest.raises(GitCliLocalError, match="cannot write the SSH key file"):
+        with git_cli._git_env(source, git_cli._remote_for_git(url, source)):
+            pass
+
+    assert list(keys.iterdir()) == []
+    assert _open_directories() <= directories
 
 
 def test_the_ssh_command_never_falls_back_to_the_server_user_s_own_keys(tmp_path):

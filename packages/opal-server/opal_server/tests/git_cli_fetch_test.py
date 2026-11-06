@@ -7,6 +7,7 @@ Real git against local remotes only (see git_cli_test).
 """
 
 import asyncio
+import errno
 import os
 import shutil
 import subprocess
@@ -45,6 +46,7 @@ from opal_server.git_fetcher import (
 from opal_server.scopes.api import init_scope_router
 from opal_server.scopes.scope_repository import ScopeNotFoundError
 from opal_server.scopes.service import ScopesService
+from opal_server.tests.git_repack_test import _flock_fails_with
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
 
@@ -628,8 +630,10 @@ async def test_a_cli_op_is_refused_at_the_zombie_cap_before_git_runs(monkeypatch
         ("fetch", "no git"),
         ("fetch", "unreadable known_hosts"),
         ("fetch", "credential in the query"),
+        ("fetch", "flock fails"),
         ("clone", "no git"),
         ("clone", "credential in the query"),
+        ("clone", "flock fails"),
     ],
 )
 @pytest.mark.asyncio
@@ -640,7 +644,13 @@ async def test_a_failure_on_the_server_s_own_side_is_counted_as_local(
     ERROR. No backoff (it is for a remote that fails), so the next pass
     tries again, but for a source git cannot be given (here a credential in
     its URL's query string): only a change of the source fixes that, and a
-    PUT, which is one, syncs regardless."""
+    PUT, which is one, syncs regardless.
+
+    Where the filesystem holding the clones refuses an flock (ENOLCK, as
+    NFS without local_lock=flock answers), the fd opened for the clone's
+    lock is closed: none is left for the preload to find in the gunicorn
+    master.
+    """
     url = git_origin.url
     token = f"tok{uuid.uuid4().hex}"
     if problem == "credential in the query":
@@ -657,6 +667,8 @@ async def test_a_failure_on_the_server_s_own_side_is_counted_as_local(
         await _clone_at(clone, git_origin.url, url)
     if problem == "no git":
         monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+    elif problem == "flock fails":
+        _flock_fails_with(monkeypatch, errno.ENOLCK)
     records = []
     sink = logger.add(lambda m: records.append(m.record), level="ERROR")
     fetcher = _fetcher(base, source)
@@ -673,6 +685,7 @@ async def test_a_failure_on_the_server_s_own_side_is_counted_as_local(
     assert any("scope-1" in r["message"] for r in records)
     assert not any(token in r["message"] for r in records)
     assert not git_op_in_flight(fetcher.clone_source_id)
+    assert git_cli._lock_fds == {}
 
 
 # server.py's own startup handlers use FastAPI's deprecated on_event; not what
