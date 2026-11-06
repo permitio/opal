@@ -1420,6 +1420,35 @@ async def test_sync_repacks_the_clone_once_its_packs_reach_the_limit(
 
 
 @pytest.mark.asyncio
+async def test_repack_duration_is_no_longer_than_the_repack_call_took(
+    tmp_path, emitted, records
+):
+    """The git_repack_seconds value, and the seconds in the "Repacked" line,
+    lie between 0 and the wall time measured around the call that runs the
+    repack.
+
+    Mutation: adding or multiplying the clock readings instead of subtracting
+    them gives a value of the order of the clock itself, far above the wall
+    time; dividing them gives about 1, above it on a repack quicker than 1 s.
+    """
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.fetched(_LIMIT - 1)
+    scope.push()
+    await scope.sync()  # the fetch that reaches the limit marks the clone due
+    assert _repack_outcomes(emitted) == []
+
+    before = time.monotonic()
+    await GitPolicyFetcher.run_due_repacks(set(git_fetcher._repacks_due))
+    wall = time.monotonic() - before
+
+    assert _repack_outcomes(emitted) == ["ok"]
+    [(seconds, _)] = _repack_seconds(emitted)
+    assert 0 <= seconds <= wall
+    [done] = [r for r in records if r["message"].startswith("Repacked scope clone")]
+    assert done["extra"]["seconds"] == seconds
+
+
+@pytest.mark.asyncio
 async def test_repack_holds_lock_source_so_a_second_sync_of_the_clone_waits(
     tmp_path, monkeypatch
 ):
