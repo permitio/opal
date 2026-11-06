@@ -758,6 +758,45 @@ async def test_a_task_that_outlives_its_pass_is_no_longer_in_it():
     assert _missing_branch_errors(logs.emitted) == {"gone": 2}
 
 
+def test_a_fetch_that_started_when_the_pass_did_is_not_one_of_the_pass():
+    """A clone whose last fetch started at the pass's start, to the
+    microsecond, was not fetched in the pass, as _should_fetch counts it too:
+    its missing branch is logged at DEBUG. A fetch one microsecond later is one
+    of the pass, and the branch is logged as missing on the remote.
+
+    Mutation: comparing with < instead of <= takes the fetch at the pass's
+    start for one of the pass, and logs the ERROR.
+    """
+    source = GitPolicyScopeSource(
+        source_type="git", url="https://git/a.git", branch="gone", auth=NoAuthData()
+    )
+    fetcher = GitPolicyFetcher(Path("/unused"), "s", source)
+    last_fetched = GitPolicyFetcher.repos_last_fetched
+
+    with GitPolicyFetcher.sync_pass():
+        started = GitPolicyFetcher.current_pass_started()
+        last_fetched[fetcher._source_id] = started
+        with capture_records() as at_start:
+            fetcher._report_missing_branch()
+        last_fetched[fetcher._source_id] = started + datetime.timedelta(microseconds=1)
+        with capture_records() as after_start:
+            fetcher._report_missing_branch()
+
+    assert _missing_branch_errors(at_start.emitted) == {}
+    assert [
+        (r["level"].name, r["message"])
+        for r in at_start.emitted
+        if "is not in the clone" in r["message"]
+    ] == [
+        (
+            "DEBUG",
+            "scope s: target branch gone is not in the clone of https://git/a.git, "
+            "and no fetch of it in this sync pass reached the remote",
+        )
+    ]
+    assert _missing_branch_errors(after_start.emitted) == {"gone": 1}
+
+
 def test_a_pass_closed_outside_its_context_still_leaves_the_in_flight_count():
     """A pass coroutine can be closed outside its task's context (the garbage
     collector closing one whose loop is gone), where the pass's context cannot
