@@ -10,6 +10,7 @@ import base64
 import ctypes
 import errno
 import os
+import re
 import shlex
 import shutil
 import socket
@@ -2616,18 +2617,100 @@ async def test_an_ssh_rsa_only_server_fails_with_ssh_s_reason_in_the_error(
     make_sshd, make_origin, tmp_path
 ):
     """A server that offers only an ssh-rsa (SHA-1) host key, which ssh from
-    OpenSSH 8.8 on refuses: ssh says why at its INFO level, and the error has
-    that line, not only git's "Could not read from remote repository"."""
+    OpenSSH 8.8 on refuses and libgit2 (the control, on the same server)
+    accepts: ssh says why at its INFO level, and the error has that line, not
+    only git's "Could not read from remote repository"."""
     server = make_sshd(host_key_type="rsa", config="HostKeyAlgorithms ssh-rsa\n")
     origin = make_origin(tmp_path / "served" / "repo.git")
     url = server.url(origin.path)
     source = _source(url, SSHAuthData(username="git", private_key=server.client_key))
 
+    libgit2 = _libgit2_ssh_clone(url, tmp_path / "libgit2", server.client_key)
     with pytest.raises(GitCliError) as info:
         await _clone(url, tmp_path / "cli", source)
 
+    assert libgit2 == "accepted", libgit2
     assert "no matching host key type found. Their offer: ssh-rsa" in (
         info.value.stderr_tail
+    )
+
+
+def _server_sig_algs(server, key: Path) -> list:
+    """The signature algorithms for users' keys that ``server`` advertises (its
+    server-sig-algs), as ssh logs them at debug level."""
+    done = subprocess.run(
+        [
+            "ssh",
+            "-vv",
+            "-F",
+            "/dev/null",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            "UserKnownHostsFile=/dev/null",
+            "-o",
+            "IdentitiesOnly=yes",
+            "-i",
+            str(key),
+            "-p",
+            str(server.port),
+            "127.0.0.1",
+            "true",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    found = re.search(r"server-sig-algs=<([^>]*)>", done.stderr)
+    assert found, done.stderr
+    return found.group(1).split(",")
+
+
+@pytest.mark.parametrize("server_takes", ["ssh-rsa only", "any"])
+@pytest.mark.asyncio
+async def test_an_rsa_user_key_where_a_server_takes_only_ssh_rsa_signatures(
+    server_takes, make_sshd, make_origin, tmp_path
+):
+    """A server that takes only ssh-rsa (SHA-1) signatures of a user's key
+    (PubkeyAcceptedAlgorithms ssh-rsa), and a user's RSA key: ssh refuses to
+    sign with ssh-rsa, so git fails here whatever the server advertises.
+
+    libgit2 (the control, on the same server) signs with the first of
+    rsa-sha2-512, rsa-sha2-256 and ssh-rsa that the server advertises
+    for users' keys. Measured: OpenSSH 9.2's sshd advertises rsa-sha2-*
+    too and then refuses them, and libgit2 fails as well; OpenSSH 10.0's
+    advertises only what it takes, and libgit2 gets in. The same key
+    works with both against a server that takes any signature.
+    """
+    config = "PubkeyAcceptedAlgorithms ssh-rsa\n" if server_takes != "any" else ""
+    server = make_sshd(config=config)
+    rsa = tmp_path / "rsa"
+    subprocess.run(
+        ["ssh-keygen", "-q", "-t", "rsa", "-b", "2048", "-N", "", "-f", str(rsa)],
+        check=True,
+        capture_output=True,
+    )
+    (server.base / "authorized_keys").write_text((tmp_path / "rsa.pub").read_text())
+    origin = make_origin(tmp_path / "served" / "repo.git")
+    url = server.url(origin.path)
+    source = _source(url, SSHAuthData(username="git", private_key=rsa.read_text()))
+
+    advertised = _server_sig_algs(server, rsa)
+    libgit2 = _libgit2_ssh_clone(url, tmp_path / "libgit2", rsa.read_text())
+    if server_takes == "any":
+        await _clone(url, tmp_path / "cli", source)
+        assert libgit2 == "accepted", libgit2
+        assert "refs/remotes/origin/master" in _refs(tmp_path / "cli")
+        return
+    with pytest.raises(GitCliError) as info:
+        await _clone(url, tmp_path / "cli", source)
+    assert "Permission denied (publickey)" in info.value.stderr_tail
+    libgit2_signs_ssh_rsa = not {"rsa-sha2-512", "rsa-sha2-256"} & set(advertised)
+    assert libgit2.startswith("accepted" if libgit2_signs_ssh_rsa else "rejected"), (
+        advertised,
+        libgit2,
     )
 
 
@@ -2695,6 +2778,27 @@ except pygit2.GitError as e:
     print("rejected:", e)
 """
 
+
+def _libgit2_ssh_clone(
+    url: str, dest: Path, key: str, home: Optional[Path] = None
+) -> str:
+    """The control: ``url`` cloned to ``dest`` by libgit2 with the private
+    key ``key``, as the scopes fetcher clones (GitCallback), in a child
+    interpreter, whose HOME is ``home`` when given (libgit2 reads HOME once,
+    as it loads). What it printed: "accepted", or "rejected: ..."."""
+    key_file = dest.parent / f"{dest.name}.key"
+    key_file.write_text(key)
+    env = dict(os.environ) if home is None else {**os.environ, "HOME": str(home)}
+    done = subprocess.run(
+        [sys.executable, "-c", _LIBGIT2_CLONE, url, str(dest), str(key_file)],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    return done.stdout.strip() or done.stderr.strip()
+
+
 _KNOWN_HOSTS_CASES = [
     "no file",
     "another host only",
@@ -2748,23 +2852,8 @@ async def test_ssh_host_keys_get_the_answer_libgit2_gives(
         known.write_text(contents)
     origin = make_origin(tmp_path / "served" / "repo.git")
     url = sshd.url(origin.path)
-    key = tmp_path / "client_key"
-    key.write_text(sshd.client_key)
 
-    libgit2 = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            _LIBGIT2_CLONE,
-            url,
-            str(tmp_path / "libgit2"),
-            str(key),
-        ],
-        env={**os.environ, "HOME": str(home)},
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
+    libgit2 = _libgit2_ssh_clone(url, tmp_path / "libgit2", sshd.client_key, home)
     monkeypatch.setenv("HOME", str(home))
     await _clone(
         url,
@@ -2772,7 +2861,7 @@ async def test_ssh_host_keys_get_the_answer_libgit2_gives(
         _source(url, SSHAuthData(username="git", private_key=sshd.client_key)),
     )
 
-    assert libgit2.stdout.strip() == "accepted", libgit2.stdout + libgit2.stderr
+    assert libgit2 == "accepted", libgit2
     assert "refs/remotes/origin/master" in _refs(tmp_path / "cli")
     assert (known.read_text() if known.exists() else None) == contents
 
