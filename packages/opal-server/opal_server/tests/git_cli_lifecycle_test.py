@@ -1407,6 +1407,61 @@ def test_the_sweep_leaves_the_key_dir_of_an_op_under_way(tmp_path, monkeypatch):
     assert not key.parent.exists()
 
 
+def test_a_sweep_between_an_op_s_mkdtemp_and_its_lock_leaves_the_key_dir(
+    tmp_path, monkeypatch
+):
+    """A worker that starts while another one's SSH op has made its key
+    directory and not yet locked it: the starting worker's sweep must not take
+    the lock first and remove the directory, which would fail the op."""
+    monkeypatch.setattr(git_cli, "_SHM", str(tmp_path))
+    monkeypatch.setattr(git_cli.tempfile, "tempdir", str(tmp_path))
+    url = "ssh://git@127.0.0.1:22/repo.git"
+    source = GitPolicyScopeSource(
+        source_type="git",
+        url=url,
+        branch="master",
+        auth=SSHAuthData(username="git", private_key="key"),
+    )
+    lock = git_cli._lock_key_dir
+    swept = []
+
+    def _swept_first(path):
+        if not swept:
+            swept.append(path)
+            git_cli.remove_dead_key_dirs()
+        return lock(path)
+
+    monkeypatch.setattr(git_cli, "_lock_key_dir", _swept_first)
+
+    with git_cli._git_env(source, git_cli._remote_for_git(url, source)) as (env, _):
+        ssh = shlex.split(env["GIT_SSH_COMMAND"])
+        key = Path(ssh[ssh.index("-i") + 1])
+        assert key.read_text() == "key\n"
+
+    assert len(swept) == 1
+    assert not key.parent.exists()
+
+
+def test_the_sweep_removes_a_key_dir_with_no_key_once_it_is_old_enough(
+    tmp_path, monkeypatch
+):
+    """A key directory with no key in it, whose lock no process holds: one that
+    is new may be an op's that has not locked it yet, and stays; one older than
+    any op takes to lock it was a dead process's, and goes."""
+    monkeypatch.setattr(git_cli, "_SHM", str(tmp_path))
+    monkeypatch.setattr(git_cli.tempfile, "tempdir", str(tmp_path))
+    new, old = (tmp_path / f"opal-git-ssh-{_dead_pid()}-{n}" for n in ("x1", "x2"))
+    new.mkdir()
+    old.mkdir()
+    made = time.time() - git_cli._KEY_DIR_SETUP_SECONDS - 1
+    os.utime(old, (made, made))
+
+    git_cli.remove_dead_key_dirs()
+
+    assert new.exists()
+    assert not old.exists()
+
+
 # --- the clean-up a libgit2 fetch runs first ------------------------------------
 
 

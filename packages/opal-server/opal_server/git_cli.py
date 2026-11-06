@@ -51,6 +51,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -339,6 +340,11 @@ _KEY_DIR_PREFIX = "opal-git-ssh-"
 # whoever looks; whether it is still in use is told by its lock), and
 # mkdtemp's random part.
 _KEY_DIR_RE = re.compile(r"\Aopal-git-ssh-[0-9]+-")
+_KEY_FILE = "id"
+# How long a key directory that holds no key file yet is left alone by the
+# sweep: an op makes its directory, then locks it, then writes the key, all
+# within microseconds of each other.
+_KEY_DIR_SETUP_SECONDS = 60.0
 # Memory, not disk, for SSH key files where there is one to use.
 _SHM = "/dev/shm"
 
@@ -1912,7 +1918,12 @@ def remove_dead_key_dirs() -> None:
     The lock, not the pid in the name, says whether one is in use: after
     a container restart in the same pod, /dev/shm is still there and the
     new container's processes have the old ones' pids, and a container
-    that shares /dev/shm cannot see this one's pids. Never raises.
+    that shares /dev/shm cannot see this one's pids. A directory that
+    holds no key file yet and is younger than _KEY_DIR_SETUP_SECONDS is
+    left alone, lock or no lock: its op may not have taken the lock yet,
+    and the sweep would take it first and remove the directory under the
+    op. With no key in it, nothing secret waits for a later sweep. Never
+    raises.
     """
     for parent in {_SHM, tempfile.gettempdir()}:
         try:
@@ -1927,6 +1938,8 @@ def remove_dead_key_dirs() -> None:
         except OSError:
             continue
         for path in found:
+            if _key_dir_being_set_up(path):
+                continue
             try:
                 fd = _lock_key_dir(path)
             except (BlockingIOError, FileNotFoundError):
@@ -1945,13 +1958,25 @@ def remove_dead_key_dirs() -> None:
                 os.close(fd)
 
 
+def _key_dir_being_set_up(path: str) -> bool:
+    """Whether the key directory ``path`` holds no key file and was made less
+    than _KEY_DIR_SETUP_SECONDS ago (False once it is gone)."""
+    try:
+        made = os.lstat(path).st_mtime
+    except OSError:
+        return False
+    if os.path.lexists(os.path.join(path, _KEY_FILE)):
+        return False
+    return time.time() - made < _KEY_DIR_SETUP_SECONDS
+
+
 def _write_key(key_dir: str, private_key: str) -> str:
     """Write ``private_key`` to a new 0600 file in ``key_dir``; its path.
 
     OpenSSH refuses a key whose last line has no newline, which libssh2
     takes, so one is added.
     """
-    path = os.path.join(key_dir, "id")
+    path = os.path.join(key_dir, _KEY_FILE)
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     fd = os.open(path, flags, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
