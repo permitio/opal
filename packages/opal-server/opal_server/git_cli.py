@@ -8,9 +8,11 @@ process can be stopped. Each op runs in a process group of its own; at its
 timeout the group gets SIGTERM, then SIGKILL, and the op is over only once the
 group is gone and what it left in the clone has been cleaned up.
 
-Each op holds an flock on its clone (a lock file beside it), which git's whole
-group inherits: while any process of an op is alive, in this process or in
-one whose worker died, no other op, repack or cleanup touches that clone.
+Each op holds an flock on its clone (a lock file beside it), which git and the
+git processes it starts inherit: while any of them is alive, in this process
+or in one whose worker died, no other op, repack or cleanup touches that
+clone. ssh, which an SSH source's git starts, closes the fds it inherits and
+so does not hold the lock, but writes nothing in the clone either.
 The group also ends itself when the process that started it dies: sh's stdin
 is a pipe from this process, and a watchdog in the group kills it when that
 pipe closes.
@@ -31,9 +33,8 @@ helper (git-remote-https) as an argument, so git is given the remote's URL
 without the user and password in it, and, for a fetch, the refspecs to fetch
 instead of the remote's name. The user and password go in through git's
 environment, to a credential helper configured there (GIT_CONFIG_COUNT) that
-answers only for the source's own host, as libgit2's credentials callback is
-asked per host; an SSH key goes in a file only this user can read, in a
-directory of its own, removed when the op ends.
+answers only for the source's own host; an SSH key goes in a file only this
+user can read, in a directory of its own, removed when the op ends.
 """
 
 import asyncio
@@ -117,9 +118,10 @@ class GitCliTimeoutError(TimeoutError):
 
 
 # How long OPAL waits for the group to be reaped after SIGKILL. Only a process
-# in uninterruptible I/O outlives it, so an op returns at most the kill grace
-# plus this past its timeout (its on_gone can come later, once that process
-# exits).
+# in uninterruptible I/O outlives it, so an op returns at most the kill grace,
+# plus this, plus the removal of what git left in the clone (which waits for a
+# thread of the default executor) past its timeout; its on_gone can come
+# later, once that process exits.
 KILL_WAIT_SECONDS = 10.0
 _DEFAULT_KILL_GRACE_SECONDS = 5.0
 # How often a group whose pipes are closed is checked for members left, and a
@@ -196,11 +198,10 @@ _GIT_CONFIG_ARGS = (
 # The credential helper, in git's environment config. It answers git's "get"
 # with the op's user and password only when git asks for the source's own
 # host[:port], over the source's protocol or, for an http source, https (where
-# a redirect to https on the same host takes git; libgit2's callback answers
-# whatever the URL). A redirect to another host, or from https to http, gets
-# nothing. It reads them from variables of git's environment, so they are in
-# no helper text, command line or file. Everything it runs (test, read,
-# printf) is built into sh.
+# a redirect to https on the same host takes git). A redirect to another host,
+# or from https to http, gets nothing. It reads them from variables of git's
+# environment, so they are in no helper text, command line or file. Everything
+# it runs (test, read, printf) is built into sh.
 _CREDENTIAL_ENV = (
     "OPAL_GIT_CREDENTIAL_PROTOCOL",
     "OPAL_GIT_CREDENTIAL_HOST",
@@ -2352,8 +2353,8 @@ async def _run_git(
             raise GitCliLocalError(127, f"could not start git: {e}") from None
         raise
     # From here on sh may be running whatever the start ends in: the group's
-    # id is not known then, so the clone's lock, which every member holds,
-    # says when it is gone.
+    # id is not known then, so the clone's lock, which every member that can
+    # write in the clone holds (all but ssh), says when it is gone.
     try:
         proc = await asyncio.create_subprocess_exec(
             _SH,

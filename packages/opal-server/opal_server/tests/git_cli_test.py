@@ -1984,10 +1984,9 @@ async def test_a_redirect_to_another_host_gets_no_credentials(
 ):
     """The remote redirects to another host and port.
 
-    libgit2's credentials callback is asked per host, and so is git's
-    credential helper: it answers only for the remote's own host and
-    port, so the other host never gets the token, whether it asks for
-    credentials or not.
+    git asks its credential helper per host, and the helper answers only
+    for the remote's own host and port, so the other host never gets the
+    token, whether it asks for credentials or not.
     """
     other = make_git_http(tmp_path / "other")
     make_origin(other.root / "repo.git")
@@ -2018,8 +2017,7 @@ async def test_an_http_remote_that_redirects_to_https_on_its_host_gets_its_crede
     the same host and port, and asks for credentials there.
 
     git asks its credential helper for https after the redirect, and
-    gets the source's credentials, as libgit2's callback gives them
-    whatever the URL; they are never sent over plain http.
+    gets the source's credentials; they are never sent over plain http.
     """
     origin = make_origin(git_http.root / "repo.git")
     git_http.tls = tls_cert.context
