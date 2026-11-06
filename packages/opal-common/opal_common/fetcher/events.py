@@ -2,6 +2,7 @@ from typing import Any, ClassVar, List, Optional, Set, get_args
 
 from opal_common.fetcher.conditional import CacheValidators
 from opal_common.logging_utils.redaction import RedactedReprMixin
+from opal_common.schemas.wire_defaults import OmitNewFieldsWhenDefaultMixin
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -70,7 +71,7 @@ class FetcherConfig(RedactedReprMixin, BaseModel):
     )
 
 
-class FetchEvent(RedactedReprMixin, BaseModel):
+class FetchEvent(RedactedReprMixin, OmitNewFieldsWhenDefaultMixin):
     """Event used to describe an queue fetching tasks Design note -
 
     By using a Pydantic model - we can create a potentially transfer FetchEvents to be handled by other network nodes (perhaps via RPC)
@@ -81,6 +82,7 @@ class FetchEvent(RedactedReprMixin, BaseModel):
     # ``url`` can embed credentials (``user:token@host`` / ``?token=``); strip
     # them via redact_url while keeping host/path visible for debugging.
     _redacted_url_fields: ClassVar[Set[str]] = {"url"}
+    _omit_when_default_fields: ClassVar[Set[str]] = {"validators"}
     model_config = ConfigDict(hide_input_in_errors=True)
 
     # Event id to be filled by the engine

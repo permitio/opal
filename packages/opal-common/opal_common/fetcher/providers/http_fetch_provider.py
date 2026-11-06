@@ -11,6 +11,7 @@ from opal_common.fetcher.events import FetcherConfig, FetchEvent
 from opal_common.fetcher.fetch_provider import BaseFetchProvider
 from opal_common.fetcher.logger import get_logger
 from opal_common.http_utils import is_http_error_response, redact_url
+from opal_common.schemas.wire_defaults import OmitNewFieldsWhenDefaultMixin
 from opal_common.security.sslcontext import get_custom_ssl_context
 from pydantic import ConfigDict, field_validator
 
@@ -26,12 +27,13 @@ class HttpMethods(Enum):
     DELETE = "delete"
 
 
-class HttpFetcherConfig(FetcherConfig):
+class HttpFetcherConfig(OmitNewFieldsWhenDefaultMixin, FetcherConfig):
     """Config for HttpFetchProvider's Adding HTTP headers."""
 
     # ``headers`` carries Authorization tokens and ``data`` the (possibly
     # sensitive) payload - mask both in repr/str so they never leak into logs.
     _redacted_repr_fields: ClassVar[Set[str]] = {"headers", "data"}
+    _omit_when_default_fields: ClassVar[Set[str]] = {"conditional_requests"}
 
     model_config = ConfigDict(use_enum_values=True)
 

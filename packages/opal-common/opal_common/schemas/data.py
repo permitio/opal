@@ -5,6 +5,7 @@ from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
 from opal_common.http_utils import redact_url
 from opal_common.logging_utils.redaction import RedactedReprMixin
 from opal_common.schemas.store import JSONPatchAction
+from opal_common.schemas.wire_defaults import OmitNewFieldsWhenDefaultMixin
 from pydantic import (
     AnyHttpUrl,
     BaseModel,
@@ -259,8 +260,10 @@ class DataUpdate(BaseModel):
     callback: UpdateCallback = UpdateCallback(callbacks=[])
 
 
-class DataEntryReport(BaseModel):
+class DataEntryReport(OmitNewFieldsWhenDefaultMixin):
     """A report of the processing of a single DataSourceEntry."""
+
+    _omit_when_default_fields: ClassVar[Set[str]] = {"not_modified"}
 
     model_config = ConfigDict(hide_input_in_errors=True)
 
