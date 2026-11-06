@@ -3941,6 +3941,24 @@ async def test_a_clone_gone_since_its_mark_is_left_alone(tmp_path, emitted):
     assert git_fetcher._repacks_due == {}
 
 
+def test_a_clone_that_cannot_be_read_has_no_ref_steps_due(tmp_path):
+    """The check never raises: the mark after a fetch never fails the sync,
+    and the due run never ends the pass's other repacks. A clone dir with mode
+    000, whose .git a stat then fails with EACCES.
+
+    Mutation: Path.is_dir(), which re-raises EACCES on Python 3.11-3.12,
+    raises PermissionError out of it.
+    """
+    clone = _fake_clone(tmp_path)
+    clone.chmod(0)
+    try:
+        if os.access(clone, os.X_OK):
+            pytest.skip("this user reads every directory (root)")
+        assert git_fetcher._ref_steps_due(clone) is False
+    finally:
+        clone.chmod(stat.S_IRWXU)
+
+
 @pytest.mark.asyncio
 async def test_a_git_clone_is_not_marked_for_its_refs(tmp_path, monkeypatch):
     """Git clone writes the refs into packed-refs itself, so a clone made with

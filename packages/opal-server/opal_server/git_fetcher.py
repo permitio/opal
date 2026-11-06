@@ -1317,10 +1317,13 @@ def _ref_steps_due(repo_path: str | os.PathLike[str]) -> bool:
     repack, while a git command-line clone writes packed-refs), or reflogs
     while they do not (_packing_refs; new scope clones are made without).
 
-    False without a clone.
+    False without a clone, and for one that cannot be read. Never raises:
+    its callers never fail the sync (_mark_repack_due) or the pass's other
+    repacks (_repack_due_clone), and Path.is_dir() re-raises EACCES, EIO or
+    ESTALE on Python 3.11-3.12, where os.path.isdir() answers False.
     """
     git_dir = Path(repo_path) / ".git"
-    if not git_dir.is_dir():
+    if not os.path.isdir(git_dir):
         return False
     if _packing_refs():
         return not os.path.lexists(git_dir / "packed-refs")
