@@ -2227,6 +2227,32 @@ def _shows_part_of(secret: str, text: str) -> bool:
             "fatal: 'r.git' does not appear to be a git repository",
             "fatal: 'r.git' does not appear to be a git repository",
         ),
+        (
+            "https://t0kenvalue:x-oauth-basic@127.0.0.1/r.git",
+            None,
+            "fatal: t0kenvalue was refused",
+            "fatal: *** was refused",
+        ),
+        (
+            "https://ci@127.0.0.1/r.git",
+            None,
+            "fatal: circuit open for ci; ci-runner, cigar",
+            "fatal: circuit open for ***; ***-runner, cigar",
+        ),
+        (
+            "https://tok:127@127.0.0.1:8127/r.git",
+            None,
+            "fatal: unable to access 'https://127.0.0.1:8127/r.git/': 127 refused\n"
+            "fatal: could not connect to 127.0.0.1 port 8127: 127",
+            "fatal: unable to access 'https://127.0.0.1:8127/r.git/': *** refused\n"
+            "fatal: could not connect to 127.0.0.1 port 8127: ***",
+        ),
+        (
+            "https://alice:s3cret@127.0.0.1/r.git",
+            None,
+            "fatal: refused s3cretXs3cret",
+            "fatal: refused ***X***",
+        ),
     ],
     ids=[
         "ssh-user-git",
@@ -2235,18 +2261,26 @@ def _shows_part_of(secret: str, text: str) -> bool:
         "user-alone",
         "longest",
         "git-alone",
+        "token-as-user",
+        "short-user-alone",
+        "password-in-the-host",
+        "inside-a-word",
     ],
 )
 @pytest.mark.asyncio
 async def test_what_can_be_a_credential_is_redacted_from_git_s_errors_and_no_more(
     url, token, stderr, shown, tmp_path, monkeypatch
 ):
-    """A URL's password and a source's token, and a user alone in an HTTP URL
-    (which can be a token), longest first, so that no part of one is left.
+    """A URL's password and a source's token, wherever they are, so that no
+    part of one is left; the user of a URL whose password is x-oauth-basic
+    (GitHub's form for a token as the user); and a user alone in an HTTP URL
+    (which can be a token) where it is a word of its own.
 
-    Not the user of a URL with a password, nor ``git`` (the user of
-    every SSH URL to GitHub, and a word of git's errors and of its
-    hosts' names).
+    Not the user of a URL with another password, nor ``git`` (the user
+    of every SSH URL to GitHub, and a word of git's errors and of its
+    hosts' names), nor a user alone inside a longer word, nor the URL
+    git is given or its host, which hold no credential even where a
+    password's text is part of them.
     """
     _failing_git(tmp_path, monkeypatch, stderr)
     auth = GitHubTokenAuthData(token=token) if token else None
@@ -2880,6 +2914,26 @@ def test_a_known_hosts_path_that_ssh_would_expand_is_refused(
         validate_git_cli_settings()
     remote = git_cli._remote_for_git("ssh://git@h/r.git", _source("ssh://git@h/r.git"))
     with pytest.raises(GitCliLocalError, match=r"holds % or \$"):
+        git_cli._ssh_host_key_options(remote)
+
+
+@pytest.mark.parametrize("name", ["kn'own", 'kn"own"x', "kn\\own"])
+def test_a_known_hosts_path_that_ssh_would_read_as_quoting_is_refused(
+    name, tmp_path, monkeypatch
+):
+    """ssh splits the value of an -o option with quotes and backslashes: with
+    OpenSSH 9.2, a ``'`` fails every op (invalid quotes), ``kn"own"x`` reads
+    ``knownx`` and ``kn\\own`` reads ``kn\\own`` with one backslash. Such a
+    path is refused at startup, and fails each SSH op at once."""
+    path = tmp_path / name
+    path.write_text("")
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", True)
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_SSH_KNOWN_HOSTS", str(path))
+
+    with pytest.raises(ValueError, match="a quote or a backslash"):
+        validate_git_cli_settings()
+    remote = git_cli._remote_for_git("ssh://git@h/r.git", _source("ssh://git@h/r.git"))
+    with pytest.raises(GitCliLocalError, match="a quote or a backslash"):
         git_cli._ssh_host_key_options(remote)
 
 

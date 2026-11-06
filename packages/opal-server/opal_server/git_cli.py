@@ -39,6 +39,7 @@ directory of its own, removed when the op ends.
 import asyncio
 import base64
 import fcntl
+import itertools
 import math
 import os
 import pwd
@@ -306,6 +307,9 @@ _SSH_SCHEMES = ("ssh", "git+ssh", "ssh+git")
 # Query parameters that carry a credential; git would send them on every
 # request and print them in its errors, so such a URL is refused.
 _QUERY_CREDENTIALS = ("private_token", "access_token", "token")
+# The password of GitHub's https://<token>:x-oauth-basic@... URLs, whose user
+# is the token.
+_PASSWORD_OF_A_TOKEN_USER = "x-oauth-basic"
 # Left in a clone's .git by a git killed while it updated refs, or the clone's
 # config (a repack's git config). git removes its own on SIGTERM, not on
 # SIGKILL. Refs locks are found under refs/.
@@ -414,8 +418,9 @@ def validate_git_cli_settings() -> None:
             SCOPES_GIT_CLI_KILL_GRACE is not a finite number >= 0;
             SCOPES_GIT_SSH_KNOWN_HOSTS names no readable file, or its path
             holds whitespace (which ssh would read as a list of files), % or
-            $; or the directory SSH key files go to has % or $ in its path
-            (ssh expands both, in a known_hosts path and in a key's).
+            $, a quote or a backslash; or the directory SSH key files go to
+            has % or $ in its path (ssh expands both, in a known_hosts path
+            and in a key's).
     """
     if not opal_server_config.SCOPES_GIT_FETCH_WITH_CLI:
         if opal_server_config.SCOPES_GIT_SSH_KNOWN_HOSTS:
@@ -519,6 +524,11 @@ def _known_hosts_problem(path: str) -> Optional[str]:
         return (
             f"SCOPES_GIT_SSH_KNOWN_HOSTS={path!r}: the path holds % or $, which "
             "ssh would expand (%h to the host, ${VAR} to a variable)"
+        )
+    if any(c in path for c in "'\"\\"):
+        return (
+            f"SCOPES_GIT_SSH_KNOWN_HOSTS={path!r}: the path holds a quote or a "
+            "backslash, which ssh would read as quoting (another file, or none)"
         )
     if not os.path.isfile(path) or not os.access(path, os.R_OK):
         return f"SCOPES_GIT_SSH_KNOWN_HOSTS={path!r}: no readable file there"
@@ -1611,12 +1621,16 @@ def _is_fetch_keep(keep: Path) -> bool:
 class _Remote:
     """How git is pointed at a remote: the URL it is given, without the user
     and password; the protocol, host[:port], user and password the credential
-    helper gives for an HTTP remote that has them; and every secret to
-    redact from what git prints."""
+    helper gives for an HTTP remote that has them; every secret to redact
+    from what git prints; the users that are secrets only as words of their
+    own (word_secrets); and the text that holds no credential (kept: the URL,
+    its host and its port)."""
 
     url: str
     credential: Optional[Tuple[str, str, str, str]] = field(default=None, repr=False)
     secrets: List[str] = field(default_factory=list, repr=False)
+    word_secrets: List[str] = field(default_factory=list, repr=False)
+    kept: List[str] = field(default_factory=list, repr=False)
 
     @property
     def is_ssh(self) -> bool:
@@ -1628,6 +1642,57 @@ class _Remote:
         colon, slash = self.url.find(":"), self.url.find("/")
         return colon > 0 and (slash == -1 or colon < slash)
 
+    def redact(self, text: str) -> str:
+        """``text`` with every place a secret is replaced by ***, places that
+        touch or overlap as one, so that no part of a secret is left.
+
+        Not a place that lies within the URL git is given, its host or
+        its port, which hold no credential however much a password reads
+        like part of them (``127`` in ``127.0.0.1``); nor a word secret's
+        place in the middle of a longer word (a user ``ci`` in
+        ``circuit``).
+        """
+        kept = [
+            m.span()
+            for span in set(self.kept)
+            if span
+            for m in re.finditer(re.escape(span), text)
+        ]
+        places = [p for s in set(self.secrets) if s for p in _places(s, text)]
+        places += [
+            p
+            for s in set(self.word_secrets)
+            if s
+            for p in _places(s, text)
+            if _stands_alone(text, *p)
+        ]
+        hidden = [False] * len(text)
+        for start, end in places:
+            if not any(a <= start and end <= b for a, b in kept):
+                hidden[start:end] = [True] * (end - start)
+        return "".join(
+            "***" if hide else "".join(c for _, c in run)
+            for hide, run in itertools.groupby(zip(hidden, text), key=lambda p: p[0])
+        )
+
+
+def _places(secret: str, text: str) -> List[Tuple[int, int]]:
+    """Where ``secret`` is in ``text``, overlapping places included."""
+    places = []
+    start = text.find(secret)
+    while start != -1:
+        places.append((start, start + len(secret)))
+        start = text.find(secret, start + 1)
+    return places
+
+
+def _stands_alone(text: str, start: int, end: int) -> bool:
+    """Whether ``text[start:end]`` is not the middle of a longer word: no
+    letter or digit runs on into it from either side."""
+    joined_before = start > 0 and text[start - 1].isalnum() and text[start].isalnum()
+    joined_after = end < len(text) and text[end].isalnum() and text[end - 1].isalnum()
+    return not joined_before and not joined_after
+
 
 def _remote_for_git(url: str, source: GitPolicyScopeSource) -> _Remote:
     """Split the credentials off ``url`` the way libgit2 uses them: a user and
@@ -1635,8 +1700,10 @@ def _remote_for_git(url: str, source: GitPolicyScopeSource) -> _Remote:
     (GitCallback's UserPass), else the URL's user alone with an empty password.
 
     The password and the token are secrets to redact, and so is the user of
-    an HTTP URL with no password, which can be a token; not the user of a
-    URL with a password, nor ``git``.
+    an HTTP URL whose password is ``x-oauth-basic`` (the user is then the
+    token). The user of an HTTP URL with no password, which can be a token,
+    is redacted where it is a word of its own. Not the user of a URL with
+    another password, nor ``git``.
 
     Raises:
         GitCliRefusedSourceError: a URL git cannot be given without a
@@ -1674,8 +1741,12 @@ def _remote_for_git(url: str, source: GitPolicyScopeSource) -> _Remote:
     if user is not None or password is not None:
         passwords = {password, unquote(password)} if password else set()
         remote.secrets += passwords
-        if scheme in _HTTP_SCHEMES and not password and user and unquote(user) != "git":
-            remote.secrets += {user, unquote(user)}
+        if scheme in _HTTP_SCHEMES and user and unquote(user) != "git":
+            users = {user, unquote(user)}
+            if not password:
+                remote.word_secrets += users
+            elif unquote(password).lower() == _PASSWORD_OF_A_TOKEN_USER:
+                remote.secrets += users
         if scheme in _HTTP_SCHEMES:
             remote.url = urlunsplit(parts._replace(netloc=host))
             if password is not None:
@@ -1708,6 +1779,8 @@ def _remote_for_git(url: str, source: GitPolicyScopeSource) -> _Remote:
         remote.secrets.append(encoded)
         username, secret = username_password
         remote.credential = (scheme, host, username, secret)
+    port = str(parts.port) if parts.port is not None else ""
+    remote.kept = [remote.url, host, parts.hostname or "", port]
     return remote
 
 
@@ -1828,13 +1901,9 @@ def _git_env(
     for i, (key, value) in enumerate(config):
         env[f"GIT_CONFIG_KEY_{i}"] = key
         env[f"GIT_CONFIG_VALUE_{i}"] = value
-    # Longest first: a secret inside another one would leave the rest of it.
-    hidden = sorted({s for s in remote.secrets if s}, key=len, reverse=True)
 
     def redact(text: str) -> str:
-        for secret in hidden:
-            text = text.replace(secret, "***")
-        return redact_sensitive_text(text, source.url)
+        return redact_sensitive_text(remote.redact(text), source.url)
 
     ssh = ["ssh", *_SSH_OPTIONS, *_ssh_host_key_options(remote)]
     key_dir: Optional[str] = None
