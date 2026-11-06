@@ -650,8 +650,8 @@ async def test_markers_are_cleared_even_with_the_setting_off(tmp_path):
 def test_clear_hung_markers_retries_when_an_entry_vanishes_mid_walk(
     tmp_path, monkeypatch
 ):
-    """Python 3.10-3.12 rmtree stops with FileNotFoundError when an entry it
-    listed is removed first, leaving the rest."""
+    """On Python 3.11 and 3.12 rmtree stops with FileNotFoundError when an
+    entry it listed is removed first, leaving the rest."""
     clone = _clone_dir(tmp_path, _sid(1), hung=True)
     real = git_fetcher_module.shutil.rmtree
     calls = []
@@ -1010,7 +1010,7 @@ def test_no_live_clone_on_disk_keeps_every_hung_clone(
 
 
 @pytest.fixture
-def preload(monkeypatch, tmp_path):
+def preload(monkeypatch, tmp_path, no_redis):
     state = {
         "events": [],
         "sync": None,
@@ -1021,7 +1021,6 @@ def preload(monkeypatch, tmp_path):
     }
     monkeypatch.setattr(opal_common_logger, "_logs_configured", True)
     monkeypatch.setattr(task_module, "configure_server_metrics", lambda: None)
-    monkeypatch.setattr(task_module, "RedisDB", lambda url: object())
 
     class _Scopes:
         def __init__(self, db):

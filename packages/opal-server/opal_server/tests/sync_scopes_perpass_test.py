@@ -88,6 +88,7 @@ async def test_both_passes_bounded_by_the_git_worker_knob(tmp_path, monkeypatch)
         pubsub_endpoint=FakePubSubEndpoint(),
     )
 
+    listed = {s.scope_id: s for s in scopes}
     in_flight = {True: 0, False: 0}
     peak = {True: 0, False: 0}
 
@@ -96,9 +97,12 @@ async def test_both_passes_bounded_by_the_git_worker_knob(tmp_path, monkeypatch)
     # honor_backoff, which decides whether the pass skips a failing source)
     # reddens here instead of shipping.
     async def fake_sync_scope(
-        *, scope_id, force_fetch, notify_on_changes, honor_backoff
+        *, scope_id, force_fetch, notify_on_changes, honor_backoff, expected_source_id
     ):
         assert honor_backoff is True, "a periodic pass must honour the backoff"
+        assert expected_source_id == GitPolicyFetcher.source_id(
+            listed[scope_id].policy
+        ), "a pass must name the clone it listed the scope under"
         in_flight[force_fetch] += 1
         peak[force_fetch] = max(peak[force_fetch], in_flight[force_fetch])
         await asyncio.sleep(0.02)
@@ -134,7 +138,7 @@ async def test_git_pass_still_respects_the_cap(tmp_path, monkeypatch):
     peak = 0
 
     async def fake_sync_scope(
-        *, scope_id, force_fetch, notify_on_changes, honor_backoff
+        *, scope_id, force_fetch, notify_on_changes, honor_backoff, expected_source_id
     ):
         nonlocal in_flight, peak
         in_flight += 1

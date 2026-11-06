@@ -66,7 +66,6 @@ setup(
         "License :: OSI Approved :: Apache Software License",
         "Programming Language :: Python",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
         "Programming Language :: Python :: 3.13",
@@ -82,6 +81,6 @@ setup(
     # re-checked by hand on 3.13.14 in #960; that check is not CI-covered, since
     # opal-server cannot install on 3.13.) 3.14 is untested, and the internals
     # that executor mirrors have already changed shape there, hence the cap.
-    python_requires=">=3.10,<3.14",
+    python_requires=">=3.11,<3.14",
     install_requires=common_install_requires + about.get_install_requires(project_root),
 )

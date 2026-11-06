@@ -1,5 +1,6 @@
 """The scope-clone repack: the primitive (``_count_pack_files``,
-``_repack_clone``), the repack lock it runs under, its wiring into the scope
+``_repack_clone``), the ref steps it starts with (pack-refs, reflogs off and
+removed), the repack lock it runs under, its wiring into the scope
 sync (a fetch marks the clone due, ``GitPolicyFetcher.run_due_repacks`` ends
 the sync pass by repacking it), and the GitPython handles on scope
 clones that must be closed for a repack's deleted packs to free their disk.
@@ -20,6 +21,7 @@ import fcntl
 import math
 import os
 import select
+import shutil
 import signal
 import stat
 import subprocess
@@ -38,7 +40,8 @@ from opal_common.logger import logger
 from opal_common.monitoring import metrics
 from opal_common.schemas.policy_source import GitPolicyScopeSource, NoAuthData
 from opal_common.schemas.scopes import Scope
-from opal_server import git_fetcher
+from opal_common.tests.log_capture import capture_records
+from opal_server import git_cli, git_fetcher
 from opal_server.config import OpalServerConfig, opal_server_config
 from opal_server.git_fetcher import (
     GitConcurrencyLimitExceeded,
@@ -59,6 +62,12 @@ from opal_server.scopes.service import NewCommitsCallbacks, ScopesService
 _SIG = pygit2.Signature("opal-test", "opal-test@example.com")
 
 
+def _init_remote(path: Path) -> pygit2.Repository:
+    """A bare remote whose HEAD is refs/heads/master, the branch _commit
+    writes, whatever init.defaultBranch the user's git config sets."""
+    return pygit2.init_repository(str(path), bare=True, initial_head="master")
+
+
 def _commit(repo: pygit2.Repository, content: str, parent=None) -> pygit2.Oid:
     blob = repo.create_blob(content.encode())
     builder = repo.TreeBuilder()
@@ -71,7 +80,7 @@ def _commit(repo: pygit2.Repository, content: str, parent=None) -> pygit2.Oid:
 
 def _clone_with_fetch_packs(tmp_path: Path, fetches: int):
     """A libgit2 clone holding one pack per fetch, plus every commit id."""
-    remote = pygit2.init_repository(str(tmp_path / "remote.git"), bare=True)
+    remote = _init_remote(tmp_path / "remote.git")
     tip = _commit(remote, "package policy\n")
     commits = [tip]
     clone_path = tmp_path / "clone"
@@ -241,11 +250,20 @@ def test_handle_opened_before_repack_reads_every_commit_after(tmp_path):
 # --- process control, with a `git` shim on PATH --------------------------------
 
 
-def _install_git_shim(tmp_path: Path, monkeypatch, body: str) -> Path:
+def _install_git_shim(
+    tmp_path: Path, monkeypatch, body: str, *, refs_steps: bool = False
+) -> Path:
+    """Put a ``git`` running ``body`` first on PATH.
+
+    The repack's ref steps (``git -C <clone> config`` and ``git -C <clone>
+    pack-refs``) succeed without running it, unless ``refs_steps`` hands
+    them to ``body`` too.
+    """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     shim = bin_dir / "git"
-    shim.write_text("#!/bin/sh\n" + body)
+    skip = "" if refs_steps else 'case "$3" in config|pack-refs) exit 0;; esac\n'
+    shim.write_text("#!/bin/sh\n" + skip + body)
     shim.chmod(0o755)
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
     return bin_dir
@@ -329,9 +347,31 @@ def _lock_is_free(path: Path) -> bool:
     return True
 
 
+def _clone_lock_is_free(clone_path: Path) -> bool:
+    fd = git_cli.take_clone_lock(clone_path)
+    if fd is None:
+        return False
+    git_cli.drop_clone_lock(fd)
+    return True
+
+
+def _free_once_a_stop_returns(probe) -> bool:
+    """``probe()`` (a lock is free) as a stop returns.
+
+    On macOS within a few
+    seconds: its kill() answers for a member still exiting, its fds open, as
+    for a zombie, so a stop can return a moment before the last of them has
+    closed its copy of the lock. Linux reads /proc, where a member is a
+    zombie only once its files are closed.
+    """
+    if git_cli.EPERM_MEANS_NO_LIVE_MEMBER:
+        return _wait_for(probe, deadline_seconds=5.0)
+    return probe()
+
+
 @pytest.mark.parametrize("ignores_term", [False, True], ids=["term", "kill"])
 def test_timeout_stops_git_and_removes_its_temp_packs(
-    tmp_path, monkeypatch, ignores_term
+    tmp_path, monkeypatch, records, ignores_term
 ):
     """A repack past its timeout is stopped with its whole process group, and
     what it left in the pack dir is removed; nothing else is.
@@ -340,33 +380,28 @@ def test_timeout_stops_git_and_removes_its_temp_packs(
     repack's ``.tmp-<pid>-pack-*``, and a ``.pack`` installed without its
     ``.idx``: git renames the ``.pack`` first and the ``.idx`` last), plus a
     file named like libgit2's indexer temp, and runs a background child
-    standing in for pack-objects. In the "kill" case the shim traps SIGTERM
-    and its child ignores it, so only the SIGKILL fallback after the grace
-    period ends them.
+    standing in for pack-objects. In the "kill" case the shim ignores SIGTERM
+    from its first line, and so does its child, so only the SIGKILL fallback
+    after the grace period ends them.
     """
     clone_path = _fake_clone(tmp_path)
     state = tmp_path / "state"
     state.mkdir()
     if ignores_term:
-        child = "( trap '' TERM; exec /bin/sleep 30 ) &"
-        # `sleep & wait`, not a foreground `sleep`: bash runs a trap only
-        # once its foreground command returns, and a `sleep 1` forked just
-        # after the group SIGTERM never got it, so the trap could wait out
-        # that whole second, past the 0.3 s grace, and SIGKILL landed first
-        # (seen on a CI runner). The `wait` builtin returns at once on a
-        # trapped signal.
-        tail = (
-            f"trap 'echo TERM >> \"{state}/signals\"' TERM\n"
-            f': > "{state}/ready"\n'
-            "while :; do /bin/sleep 1 & wait $!; done\n"
-        )
+        # Ignored, not trapped: a trap has to be scheduled within the grace
+        # to say it ran, which a starved runner does not always do. A child
+        # inherits the ignored signal.
+        head = "trap '' TERM\n"
+        child = "/bin/sleep 30 &"
+        tail = f': > "{state}/ready"\nwhile :; do /bin/sleep 1; done\n'
     else:
+        head = ""
         child = "/bin/sleep 30 &"
         tail = f': > "{state}/ready"\nwait\n'
     _install_git_shim(
         tmp_path,
         monkeypatch,
-        f'pack="$2/.git/objects/pack"\n'
+        head + f'pack="$2/.git/objects/pack"\n'
         f': > "$pack/tmp_pack_Ab12Cd"\n'
         f': > "$pack/.tmp-$$-pack-0123abcd.pack"\n'
         f': > "$pack/.tmp-$$-pack-0123abcd.idx"\n'
@@ -390,10 +425,15 @@ def test_timeout_stops_git_and_removes_its_temp_packs(
     assert (state / "ready").exists(), "shim never got going; test proves nothing"
     leader = int((state / "leader.pid").read_text())
     child_pid = int((state / "child.pid").read_text())
-    assert not _pid_alive(leader), "git itself still running"
+    assert _wait_gone(leader), "git itself still running"
     assert _wait_gone(child_pid), "git's child (pack-objects) still running"
     if ignores_term:
-        assert (state / "signals").read_text().split() == ["TERM"]
+        # SIGTERM went to the group first, and the group outlived its grace.
+        assert [
+            r
+            for r in records
+            if r["level"].name == "WARNING" and "sending SIGKILL" in r["message"]
+        ]
         assert elapsed >= timeout + grace  # waited out the grace, then killed
     else:
         assert elapsed < timeout + grace  # SIGTERM alone ended it
@@ -405,6 +445,46 @@ def test_timeout_stops_git_and_removes_its_temp_packs(
     ]  # tmp_pack_stale went before git started: see the next test
     assert git_fetcher._repack_lock_fds == set()
     assert _lock_is_free(git_fetcher._repack_lock_dir(clone_path))
+
+
+def test_a_sigkill_stop_returns_once_nothing_of_the_group_holds_its_lock(tmp_path):
+    """The SIGKILL of a stop ends sh before sh can reap its watchdog, which
+    holds sh's copy of the lock git inherits and no stderr: the stop returns
+    only once it is gone too, and the lock is free then, 20 times in a row.
+
+    Mutation: returning once stderr is closed leaves the watchdog holding the
+    lock for a moment after the stop, which under CPU load fails this.
+    """
+    lock_dir = tmp_path / "clones"
+    lock_dir.mkdir()
+    for i in range(20):
+        ready = tmp_path / f"ready{i}"
+        fd = _hold_lock(lock_dir)
+        watched, watching = os.pipe()
+        try:
+            proc = subprocess.Popen(
+                git_fetcher._watched_argv(
+                    ["/bin/sh", "-c", ': > "$1"; exec /bin/sleep 30', "sh", str(ready)]
+                ),
+                stdin=watched,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                start_new_session=True,
+                pass_fds=(fd,),
+            )
+        finally:
+            os.close(watched)
+        try:
+            # The watchdog is forked before the command runs.
+            assert _wait_for(ready.exists), "the command never ran"
+        finally:
+            os.close(fd)  # the group's copies are the lock's only holders now
+            stopped = git_fetcher._stop_repack(proc, 0.0)
+            os.close(watching)
+        assert stopped is True
+        assert _free_once_a_stop_returns(
+            lambda: _lock_is_free(lock_dir)
+        ), f"stop {i}: the lock is still held"
 
 
 def test_leftovers_of_a_dead_repack_are_removed_before_git_runs(tmp_path, monkeypatch):
@@ -465,11 +545,13 @@ def test_pack_whose_index_the_listing_missed_stays(tmp_path, monkeypatch):
     ):
         (pack / name).write_bytes(b"x")
     real_names = git_fetcher._pack_dir_names
-    monkeypatch.setattr(
-        git_fetcher,
-        "_pack_dir_names",
-        lambda path: real_names(path) - {"pack-eeee.idx"},
-    )
+
+    def _names_but_the_index(path):
+        names = real_names(path)
+        assert names is not None  # the dir is there
+        return names - {"pack-eeee.idx"}
+
+    monkeypatch.setattr(git_fetcher, "_pack_dir_names", _names_but_the_index)
 
     git_fetcher._remove_repack_leftovers(pack, "in this test")
 
@@ -681,13 +763,28 @@ def test_one_lock_for_every_clone_in_the_directory(tmp_path):
 
 
 def test_repack_leaves_nothing_but_the_clones_in_their_directory(tmp_path, monkeypatch):
-    """No lock file: nothing an orphan sweep of the clones directory could
-    delete, and so let a second repack in."""
+    """No repack lock file: nothing an orphan sweep of the clones directory
+    could delete, and so let a second repack in. Only the clone's own lock
+    file (git_cli.clone_lock_path), which the repack shares with the clone's
+    git command-line ops."""
     clones_dir = tmp_path / "git_sources"
     _pack_dir(clones_dir / "clone").mkdir(parents=True)
     _install_git_shim(tmp_path, monkeypatch, "exit 0\n")
     assert _repack_clone(clones_dir / "clone", timeout=60) is True
-    assert os.listdir(clones_dir) == ["clone"]
+    assert sorted(os.listdir(clones_dir)) == [".clone.lock", "clone"]
+
+
+def test_repack_leaves_no_descriptor_open(tmp_path, monkeypatch):
+    """Not the locks', and not the watchdog pipe's: an open write end of that
+    pipe would keep a later orphaned repack's watchdog from ever firing."""
+    clone_path = _fake_clone(tmp_path)
+    _install_git_shim(tmp_path, monkeypatch, "exit 0\n")
+    assert _repack_clone(clone_path, timeout=60) is True  # what is set up for good
+    fds = sorted(os.listdir("/dev/fd"))
+
+    assert _repack_clone(clone_path, timeout=60) is True
+
+    assert sorted(os.listdir("/dev/fd")) == fds
 
 
 def test_repack_is_skipped_while_another_repack_holds_the_lock(tmp_path, monkeypatch):
@@ -711,13 +808,58 @@ def test_repack_is_skipped_while_another_repack_holds_the_lock(tmp_path, monkeyp
     assert _lock_is_free(lock)
 
 
-def test_the_lock_outlives_the_process_that_started_git(tmp_path, monkeypatch):
-    """A leader SIGKILLed mid-repack (gunicorn's WORKER TIMEOUT) leaves git
-    running in its own session.
+def _group_left(pgid: int) -> bool:
+    """Whether any process, a zombie included, is left in the group
+    ``pgid``."""
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # macOS: members that have exited, not yet reaped
+    return True
 
-    Git holds the lock through the fd it was handed, and so does every
-    child that inherited it (a stand-in for pack-objects here), so the
-    next leader's repack is skipped until they have all exited, and then
+
+def test_back_to_back_repacks_each_run_and_leave_both_locks_free(tmp_path, monkeypatch):
+    """A repack returns only once nothing of its git is left, so nothing holds
+    the repack's or the clone's lock: sh reaps the watchdog it SIGKILLs before
+    it exits (the watchdog, a fork of sh, holds sh's copies of both). A repack
+    right after another runs, and a probe finds both locks free.
+
+    Mutation: sh exiting right after SIGKILLing its watchdog leaves the
+    watchdog in its group, holding both locks, until something else reaps it:
+    under CPU load (12 busy processes on 8 CPUs) long enough to fail this,
+    and to skip most repacks that follow at once; on an idle machine the
+    watchdog is mostly gone in time.
+    """
+    groups: list = []
+    real_popen = subprocess.Popen
+
+    class _RecordingPopen(real_popen):  # type: ignore[misc,valid-type]
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            groups.append(self.pid)  # each step's group: sh is its leader
+
+    monkeypatch.setattr(git_fetcher.subprocess, "Popen", _RecordingPopen)
+    clone_path, _ = _clone_with_fetch_packs(tmp_path, fetches=1)
+    for _ in range(20):
+        assert _repack_clone(clone_path, timeout=60) is True
+        assert len(groups) == 3  # config, pack-refs, repack
+        assert [g for g in groups if _group_left(g)] == []
+        groups.clear()
+        assert _lock_is_free(git_fetcher._repack_lock_dir(clone_path))
+        assert _clone_lock_is_free(clone_path)
+
+
+def test_a_leader_killed_mid_repack_takes_its_git_with_it(tmp_path, monkeypatch):
+    """A leader SIGKILLed mid-repack (gunicorn's WORKER TIMEOUT, an OOM kill)
+    leaves no git behind holding the locks.
+
+    git runs in a session of its own, which no signal to the leader
+    reaches, but under the watchdog of the git command-line fetch (see
+    _repack_argv), which kills git's whole group, every child that holds
+    the locks included (a stand-in for pack-objects here), once the
+    leader's end of its pipe is gone. The next leader's repack then
     runs.
     """
     clone_path = _fake_clone(tmp_path)
@@ -758,17 +900,12 @@ def test_the_lock_outlives_the_process_that_started_git(tmp_path, monkeypatch):
     [git_pid] = [int(p) for p in (state / "runs").read_text().split()]
     child_pid = int((state / "child.pid").read_text())
     try:
-        assert _pid_alive(git_pid), "git died with the process that started it"
-        assert not _lock_is_free(
-            lock
-        ), "the lock died with the process that started git"
-
-        assert _repack_clone(clone_path, timeout=60) is False
-        assert len((state / "runs").read_text().split()) == 1
+        assert _wait_gone(child_pid) and _wait_gone(git_pid)
+        # The rest of the group (sh, the watchdog, the child's sleep) holds
+        # the lock too, and dies with it a moment later.
+        assert _wait_for(lambda: _lock_is_free(lock))
     finally:
         (state / "release").touch()
-    assert _wait_gone(child_pid) and _wait_gone(git_pid)
-    assert _lock_is_free(lock)
     assert _repack_clone(clone_path, timeout=60) is True
     assert len((state / "runs").read_text().split()) == 2
 
@@ -1050,6 +1187,14 @@ def _repack_outcomes(calls) -> list:
     ]
 
 
+def _pack_refs_outcomes(calls) -> list:
+    return [
+        tags["outcome"]
+        for metric, tags in calls["increment"]
+        if metric == "opal_server.scopes.git_pack_refs"
+    ]
+
+
 def _repack_seconds(calls) -> list:
     return [
         (value, tags)
@@ -1081,6 +1226,9 @@ class _RecordingTracer:
     def repack_spans(self) -> list:
         return [s for s in self.spans if s.name == "git_policy_fetcher.repack"]
 
+    def pack_refs_spans(self) -> list:
+        return [s for s in self.spans if s.name == "git_policy_fetcher.pack_refs"]
+
 
 @pytest.fixture
 def spans(monkeypatch):
@@ -1098,14 +1246,23 @@ def records():
 
 
 class _RepackSpy:
-    """Stands in for ``_repack_clone``: records each call, runs ``on_start``,
-    then optionally blocks until ``gate`` opens, then raises ``raises`` or runs
-    the real repack."""
+    """Stands in for ``_repack_clone`` (or ``real``, ``_pack_clone_refs`` say):
 
-    def __init__(self, raises: BaseException | None = None, gate=None, on_start=None):
+    records each call, runs ``on_start``, then optionally blocks until ``gate``
+    opens, then raises ``raises`` or runs the real one.
+    """
+
+    def __init__(
+        self,
+        raises: BaseException | None = None,
+        gate=None,
+        on_start=None,
+        real=_repack_clone,
+    ):
         self.raises = raises
         self.gate = gate
         self.on_start = on_start
+        self.real = real
         self.calls: list = []
         self.started = threading.Event()
 
@@ -1118,7 +1275,7 @@ class _RepackSpy:
             self.gate.wait(10)
         if self.raises is not None:
             raise self.raises
-        return _repack_clone(repo_path, timeout, **kwargs)
+        return self.real(repo_path, timeout, **kwargs)
 
 
 class _ScopeRepo:
@@ -1130,7 +1287,7 @@ class _ScopeRepo:
 
     def __init__(self, tmp_path: Path, name: str):
         remote_path = tmp_path / f"{name}.git"
-        self.remote = pygit2.init_repository(str(remote_path), bare=True)
+        self.remote = _init_remote(remote_path)
         self._revision = 0
         self.tip: pygit2.Oid | None = None
         self.push()
@@ -1263,6 +1420,35 @@ async def test_sync_repacks_the_clone_once_its_packs_reach_the_limit(
 
 
 @pytest.mark.asyncio
+async def test_repack_duration_is_no_longer_than_the_repack_call_took(
+    tmp_path, emitted, records
+):
+    """The git_repack_seconds value, and the seconds in the "Repacked" line,
+    lie between 0 and the wall time measured around the call that runs the
+    repack.
+
+    Mutation: adding or multiplying the clock readings instead of subtracting
+    them gives a value of the order of the clock itself, far above the wall
+    time; dividing them gives about 1, above it on a repack quicker than 1 s.
+    """
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.fetched(_LIMIT - 1)
+    scope.push()
+    await scope.sync()  # the fetch that reaches the limit marks the clone due
+    assert _repack_outcomes(emitted) == []
+
+    before = time.monotonic()
+    await GitPolicyFetcher.run_due_repacks(set(git_fetcher._repacks_due))
+    wall = time.monotonic() - before
+
+    assert _repack_outcomes(emitted) == ["ok"]
+    [(seconds, _)] = _repack_seconds(emitted)
+    assert 0 <= seconds <= wall
+    [done] = [r for r in records if r["message"].startswith("Repacked scope clone")]
+    assert done["extra"]["seconds"] == seconds
+
+
+@pytest.mark.asyncio
 async def test_repack_holds_lock_source_so_a_second_sync_of_the_clone_waits(
     tmp_path, monkeypatch
 ):
@@ -1372,6 +1558,41 @@ async def test_only_a_fetch_made_by_this_sync_marks_a_repack_due(tmp_path, monke
     await GitPolicyFetcher.run_due_repacks({scope.source_id})
     assert spy.calls == []
     assert _count_pack_files(scope.clone_path) == _LIMIT - 1
+
+
+class _FailingCallbacks(PolicyFetcherCallbacks):
+    """The notification of a scope that fails, for that scope alone (a publish
+    that fails, say)."""
+
+    async def on_update(self, old_head, head):
+        raise RuntimeError("publish failed")
+
+
+@pytest.mark.parametrize("op", ["clone", "fetch"])
+@pytest.mark.asyncio
+async def test_a_notification_that_fails_still_marks_the_clone_its_sync_wrote(
+    tmp_path, op
+):
+    """The pack a fetch wrote, and the refs a libgit2 clone left each in a file
+    of its own, are the clone's, whichever scope's sync wrote them: the sync
+    that fails after its fetch or clone, in its change check or its
+    notification, still marks the clone due, and fails all the same.
+
+    Mutation: marking only after a notification that went out leaves the
+    clone unmarked, and in a pass whose first scope on the clone fails
+    this way, unmarked pass after pass.
+    """
+    scope = _ScopeRepo(tmp_path, "s1")
+    if op == "fetch":
+        await scope.fetched(_LIMIT - 1)
+        assert git_fetcher._repacks_due == {}
+        scope.push()
+    scope.fetcher.callbacks = _FailingCallbacks()
+
+    with pytest.raises(RuntimeError, match="publish failed"):
+        await scope.sync()
+
+    assert set(git_fetcher._repacks_due) == {scope.source_id}
 
 
 @pytest.mark.asyncio
@@ -1493,6 +1714,136 @@ async def test_lock_that_cannot_be_taken_fails_the_repack_not_the_sync(
     assert "OSError" in warning["message"]
 
 
+def _fail_repack_setup(monkeypatch, fault: str, clone_path: Path) -> None:
+    """Make one of the repack's own steps past the repack lock fail.
+
+    Opening the clone's lock file fails with EACCES, recording the repack
+    in it with ENOSPC (a full disk), making the watchdog's pipe with
+    EMFILE. Each is patched on the ``os`` module the step calls it
+    through, as git_cli_test does for the git command-line ops.
+    """
+    if fault == "clone lock":
+        lock_path = os.fspath(git_cli.clone_lock_path(clone_path))
+        real_open = os.open
+
+        def _open(path, flags, mode=0o777, *, dir_fd=None):
+            if os.fspath(path) == lock_path:
+                raise PermissionError(errno.EACCES, os.strerror(errno.EACCES), path)
+            return real_open(path, flags, mode, dir_fd=dir_fd)
+
+        monkeypatch.setattr(git_cli.os, "open", _open)
+    elif fault == "record":
+
+        def _full(fd, data, offset):
+            raise OSError(errno.ENOSPC, os.strerror(errno.ENOSPC))
+
+        monkeypatch.setattr(git_cli.os, "pwrite", _full)
+    else:
+
+        def _no_pipe():
+            raise OSError(errno.EMFILE, os.strerror(errno.EMFILE))
+
+        monkeypatch.setattr(git_fetcher.os, "pipe", _no_pipe)
+
+
+@pytest.mark.parametrize(
+    "fault, errno_",
+    [
+        ("clone lock", errno.EACCES),
+        ("record", errno.ENOSPC),
+        ("watchdog pipe", errno.EMFILE),
+    ],
+    ids=["clone-lock-EACCES", "record-ENOSPC", "pipe-EMFILE"],
+)
+@pytest.mark.asyncio
+async def test_a_repack_whose_own_setup_fails_cools_down_and_frees_both_locks(
+    tmp_path, monkeypatch, emitted, records, fault, errno_
+):
+    """Past the repack lock, the repack opens the clone's lock file, records
+    itself in it and makes the watchdog's pipe, and each can fail. The failure
+    is the repack's: git never starts, the run is an error that cools down,
+    both locks are free with no fd of them left, and the record of an op that
+    died before it stays for the next op on the clone.
+
+    Mutation: not dropping the clone's lock or the repack lock on the way
+    out, or a record write that empties the lock file before it fails,
+    fails it.
+    """
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.fetched(_LIMIT - 1)
+    scope.push()
+    await scope.sync()  # the fetch that reaches the limit
+    assert set(git_fetcher._repacks_due) == {scope.source_id}
+    _record_a_dead_op(scope.clone_path)
+    dead_op = _record(scope.clone_path)
+    runs = tmp_path / "runs"
+    _install_git_shim(tmp_path, monkeypatch, f'echo run >> "{runs}"\n', refs_steps=True)
+
+    with monkeypatch.context() as faults:
+        _fail_repack_setup(faults, fault, scope.clone_path)
+        await GitPolicyFetcher.run_due_repacks({scope.source_id})
+
+    assert not runs.exists()
+    assert _repack_outcomes(emitted) == ["error"]
+    assert scope.source_id in git_fetcher._repack_failed_at
+    assert git_fetcher._repack_lock_fds == set()
+    assert _lock_is_free(git_fetcher._repack_lock_dir(scope.clone_path))
+    assert _clone_lock_is_free(scope.clone_path)
+    assert _record(scope.clone_path) == dead_op
+    assert _count_pack_files(scope.clone_path) == _LIMIT
+    [warning] = [r for r in records if "failed after" in r["message"]]
+    assert os.strerror(errno_) in warning["message"]
+
+
+def _gut(clone_path: Path) -> None:
+    """Remove every object of the clone, its refs left: an invalid clone."""
+    objects = clone_path / ".git" / "objects"
+    for entry in objects.iterdir():
+        if entry.name == "pack":
+            for pack in entry.iterdir():
+                pack.unlink()
+        elif len(entry.name) == 2:
+            shutil.rmtree(entry)
+
+
+@pytest.mark.parametrize("cli", [False, True], ids=["libgit2", "cli"])
+@pytest.mark.asyncio
+async def test_where_flock_fails_an_invalid_clone_is_cloned_again_with_the_cli_off(
+    tmp_path, monkeypatch, records, cli
+):
+    """Where flock fails (NFS without local_lock=flock), the clone's lock
+    cannot be taken. With SCOPES_GIT_FETCH_WITH_CLI off only a repack takes it,
+    and no repack runs there, so the invalid clone is deleted without the lock
+    and cloned again. With it on every git fetch and clone takes it too and
+    fails without it, so the clone is kept: deleted, it could not be cloned
+    again.
+
+    Mutation: raising whatever the setting leaves the clone invalid with
+    it off (the clone onto its directory fails); deleting whatever the
+    setting leaves no clone at all with it on.
+    """
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", cli)
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.sync()
+    GitPolicyFetcher.forget_repo(str(scope.clone_path))
+    _gut(scope.clone_path)
+    _flock_fails_with(monkeypatch, errno.ENOLCK)
+
+    await scope.sync()
+
+    clone = pygit2.Repository(str(scope.clone_path))
+    try:
+        assert (clone.get(scope.tip) is None) is cli
+    finally:
+        clone.free()
+    without_lock = [
+        r
+        for r in records
+        if r["level"].name == "WARNING" and "without its lock" in r["message"]
+    ]
+    assert len(without_lock) == (0 if cli else 1)
+
+
 def test_failed_repack_prunes_the_expired_cooldowns_of_other_sources(emitted):
     """What keeps the cooldowns bounded as sources come and go: a deleted
     scope's entry is never looked up again, so only the next failure, of
@@ -1516,29 +1867,40 @@ def test_failed_repack_prunes_the_expired_cooldowns_of_other_sources(emitted):
 async def test_missing_git_is_logged_once_and_then_never_tried_again(
     tmp_path, monkeypatch, emitted, records
 ):
+    """The first due run is the ref steps of the first fresh clone, counted as
+    a pack-refs run, not a repack; nothing of the repack runs after it, on any
+    clone, at the limit or below it.
+
+    Mutation: counting the ref steps' run as a repack fails the first
+    count.
+    """
     no_git = tmp_path / "no-git"
     no_git.mkdir()
-    monkeypatch.setenv("PATH", str(no_git))  # the real primitive, finding no git
-    spy = _RepackSpy()
-    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
+    monkeypatch.setenv("PATH", str(no_git))  # the real primitives, finding no git
+    repack = _RepackSpy()
+    pack_refs = _RepackSpy(real=git_fetcher._pack_clone_refs)
+    monkeypatch.setattr(git_fetcher, "_repack_clone", repack)
+    monkeypatch.setattr(git_fetcher, "_pack_clone_refs", pack_refs)
     first = _ScopeRepo(tmp_path, "s1")
     second = _ScopeRepo(tmp_path, "s2")
+
     await first.fetched(_LIMIT - 1)
-    await second.fetched(_LIMIT - 1)
 
-    tip = await first.push_and_sync()
-
-    assert first.notified[-1][1] == tip
-    assert spy.calls == [str(first.clone_path)]
-    assert _repack_outcomes(emitted) == ["git_missing"]
-    assert _repack_seconds(emitted) == []  # nothing ran, so no duration
+    assert pack_refs.calls == [str(first.clone_path)]
+    assert _pack_refs_outcomes(emitted) == ["git_missing"]
+    assert _repack_outcomes(emitted) == []
+    assert emitted["distribution"] == []  # nothing ran, so no duration
     [error] = [r for r in records if r["level"].name == "ERROR"]
     assert "git" in error["message"]
 
-    await second.push_and_sync()  # another clone, same process: still off
-    await first.push_and_sync()
-    assert spy.calls == [str(first.clone_path)]
-    assert _repack_outcomes(emitted) == ["git_missing"]
+    await second.fetched(_LIMIT - 1)  # another clone, same process: still off
+    tip = await first.push_and_sync()  # at the limit
+    await second.push_and_sync()
+    assert first.notified[-1][1] == tip
+    assert repack.calls == []
+    assert pack_refs.calls == [str(first.clone_path)]
+    assert _pack_refs_outcomes(emitted) == ["git_missing"]
+    assert _repack_outcomes(emitted) == []
     assert [r for r in records if r["level"].name == "ERROR"] == [error]
 
 
@@ -1604,8 +1966,6 @@ async def test_repack_outliving_its_awaiter_keeps_the_single_flight_and_the_hand
     the cache but never free()'d while its source has a git op in
     flight.
     """
-    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_REPACK_TIMEOUT", 0.2)
-    monkeypatch.setattr(git_fetcher, "_REPACK_EXECUTOR_SLACK_SECONDS", 0.1)
     gate = threading.Event()
     spy = _RepackSpy(gate=gate)  # stuck where no timeout of ours reaches
     monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
@@ -1613,6 +1973,10 @@ async def test_repack_outliving_its_awaiter_keeps_the_single_flight_and_the_hand
     second = _ScopeRepo(tmp_path, "s2")
     await first.fetched(_LIMIT - 1)
     await second.fetched(_LIMIT - 1)
+    # Only now: the ref steps alone that the setup's syncs ran on the fresh
+    # clones are real, and on a loaded machine take more than 0.2 s.
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_REPACK_TIMEOUT", 0.2)
+    monkeypatch.setattr(git_fetcher, "_REPACK_EXECUTOR_SLACK_SECONDS", 0.1)
     path = str(first.clone_path)
     freed = _watch_free(GitPolicyFetcher.repos[path], path)
     try:
@@ -1632,6 +1996,44 @@ async def test_repack_outliving_its_awaiter_keeps_the_single_flight_and_the_hand
         gate.set()
     assert await run_sync(git_fetcher.drain_git_ops, 10)
     assert freed == []
+
+
+@pytest.mark.asyncio
+async def test_slow_walks_for_the_log_line_never_make_a_repack_a_timeout(
+    tmp_path, monkeypatch, emitted, records
+):
+    """The log line's sizes of the refs and reflogs come from walks of every
+    file under refs/ and logs/: 126,000 files on a libgit2 clone of a
+    repository with 63,000 branches, slow on a slow volume. They are taken
+    outside the git executor's timeout, so a repack that finished in time is an
+    "ok" however long they take, and the line still carries them.
+
+    Mutation: walking inside the executor's timeout, as the repack did,
+    counts the repack as a timeout and cools the clone down.
+    """
+    spy = _RepackSpy(real=lambda repo_path, timeout, **kwargs: True)
+    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.fetched(_LIMIT - 1)
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_REPACK_TIMEOUT", 0.2)
+    monkeypatch.setattr(git_fetcher, "_REPACK_EXECUTOR_SLACK_SECONDS", 0.1)
+    real_walk = git_fetcher._ref_disk_bytes
+
+    def _slow_walk(repo_path):
+        time.sleep(0.3)  # each walk alone takes the whole executor timeout
+        return real_walk(repo_path)
+
+    monkeypatch.setattr(git_fetcher, "_ref_disk_bytes", _slow_walk)
+
+    await scope.push_and_sync()
+
+    assert spy.calls == [str(scope.clone_path)]
+    assert _repack_outcomes(emitted) == ["ok"]
+    assert git_fetcher._repack_failed_at == {}
+    [done] = [r for r in records if r["message"].startswith("Repacked scope clone")]
+    assert done["extra"]["refs_before"] > 0
+    assert done["extra"]["refs_after"] > 0
+    assert await run_sync(git_fetcher.drain_git_ops, 10)
 
 
 @pytest.mark.asyncio
@@ -1669,7 +2071,11 @@ async def test_zombie_cap_refusal_is_not_an_attempt_and_arms_no_cooldown(
     refusals = [GitConcurrencyLimitExceeded("in-flight git ops (40) reached cap")]
 
     async def _run(func, *args, **kwargs):
-        if func is git_fetcher._repack_clone_exclusive and refusals:
+        if (
+            func is git_fetcher._repack_clone_exclusive
+            and refusals
+            and _count_pack_files(args[0]) >= _LIMIT
+        ):
             raise refusals.pop()
         return await real_run(func, *args, **kwargs)
 
@@ -2350,7 +2756,9 @@ async def test_refresh_waits_for_the_clone_lock_its_repack_needs(tmp_path, monke
     assert git_fetcher._repacks_due == {}
 
 
-def test_preload_marks_the_repack_due_and_the_first_pass_runs_it(tmp_path, monkeypatch):
+def test_preload_marks_the_repack_due_and_the_first_pass_runs_it(
+    tmp_path, monkeypatch, no_redis
+):
     """The preload runs in the gunicorn master before any worker starts, so a
     repack there would hold up every worker.
 
@@ -2366,7 +2774,6 @@ def test_preload_marks_the_repack_due_and_the_first_pass_runs_it(tmp_path, monke
     repo.push()
     monkeypatch.setattr(opal_server_config, "SCOPES", True)
     monkeypatch.setattr(opal_server_config, "BASE_DIR", str(tmp_path / "base"))
-    monkeypatch.setattr(task_module, "RedisDB", lambda url: None)
     monkeypatch.setattr(task_module, "ScopeRepository", lambda db: scopes)
     # Both would replace this test's log sinks and metrics client.
     monkeypatch.setattr(task_module, "configure_logs", lambda: None)
@@ -2554,24 +2961,26 @@ def test_pack_a_fetch_lands_while_git_runs_is_not_an_incomplete_repack(
 
 
 def test_repack_argv_raises_its_own_oom_score_where_linux_has_one(monkeypatch):
-    """On Linux git starts through sh, which raises its oom_score_adj and execs
-    git (same pid); elsewhere git runs directly."""
+    """Git starts through sh, with the git command-line fetch's watchdog; on
+    Linux sh first raises its oom_score_adj, which git inherits."""
     real_exists = os.path.exists
     monkeypatch.setattr(
         git_fetcher.os.path,
         "exists",
-        lambda p: True
-        if p in (git_fetcher._OOM_SCORE_ADJ_PATH, git_fetcher._SH)
-        else real_exists(p),
+        lambda p: True if p == git_fetcher._OOM_SCORE_ADJ_PATH else real_exists(p),
     )
     argv = git_fetcher._repack_argv("/usr/bin/git", "/clones/x")
     assert argv[:2] == ["/bin/sh", "-c"]
-    assert "echo 1000 > /proc/self/oom_score_adj" in argv[2]
-    assert argv[2].endswith('exec "$@"')
+    assert argv[2].startswith("{ echo 1000 > /proc/self/oom_score_adj; }")
+    assert git_cli.WATCHDOG_SCRIPT in argv[2]
+    assert argv[2].endswith('exit "$s"')
     assert argv[3:6] == ["sh", "/usr/bin/git", "-C"]
 
     monkeypatch.setattr(git_fetcher.os.path, "exists", lambda p: False)
-    assert git_fetcher._repack_argv("/usr/bin/git", "/clones/x")[0] == "/usr/bin/git"
+    argv = git_fetcher._repack_argv("/usr/bin/git", "/clones/x")
+    assert argv[:2] == ["/bin/sh", "-c"]
+    assert "oom_score_adj" not in argv[2]
+    assert argv[2].startswith(git_cli.WATCHDOG_SCRIPT)
 
 
 @pytest.mark.skipif(not os.path.exists("/proc/self/oom_score_adj"), reason="Linux only")
@@ -2637,23 +3046,33 @@ def test_index_whose_pack_arrives_or_is_kept_stays(tmp_path):
 
 def test_no_sweep_while_git_outlives_its_sigkill(tmp_path, monkeypatch):
     """A git stuck past the SIGKILL wait may still be renaming files in the
-    pack dir, so nothing is swept then: the next repack sweeps."""
+    pack dir, so nothing is swept then: the next repack sweeps.
+
+    Only git repack reports as stuck, and its timeout leaves the ref steps
+    before it room on a loaded machine: a ref step stopped as stuck at its
+    share of the timeout ends the repack before git repack starts.
+    """
     clone_path = _fake_clone(tmp_path)
+    state = tmp_path / "state"
+    state.mkdir()
     _install_git_shim(
         tmp_path,
         monkeypatch,
-        'pack="$2/.git/objects/pack"\n: > "$pack/tmp_pack_live"\nexec sleep 30\n',
+        'pack="$2/.git/objects/pack"\n: > "$pack/tmp_pack_live"\n'
+        f': > "{state}/ready"\nexec sleep 30\n',
     )
     real_stop = git_fetcher._stop_repack
 
     def _stuck(proc, grace):
-        real_stop(proc, 0.0)  # really stop it, then report it as stuck
-        return False
+        real_stop(proc, 0.0)  # really stop it, then report git repack stuck
+        return "repack" not in proc.args
 
     monkeypatch.setattr(git_fetcher, "_stop_repack", _stuck)
-    # The leftover of an earlier dead repack is swept before git starts.
-    with pytest.raises(TimeoutError):
-        _repack_clone(clone_path, timeout=1)
+    # The leftover of an earlier dead repack is swept before git starts. 8 s:
+    # the ref steps and then the shim start within it on a loaded machine.
+    with pytest.raises(TimeoutError, match="during git repack"):
+        _repack_clone(clone_path, timeout=8)
+    assert (state / "ready").exists(), "git repack never ran; test proves nothing"
     assert _git_temp_names(clone_path) == ["tmp_pack_live"]
 
 
@@ -2795,6 +3214,34 @@ async def test_remove_clone_dir_exclusive_waits_for_a_running_repack(
     assert not clone.exists()
 
 
+@pytest.mark.parametrize("cli", [False, True], ids=["libgit2", "cli"])
+@pytest.mark.asyncio
+async def test_remove_clone_dir_exclusive_where_flock_fails(tmp_path, monkeypatch, cli):
+    """The DELETE floor where no lock can be taken (NFS without
+    local_lock=flock): the clone is removed without them with
+    SCOPES_GIT_FETCH_WITH_CLI off, as for invalid-repo recovery, and kept, the
+    error raised, with it on.
+
+    Mutation: raising whatever the setting leaves a deleted scope's
+    clone on disk.
+    """
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", cli)
+    clones = tmp_path / "git_sources"
+    clone = clones / "src"
+    (clone / ".git").mkdir(parents=True)
+    _flock_fails_with(monkeypatch, errno.ENOLCK)
+
+    if cli:
+        with pytest.raises(OSError) as info:
+            await git_fetcher.remove_clone_dir_exclusive(str(clone))
+        assert info.value.errno == errno.ENOLCK
+        assert clone.exists()
+    else:
+        assert await git_fetcher.remove_clone_dir_exclusive(str(clone)) is True
+        assert not clone.exists()
+    assert git_fetcher._repack_lock_fds == set()
+
+
 @pytest.mark.asyncio
 async def test_passes_that_never_stop_defer_a_repack_for_half_an_hour_at_most(
     tmp_path, monkeypatch, emitted
@@ -2907,6 +3354,37 @@ async def test_repack_blocked_by_another_process_or_the_zombie_cap_keeps_its_mar
 
 
 @pytest.mark.asyncio
+async def test_repack_of_a_clone_a_git_op_holds_is_a_clone_busy_skip(tmp_path, emitted):
+    """A git command-line op of another process holds the clone's own lock: the
+    repack is skipped as a busy clone, not as a repack running elsewhere, and
+    neither fails nor cools down; the mark stays for when the lock is free."""
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.fetched(_LIMIT - 1)
+    scope.push()
+    await scope.sync()
+    emitted["increment"].clear()
+
+    held = git_cli.take_clone_lock(scope.clone_path)
+    assert held is not None
+    try:
+        with capture_records() as records:
+            await GitPolicyFetcher.run_due_repacks({scope.source_id})
+    finally:
+        git_cli.drop_clone_lock(held)
+    assert scope.source_id in git_fetcher._repacks_due
+    assert _skips(emitted) == [{"reason": "clone_busy"}]
+    assert _repack_outcomes(emitted) == []
+    assert [
+        r["level"].name
+        for r in records.emitted
+        if "a git op holds the clone's lock" in r["message"]
+    ] == ["DEBUG"]
+
+    await GitPolicyFetcher.run_due_repacks({scope.source_id})
+    assert _count_pack_files(scope.clone_path) == 1
+
+
+@pytest.mark.asyncio
 async def test_mark_made_before_a_failure_elsewhere_waits_out_the_marker(
     tmp_path, monkeypatch
 ):
@@ -2970,7 +3448,7 @@ async def test_delete_floor_keeps_the_clone_while_a_repack_holds_the_lock(
     await svc._purge_local_clone_best_effort(repo.source_id, repo.clone_path, "s1")
     assert repo.clone_path.exists()
     assert any(
-        "still holds the repack lock" in r["message"]
+        "still holds its lock" in r["message"]
         for r in records
         if r["level"].name == "WARNING"
     )
@@ -3105,3 +3583,1733 @@ async def test_clone_whose_marker_predates_the_restart_is_named_once(
         if r["level"].name == "INFO" and "did not finish" in r["message"]
     ]
     assert len(infos) == 1
+
+
+# --- refs and reflogs ---------------------------------------------------------
+#
+# libgit2 keeps every ref of a clone in a file of its own and, with reflogs on
+# (its default for a clone), a reflog file beside each. A clone of a repository
+# with 63,207 branches held 250 MB of ref files and 250 MB of reflogs on 4 KB
+# blocks, against 33 MB of objects. The repack packs the refs into packed-refs
+# and removes the reflogs, which nothing in OPAL reads, and scope clones are
+# made with reflogs off.
+
+
+def _loose_refs(repo_path: Path) -> list:
+    """The refs kept in files of their own, symbolic ones (pack-refs never
+    packs those) left out."""
+    git_dir = repo_path / ".git"
+    return sorted(
+        str(p.relative_to(git_dir))
+        for p in (git_dir / "refs").rglob("*")
+        if p.is_file() and not p.read_text().startswith("ref: ")
+    )
+
+
+def _reflogs(repo_path: Path) -> list:
+    logs = repo_path / ".git" / "logs"
+    return sorted(str(p.relative_to(logs)) for p in logs.rglob("*") if p.is_file())
+
+
+def _refs(repo_path: Path) -> dict:
+    out = _git(repo_path, "for-each-ref", "--format=%(refname) %(objectname)").stdout
+    return dict(line.split(" ") for line in out.splitlines())
+
+
+def _reflogs_setting(repo_path: Path) -> str:
+    return _git(
+        repo_path, "config", "--local", "--get", "core.logAllRefUpdates", check=False
+    ).stdout.strip()
+
+
+def _lock_files(repo_path: Path) -> list:
+    """The lock files in a clone's git dir and under its refs, where git's ref
+    steps take theirs."""
+    git_dir = repo_path / ".git"
+    locks = [*git_dir.glob("*.lock"), *(git_dir / "refs").rglob("*.lock")]
+    return sorted(str(p.relative_to(git_dir)) for p in locks)
+
+
+def _record(repo_path: Path) -> str:
+    """The op record in the clone's lock file: empty once no op is running."""
+    return git_cli.clone_lock_path(repo_path).read_text()
+
+
+def _record_a_dead_op(repo_path: Path) -> None:
+    """What an op whose process died leaves in the clone's lock file: its
+    record, which the next op finds."""
+    fd = git_cli.take_clone_lock(repo_path)
+    assert fd is not None
+    git_cli.mark_op_started(fd)
+    git_cli.drop_clone_lock(fd)
+
+
+def _asides(repo_path: Path) -> list:
+    """The reflog dirs a repack moved aside to remove."""
+    return sorted((repo_path / ".git").glob(f"{git_cli.REFLOGS_SET_ASIDE}*"))
+
+
+def _ref_step_failures(calls) -> list:
+    return [
+        tags["step"]
+        for metric, tags in calls["increment"]
+        if metric == "opal_server.scopes.git_ref_step_failures"
+    ]
+
+
+def test_repack_packs_the_refs_and_drops_the_reflogs(tmp_path, emitted):
+    """Every ref ends up in packed-refs with the same target, the reflogs are
+    gone, the clone has reflogs off for the fetches after it, and no ref step
+    is counted as failed.
+
+    Mutation: dropping the pack-refs step leaves the loose refs; dropping the
+    reflog removal leaves .git/logs; dropping the config step leaves the
+    setting unset.
+    """
+    clone_path, commits = _clone_with_fetch_packs(tmp_path, fetches=3)
+    clone = pygit2.Repository(str(clone_path))
+    clone.create_reference("refs/heads/scopes/s1", commits[1])
+    clone.free()
+    before = _refs(clone_path)
+    assert "refs/heads/scopes/s1" in _loose_refs(clone_path)  # the premise
+    assert "refs/remotes/origin/master" in _reflogs(clone_path)
+
+    assert _repack_clone(clone_path, timeout=60) is True
+
+    assert _refs(clone_path) == before
+    assert _loose_refs(clone_path) == []
+    packed = (clone_path / ".git" / "packed-refs").read_text()
+    assert all(
+        f" {ref}\n" in packed for ref in before if ref != "refs/remotes/origin/HEAD"
+    )
+    assert not (clone_path / ".git" / "logs").exists()
+    assert _reflogs_setting(clone_path) == "false"
+    assert _count_pack_files(clone_path) == 1
+    _git(clone_path, "fsck", "--no-progress")
+    assert _wait_for(lambda: not _asides(clone_path))
+    assert _ref_step_failures(emitted) == []
+
+
+def _reflogs_settings(repo_path: Path) -> list:
+    return _git(
+        repo_path, "config", "--local", "--get-all", "core.logAllRefUpdates"
+    ).stdout.split()
+
+
+def test_repack_of_a_clone_git_clone_made_replaces_its_two_reflogs_settings(
+    tmp_path, emitted, records
+):
+    """``git clone -c core.logAllRefUpdates=false``, with no -c for it before
+    ``clone``, leaves the setting in the clone's config twice: true, from the
+    init clone runs first, then false. git config refuses to set a key with
+    more than one value (status 5), so the repack replaces both: no ref step
+    fails or warns, the reflogs are set aside and removed, the refs packed.
+
+    Mutation: setting the key without --replace-all fails the config step
+    (counted, a WARNING) and leaves the reflogs.
+    """
+    remote_path = tmp_path / "remote.git"
+    remote = _init_remote(remote_path)
+    tip = _commit(remote, "package policy\n")
+    remote.free()
+    clone_path = tmp_path / "clone"
+    _git(
+        tmp_path,
+        "clone",
+        "--quiet",
+        "--no-checkout",
+        "--template=",
+        "-c",
+        "core.logAllRefUpdates=false",
+        str(remote_path),
+        str(clone_path),
+    )
+    # A ref of its own written with reflogs on: a loose ref, and its reflog.
+    _git(
+        clone_path,
+        "-c",
+        "core.logAllRefUpdates=true",
+        "update-ref",
+        "refs/heads/scopes/s1",
+        str(tip),
+    )
+    assert _reflogs_settings(clone_path) == ["true", "false"]  # the premise
+    assert "refs/heads/scopes/s1" in _loose_refs(clone_path)
+    assert "refs/heads/scopes/s1" in _reflogs(clone_path)
+    before = _refs(clone_path)
+
+    assert _repack_clone(clone_path, timeout=60) is True
+
+    assert _ref_step_failures(emitted) == []
+    assert [r["message"] for r in records if r["level"].name == "WARNING"] == []
+    assert _reflogs_settings(clone_path) == ["false"]
+    assert not (clone_path / ".git" / "logs").exists()
+    assert _wait_for(lambda: not _asides(clone_path))
+    assert _refs(clone_path) == before
+    assert _loose_refs(clone_path) == []
+
+
+@pytest.mark.asyncio
+async def test_a_scope_clone_writes_no_reflog(tmp_path):
+    """A scope clone is made with reflogs off, so neither its clone, nor a
+    fetch, nor a scope's own ref (refs/heads/scopes/<scope>) writes one:
+    libgit2 1.7.2 honours core.logAllRefUpdates=false.
+
+    Mutation: cloning without the repository callback that turns them off
+    writes a reflog for every ref.
+    """
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.sync()  # the clone
+
+    assert _reflogs_setting(scope.clone_path) == "false"
+    assert _reflogs(scope.clone_path) == []
+    tip = await scope.push_and_sync()
+    assert scope.notified[-1][1] == tip
+    assert _refs(scope.clone_path)["refs/heads/scopes/s1"] == tip
+    assert _reflogs(scope.clone_path) == []
+
+
+@pytest.mark.asyncio
+async def test_a_clone_whose_config_cannot_be_written_fails_as_a_clone_does(
+    tmp_path, monkeypatch, emitted, records
+):
+    """Turning reflogs off writes the new clone's config, which the clone
+    itself writes next (its remote): when that cannot be done (here another
+    process holds config.lock), the clone fails like any clone, counted, logged
+    and backed off, and leaves no repository behind, so the next sync that gets
+    to it clones again, with reflogs off.
+
+    Mutation: leaving the repository in place fails the next sync on a
+    remote that does not match.
+    """
+    real_init = pygit2.init_repository
+    made: list = []
+
+    def _init_then_lock_the_config(path, *args, **kwargs):
+        repo = real_init(path, *args, **kwargs)
+        lock = Path(os.fsdecode(path)) / ".git" / "config.lock"
+        lock.write_text("[core]\n")
+        made.append(lock)
+        return repo
+
+    scope = _ScopeRepo(tmp_path, "s1")
+    monkeypatch.setattr(
+        git_fetcher.pygit2, "init_repository", _init_then_lock_the_config
+    )
+    await scope.sync()
+    monkeypatch.setattr(git_fetcher.pygit2, "init_repository", real_init)
+
+    assert made, "the repository callback never ran; test proves nothing"
+    assert not scope.clone_path.exists()
+    assert scope.notified == []
+    failures = [
+        tags
+        for metric, tags in emitted["increment"]
+        if metric == "opal_server.scopes.git_op_failures"
+    ]
+    assert failures == [{"op": "clone", "reason": "git_error"}]
+    assert [
+        r
+        for r in records
+        if r["level"].name == "ERROR" and "Could not clone" in r["message"]
+    ]
+
+    await scope.sync(honor_backoff=False)
+    assert scope.notified[-1][1] == str(scope.tip)
+    assert _reflogs_setting(scope.clone_path) == "false"
+
+
+@pytest.mark.asyncio
+async def test_a_housekept_clone_serves_the_same_bundles(tmp_path):
+    """Packing the refs changes how they are stored, not what they name: the
+    full bundle and a diff bundle are the same before and after, and the next
+    sync finds the scope's own ref where it was (no change to tell)."""
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.fetched(2)
+    first, tip = scope.notified[0][1], str(scope.tip)
+    full = scope.fetcher.make_bundle()
+    diff = scope.fetcher.make_bundle(first)
+    assert (diff.old_hash, diff.hash) == (first, tip)  # the premise: a real diff
+    GitPolicyFetcher.forget_repo(str(scope.clone_path))
+
+    assert _repack_clone(scope.clone_path, timeout=60) is True
+    assert _loose_refs(scope.clone_path) == []
+
+    assert scope.fetcher.make_bundle() == full
+    assert scope.fetcher.make_bundle(first) == diff
+    await scope.sync()
+    assert scope.notified[-1][:2] == (tip, tip)
+
+
+@pytest.mark.asyncio
+async def test_libgit2_and_git_fetch_a_housekept_clone(tmp_path, monkeypatch):
+    """On a clone whose refs are all packed, the scope fetcher's libgit2 fetch
+    and its git fetch (SCOPES_GIT_FETCH_WITH_CLI) both move a branch, bring a
+    new one and, with prune on, remove one the remote deleted; neither writes a
+    reflog.
+
+    Prune goes on once the refs are packed: with the libgit2 fetch
+    pruning the ref steps leave them loose (_packing_refs), and a clone git
+    made has them packed.
+    """
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.fetched(2)
+    scope.remote.create_reference("refs/heads/env2", scope.tip)
+    await scope.sync()
+    GitPolicyFetcher.forget_repo(str(scope.clone_path))
+    assert _repack_clone(scope.clone_path, timeout=60) is True
+    assert _loose_refs(scope.clone_path) == []
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_PRUNE", True)
+    clone = scope.clone_path
+
+    # libgit2, through the scope fetcher
+    tip = str(scope.push())
+    scope.remote.create_reference("refs/heads/env3", scope.tip)
+    scope.remote.references.delete("refs/heads/env2")
+    await scope.sync()
+    refs = _refs(clone)
+    assert refs["refs/remotes/origin/master"] == tip
+    assert refs["refs/remotes/origin/env3"] == tip
+    assert "refs/remotes/origin/env2" not in refs
+    assert scope.notified[-1][1] == tip
+
+    # git, through the scope fetcher
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", True)
+    tip = str(scope.push())
+    scope.remote.create_reference("refs/heads/env4", scope.tip)
+    scope.remote.references.delete("refs/heads/env3")
+    await scope.sync()
+    refs = _refs(clone)
+    assert refs["refs/remotes/origin/master"] == tip
+    assert refs["refs/remotes/origin/env4"] == tip
+    assert "refs/remotes/origin/env3" not in refs
+    assert scope.notified[-1][1] == tip
+
+    assert _reflogs(clone) == []
+    _git(clone, "fsck", "--no-progress")
+
+
+@pytest.mark.asyncio
+async def test_a_clone_made_with_reflogs_is_cleaned_by_its_next_pass(tmp_path, emitted):
+    """A clone made before scope clones had reflogs off, its refs loose and a
+    reflog for each, is cleaned by the ref steps alone at the end of the first
+    pass after a fetch of it, well below the pack limit, and writes no reflog
+    after it."""
+    scope = _ScopeRepo(tmp_path, "s1")
+    pygit2.clone_repository(scope.fetcher._source.url, str(scope.clone_path)).free()
+    await scope.sync()
+    assert _reflogs_setting(scope.clone_path) == "true"  # the premise
+    assert "refs/heads/scopes/s1" in _reflogs(scope.clone_path)
+    assert "refs/heads/scopes/s1" in _loose_refs(scope.clone_path)
+    packs = _count_pack_files(scope.clone_path)
+
+    await scope.sync_pass()
+
+    assert _pack_refs_outcomes(emitted) == ["ok"]
+    assert _repack_outcomes(emitted) == []
+    assert _count_pack_files(scope.clone_path) == packs
+    assert _loose_refs(scope.clone_path) == []
+    assert not (scope.clone_path / ".git" / "logs").exists()
+    assert _reflogs_setting(scope.clone_path) == "false"
+    tip = await scope.push_and_sync()
+    assert scope.notified[-1][1] == tip
+    assert not (scope.clone_path / ".git" / "logs").exists()
+
+
+@pytest.mark.asyncio
+async def test_a_fresh_libgit2_clone_ends_packed_after_one_pass(
+    tmp_path, emitted, spans, records
+):
+    """A libgit2 clone keeps each ref in a file of its own (259 MB on 4 KB
+    blocks for a repository with 63,000 branches) until its first repack,
+    SCOPES_GIT_REPACK_PACK_LIMIT fetches later. The clone marks it due for the
+    ref steps alone, and the next pass runs them: every ref packed, with the
+    same target, and no pack merged. Counted, traced and logged apart from
+    repacks. Once its refs are packed, its fetches mark it no more.
+
+    Mutation: not marking a clone whose refs are unpacked, or not marking
+    after a clone, leaves the refs loose; running the whole repack below the
+    limit merges the clone's objects into a pack.
+    """
+    scope = _ScopeRepo(tmp_path, "s1")
+    for i in range(5):
+        scope.remote.create_reference(f"refs/heads/env{i}", scope.tip)
+
+    await scope.sync()  # the clone, outside a pass
+
+    clone = scope.clone_path
+    assert set(git_fetcher._repacks_due) == {scope.source_id}
+    assert "refs/remotes/origin/env4" in _loose_refs(clone)  # the premise
+    before = _refs(clone)
+    packs = _count_pack_files(clone)
+
+    await GitPolicyFetcher.run_due_repacks({scope.source_id})
+
+    assert _loose_refs(clone) == []
+    assert _refs(clone) == before
+    assert _count_pack_files(clone) == packs
+    assert _pack_refs_outcomes(emitted) == ["ok"]
+    assert _repack_outcomes(emitted) == []
+    assert len(spans.pack_refs_spans()) == 1
+    assert spans.repack_spans() == []
+    assert [
+        r
+        for r in records
+        if r["level"].name == "INFO" and "Packed the refs" in r["message"]
+    ]
+    await scope.sync()
+    assert git_fetcher._repacks_due == {}
+    tip = await scope.push_and_sync()
+    assert scope.notified[-1][1] == tip
+    assert git_fetcher._repacks_due == {}
+    assert _pack_refs_outcomes(emitted) == ["ok"]
+
+
+@pytest.mark.asyncio
+async def test_a_clone_whose_refs_were_packed_since_its_mark_is_left_alone(
+    tmp_path, emitted
+):
+    """The pass can end long after the clone that marked it, and something else
+    (a repack in another process, say) may have packed its refs since.
+
+    Mutation: not checking again at the due run runs the ref steps anyway.
+    """
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.sync()
+    assert set(git_fetcher._repacks_due) == {scope.source_id}
+    assert git_fetcher._pack_clone_refs(scope.clone_path, timeout=60) is True
+
+    await GitPolicyFetcher.run_due_repacks({scope.source_id})
+
+    assert _pack_refs_outcomes(emitted) == []
+    assert git_fetcher._repacks_due == {}
+
+
+@pytest.mark.asyncio
+async def test_a_clone_gone_since_its_mark_is_left_alone(tmp_path, emitted):
+    """A later sync of the pass can find the clone invalid and delete it, and
+    its clone again fail: the mark stays, for a clone that is no longer
+    there. The due run does nothing for it, and counts nothing.
+
+    Mutation: without the check that the clone is there, the ref steps run
+    on the missing path, fail, and cool the source down for an hour.
+    """
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.sync()
+    assert set(git_fetcher._repacks_due) == {scope.source_id}
+    GitPolicyFetcher.forget_repo(str(scope.clone_path))
+    shutil.rmtree(scope.clone_path)
+
+    await GitPolicyFetcher.run_due_repacks({scope.source_id})
+
+    assert _pack_refs_outcomes(emitted) == []
+    assert _repack_outcomes(emitted) == []
+    assert git_fetcher._repack_failed_at == {}
+    assert git_fetcher._repacks_due == {}
+
+
+def test_a_clone_that_cannot_be_read_has_no_ref_steps_due(tmp_path):
+    """The check never raises: the mark after a fetch never fails the sync,
+    and the due run never ends the pass's other repacks. A clone dir with mode
+    000, whose .git a stat then fails with EACCES.
+
+    Mutation: Path.is_dir(), which re-raises EACCES on Python 3.11-3.12,
+    raises PermissionError out of it.
+    """
+    clone = _fake_clone(tmp_path)
+    clone.chmod(0)
+    try:
+        if os.access(clone, os.X_OK):
+            pytest.skip("this user reads every directory (root)")
+        assert git_fetcher._ref_steps_due(clone) is False
+    finally:
+        clone.chmod(stat.S_IRWXU)
+
+
+@pytest.mark.asyncio
+async def test_a_git_clone_is_not_marked_for_its_refs(tmp_path, monkeypatch):
+    """Git clone writes the refs into packed-refs itself, so a clone made with
+    SCOPES_GIT_FETCH_WITH_CLI on is marked only at the pack limit."""
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", True)
+    scope = _ScopeRepo(tmp_path, "s1")
+
+    await scope.sync()
+
+    assert (scope.clone_path / ".git" / "packed-refs").exists()
+    assert git_fetcher._repacks_due == {}
+    tip = await scope.push_and_sync()
+    assert scope.notified[-1][1] == tip
+    assert git_fetcher._repacks_due == {}
+
+
+@pytest.mark.asyncio
+async def test_a_libgit2_fetch_that_prunes_keeps_the_refs_in_files_of_their_own(
+    tmp_path, monkeypatch, emitted
+):
+    """libgit2 removes a pruned ref's own file, but rewrites the whole
+    packed-refs file for each ref it prunes from it: pruning 3,000 refs from
+    a clone of a repository with 25,000 branches took 16 s packed, 0.5 s
+    loose. With the libgit2 fetch pruning (SCOPES_GIT_FETCH_WITH_CLI off,
+    SCOPES_GIT_FETCH_PRUNE on) the ref steps therefore leave the refs loose:
+    a fresh clone, made with no reflogs, is not marked for them, and the
+    repack at the pack limit merges the packs without packing a ref. The
+    pruning fetch after it removes the deleted branch.
+
+    Mutation: packing the refs anyway, in the repack or in a run of the ref
+    steps alone, fails it.
+    """
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_PRUNE", True)
+    scope = _ScopeRepo(tmp_path, "s1")
+    scope.remote.create_reference("refs/heads/env2", scope.tip)
+    clone = scope.clone_path
+
+    await scope.fetched(_LIMIT - 1)
+    assert git_fetcher._repacks_due == {}
+    await scope.push_and_sync()  # the fetch that reaches the limit
+
+    assert _repack_outcomes(emitted) == ["ok"]
+    assert _count_pack_files(clone) == 1
+    assert _pack_refs_outcomes(emitted) == []
+    assert not (clone / ".git" / "packed-refs").exists()
+    assert "refs/remotes/origin/env2" in _loose_refs(clone)
+    scope.remote.references.delete("refs/heads/env2")
+    tip = await scope.push_and_sync()
+    refs = _refs(clone)
+    assert "refs/remotes/origin/env2" not in refs
+    assert refs["refs/remotes/origin/master"] == tip
+    assert scope.notified[-1][1] == tip
+    assert _reflogs(clone) == []
+
+
+@pytest.mark.asyncio
+async def test_with_libgit2_pruning_the_ref_steps_alone_remove_the_reflogs(
+    tmp_path, monkeypatch, emitted, records
+):
+    """A clone made with reflogs on (by an earlier version) still gets the ref
+    steps alone at the end of the next pass with the libgit2 fetch pruning:
+    they turn its reflogs off and remove them, leave its refs in files of
+    their own, and are logged as such. Its fetches mark it no more after it.
+
+    Mutation: marking a clone for its loose refs whatever the settings runs
+    the ref steps after every fetch.
+    """
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_PRUNE", True)
+    scope = _ScopeRepo(tmp_path, "s1")
+    clone = scope.clone_path
+    pygit2.clone_repository(scope.fetcher._source.url, str(clone)).free()
+    await scope.sync()
+    assert "refs/heads/scopes/s1" in _reflogs(clone)  # the premise
+    assert set(git_fetcher._repacks_due) == {scope.source_id}
+
+    await GitPolicyFetcher.run_due_repacks({scope.source_id})
+
+    assert _pack_refs_outcomes(emitted) == ["ok"]
+    assert _reflogs_setting(clone) == "false"
+    assert not (clone / ".git" / "logs").exists()
+    assert _wait_for(lambda: not _asides(clone))
+    assert "refs/heads/scopes/s1" in _loose_refs(clone)
+    assert not (clone / ".git" / "packed-refs").exists()
+    assert [
+        r
+        for r in records
+        if r["level"].name == "INFO" and "Removed the reflogs of" in r["message"]
+    ]
+    tip = await scope.push_and_sync()
+    assert scope.notified[-1][1] == tip
+    assert git_fetcher._repacks_due == {}
+    assert _pack_refs_outcomes(emitted) == ["ok"]
+    assert not (clone / ".git" / "logs").exists()
+
+
+@pytest.mark.asyncio
+async def test_with_libgit2_pruning_a_failed_config_alone_waits_out_the_cooldown(
+    tmp_path, monkeypatch, emitted, records
+):
+    """With the refs left loose, git config is the one git of a run of the
+    ref steps alone: when it fails, the run fails, logged with git's stderr
+    and cooled down as a failed pack-refs is, rather than run again at the
+    end of every pass.
+
+    Mutation: only warning, as when a repack follows, runs it on every pass.
+    """
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_PRUNE", True)
+    real_git = shutil.which("git")
+    state = tmp_path / "state"
+    state.mkdir()
+    _install_git_shim(
+        tmp_path,
+        monkeypatch,
+        'if [ "$3" = config ]; then\n'
+        f'  echo x >> "{state}/config"\n'
+        "  echo 'error: could not lock config file' >&2\n"
+        "  exit 255\n"
+        "fi\n"
+        f'exec "{real_git}" "$@"\n',
+        refs_steps=True,
+    )
+    scope = _ScopeRepo(tmp_path, "s1")
+    pygit2.clone_repository(scope.fetcher._source.url, str(scope.clone_path)).free()
+    await scope.sync()
+
+    await GitPolicyFetcher.run_due_repacks({scope.source_id})
+
+    assert _pack_refs_outcomes(emitted) == ["error"]
+    assert scope.source_id in git_fetcher._repack_failed_at
+    [warning] = [
+        r
+        for r in records
+        if r["level"].name == "WARNING" and "Removing the reflogs" in r["message"]
+    ]
+    assert "git config exited with status 255" in warning["message"]
+    assert "could not lock config file" in warning["message"]
+    await scope.sync_pass()
+    await scope.push_and_sync()
+    assert (state / "config").read_text().split() == ["x"]
+    assert _pack_refs_outcomes(emitted) == ["error"]
+    assert _ref_step_failures(emitted) == ["config"]
+    assert (scope.clone_path / ".git" / "logs").exists()
+
+
+@pytest.mark.asyncio
+async def test_the_ref_steps_alone_wait_while_a_git_op_holds_the_clone(
+    tmp_path, emitted
+):
+    """A clone due for its ref steps alone whose lock a git command-line op
+    holds (one of another process, say) is skipped as a repack is: counted as
+    git_op_skipped with reason clone_busy, its mark kept, and packed by the
+    next pass once the lock is free.
+
+    Mutation: letting the busy clone fail the run, or dropping the mark,
+    fails it.
+    """
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.sync()  # the clone: marked for its ref steps
+    assert set(git_fetcher._repacks_due) == {scope.source_id}
+    holder = git_cli.take_clone_lock(scope.clone_path)
+    assert holder is not None
+    try:
+        await GitPolicyFetcher.run_due_repacks({scope.source_id})
+    finally:
+        git_cli.drop_clone_lock(holder)
+
+    assert {"reason": "clone_busy"} in _skips(emitted)
+    assert set(git_fetcher._repacks_due) == {scope.source_id}
+    assert _pack_refs_outcomes(emitted) == []
+    assert git_fetcher._repack_failed_at == {}
+    assert "refs/remotes/origin/master" in _loose_refs(scope.clone_path)
+
+    await GitPolicyFetcher.run_due_repacks({scope.source_id})
+
+    assert _pack_refs_outcomes(emitted) == ["ok"]
+    assert _loose_refs(scope.clone_path) == []
+
+
+@pytest.mark.asyncio
+async def test_a_failed_pack_refs_alone_waits_out_the_cooldown(
+    tmp_path, monkeypatch, emitted, records
+):
+    """With nothing else to run, a pack-refs that fails fails the run, which is
+    counted, logged with git's stderr and cooled down as a failed repack is,
+    rather than run again at the end of every pass.
+
+    Mutation: only warning, as when a repack follows, runs it on every pass.
+    """
+    real_git = shutil.which("git")
+    state = tmp_path / "state"
+    state.mkdir()
+    _install_git_shim(
+        tmp_path,
+        monkeypatch,
+        'if [ "$3" = pack-refs ]; then\n'
+        f'  echo x >> "{state}/pack-refs"\n'
+        "  echo 'fatal: out of memory' >&2\n"
+        "  exit 128\n"
+        "fi\n"
+        f'exec "{real_git}" "$@"\n',
+        refs_steps=True,
+    )
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.sync()
+
+    await GitPolicyFetcher.run_due_repacks({scope.source_id})
+
+    assert _pack_refs_outcomes(emitted) == ["error"]
+    assert scope.source_id in git_fetcher._repack_failed_at
+    [warning] = [
+        r
+        for r in records
+        if r["level"].name == "WARNING" and "Packing the refs" in r["message"]
+    ]
+    assert "git pack-refs exited with status 128" in warning["message"]
+    assert "out of memory" in warning["message"]
+    await scope.sync_pass()
+    await scope.push_and_sync()
+    assert (state / "pack-refs").read_text().split() == ["x"]
+    assert _pack_refs_outcomes(emitted) == ["error"]
+    assert _ref_step_failures(emitted) == ["pack_refs"]
+
+
+def test_packed_refs_keep_annotated_tags_peeled_and_head_symbolic(tmp_path):
+    """git pack-refs writes an annotated tag followed by a "^" line with the
+    commit it peels to, and leaves a symbolic ref (refs/remotes/origin/HEAD)
+    in a file of its own: a fresh libgit2 handle reads each as before, and a
+    libgit2 fetch after it moves the branch that HEAD names."""
+    clone_path, commits = _clone_with_fetch_packs(tmp_path, fetches=1)
+    clone = pygit2.Repository(str(clone_path))
+    tag = clone.create_tag(
+        "v1", commits[0], pygit2.enums.ObjectType.COMMIT, _SIG, "release"
+    )
+    clone.create_reference("refs/tags/light", commits[1])
+    clone.free()
+    before = _refs(clone_path)
+
+    assert git_fetcher._pack_clone_refs(clone_path, timeout=60) is True
+
+    assert _loose_refs(clone_path) == []
+    assert _refs(clone_path) == before
+    packed = (clone_path / ".git" / "packed-refs").read_text().splitlines()
+    line = packed.index(f"{tag} refs/tags/v1")
+    assert packed[line + 1] == f"^{commits[0]}"
+    remote = pygit2.Repository(str(tmp_path / "remote.git"))
+    tip = _commit(remote, "package policy\n# after packing\n", remote.head.target)
+    remote.free()
+    fresh = pygit2.Repository(str(clone_path))
+    try:
+        ref = fresh.lookup_reference("refs/tags/v1")
+        assert ref.target == tag
+        assert ref.peel(pygit2.Commit).id == commits[0]
+        assert fresh.revparse_single("v1^{commit}").id == commits[0]
+        assert fresh.lookup_reference("refs/tags/light").target == commits[1]
+        head = fresh.lookup_reference("refs/remotes/origin/HEAD")
+        assert head.type == pygit2.enums.ReferenceType.SYMBOLIC
+        assert head.target == "refs/remotes/origin/master"
+        assert head.resolve().target == commits[1]
+        fresh.remotes["origin"].fetch()
+        assert (
+            fresh.lookup_reference("refs/remotes/origin/HEAD").resolve().target == tip
+        )
+    finally:
+        fresh.free()
+    _git(clone_path, "fsck", "--no-progress")
+
+
+def test_readers_find_every_ref_while_pack_refs_runs(tmp_path):
+    """git pack-refs writes packed-refs before it removes any ref's own file,
+    and libgit2 looks for a ref's file before packed-refs, which it reloads
+    once it changes: a handle opened at any moment of the pack finds every
+    ref, with its target."""
+    clone_path, commits = _clone_with_fetch_packs(tmp_path, fetches=1)
+    clone = pygit2.Repository(str(clone_path))
+    expected = {f"refs/remotes/origin/b{i:04d}": commits[i % 2] for i in range(3000)}
+    for name, target in expected.items():
+        clone.create_reference(name, target)
+    clone.free()
+    sample = sorted(expected)[::61]
+    done = threading.Event()
+    lookups: list = []
+    wrong: list = []
+
+    def _read() -> None:
+        while not done.is_set():
+            fresh = pygit2.Repository(str(clone_path))
+            try:
+                for name in sample:
+                    try:
+                        target = fresh.lookup_reference(name).target
+                    except KeyError:
+                        target = None
+                    if target != expected[name]:
+                        wrong.append((name, target))
+                    lookups.append(name)
+            finally:
+                fresh.free()
+            # Readers that never sleep starve every other thread of the GIL:
+            # the repack's own Python steps then take minutes.
+            time.sleep(0.001)
+
+    readers = [threading.Thread(target=_read) for _ in range(4)]
+    for reader in readers:
+        reader.start()
+    try:
+        assert _wait_for(lambda: bool(lookups))
+        assert git_fetcher._pack_clone_refs(clone_path, timeout=60) is True
+    finally:
+        done.set()
+        for reader in readers:
+            reader.join(10)
+
+    assert _loose_refs(clone_path) == []
+    assert wrong == []
+
+
+def test_reflogs_are_removed_once_the_clone_lock_is_released(tmp_path, monkeypatch):
+    """Tens of thousands of reflog files can take longer to remove than the
+    repack's timeout on a slow volume, so they are moved aside in one rename
+    inside it, and removed on a thread of their own once the repack has
+    released the clone's lock: neither the clone's next op nor the repack's
+    caller waits for them.
+
+    Mutation: removing them in place leaves nothing set aside; removing them
+    before the repack returns holds it up until the removal ends; not
+    removing them leaves them set aside.
+    """
+    clone_path, _ = _clone_with_fetch_packs(tmp_path, fetches=2)
+    gate = threading.Event()
+    lock_was_free: list = []
+    real_remove = git_cli.remove_tree
+
+    def _slow_remove(path: Path) -> bool:
+        fd = git_cli.take_clone_lock(clone_path)
+        lock_was_free.append(fd is not None)
+        if fd is not None:
+            git_cli.drop_clone_lock(fd)
+        gate.wait(10)
+        return real_remove(path)
+
+    monkeypatch.setattr(git_cli, "remove_tree", _slow_remove)
+    try:
+        assert _repack_clone(clone_path, timeout=60) is True
+
+        assert not (clone_path / ".git" / "logs").exists()
+        assert len(_asides(clone_path)) == 1
+        assert _wait_for(lambda: bool(lock_was_free))
+        assert lock_was_free == [True]
+    finally:
+        gate.set()
+    assert _wait_for(lambda: not _asides(clone_path))
+
+
+def test_reflogs_left_set_aside_are_removed_by_the_next_repack_not_the_preload(
+    tmp_path,
+):
+    """A process that died between the rename and the end of the removal leaves
+    the reflogs set aside, with no record of an op. The pre-fork preload's
+    sweep leaves them: it runs in the gunicorn master before any worker
+    exists, and tens of thousands of files per clone would hold up the start.
+    The next repack of the clone removes them with its own, once it has let
+    go of the clone.
+
+    Mutation: removing them in the preload's sweep, or removing only the dir
+    this repack set aside, fails it.
+    """
+    clone_path, _ = _clone_with_fetch_packs(tmp_path, fetches=2)
+    clones = GitPolicyFetcher.base_dir(tmp_path / "base")
+    clones.mkdir(parents=True)
+    clone_path = Path(shutil.move(clone_path, clones / "src"))
+    git_dir = clone_path / ".git"
+    left = git_dir / f"{git_cli.REFLOGS_SET_ASIDE}dead"
+    shutil.copytree(git_dir / "logs", left)
+
+    git_fetcher.sweep_scope_clone_leftovers(tmp_path / "base")
+
+    assert left.exists()
+    assert _repack_clone(clone_path, timeout=60) is True
+    assert _wait_for(lambda: not left.exists())
+
+
+def _reflog_thread_ahead_of_unlink(monkeypatch) -> None:
+    """os.unlink with the reflog removal thread running ahead of it in the same
+    directory: by the first reflog file a delete removes, the thread has
+    removed the others, which the delete has already listed."""
+    real_unlink = os.unlink
+    ahead: list = []
+
+    def _unlink(path, *, dir_fd=None):
+        name = os.path.basename(path)
+        if name.startswith("reflog-") and not ahead:
+            ahead.append(name)
+            where = dir_fd if dir_fd is not None else os.path.dirname(path)
+            for other in os.listdir(where):
+                if other.startswith("reflog-") and other != name:
+                    if dir_fd is None:
+                        other = os.path.join(where, other)
+                    real_unlink(other, dir_fd=dir_fd)
+        real_unlink(path, dir_fd=dir_fd)
+
+    monkeypatch.setattr(os, "unlink", _unlink)
+
+
+@pytest.mark.parametrize("by", ["recovery", "delete"])
+@pytest.mark.asyncio
+async def test_a_clone_delete_beside_the_reflog_removal_thread_removes_it_all(
+    tmp_path, monkeypatch, by
+):
+    """The reflog removal thread runs outside the clone's lock, so a delete of
+    the clone (invalid-repo recovery, a DELETE) can walk the reflogs the thread
+    is removing, and find gone an entry it listed. On Python 3.11 and 3.12
+    rmtree then stops with FileNotFoundError and leaves the rest, and the
+    callers take that error for the clone being gone already.
+
+    Mutation: a plain rmtree leaves the clone's directory.
+    """
+    clone = tmp_path / "git_sources" / "src"
+    aside = clone / ".git" / f"{git_cli.REFLOGS_SET_ASIDE}0001"
+    aside.mkdir(parents=True)
+    for i in range(3):
+        (aside / f"reflog-{i}").write_text("0" * 40 + "\n")
+    (clone / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
+    _reflog_thread_ahead_of_unlink(monkeypatch)
+
+    if by == "recovery":
+        removed = await run_sync(git_fetcher._rmtree_unless_locked, str(clone))
+    else:
+        removed = await git_fetcher.remove_clone_dir_exclusive(str(clone))
+
+    assert removed is True
+    assert not clone.exists()
+
+
+def test_a_config_step_that_finds_a_live_lock_leaves_it_and_still_packs_the_refs(
+    tmp_path, records, emitted
+):
+    """Git config fails on a config.lock another process holds (no op recorded
+    for the clone, so a live one): that lock stays, since git only leaves its
+    own when killed; the reflogs stay, since git would go on appending to them
+    with reflogs still on; the refs are packed all the same, the repack runs,
+    the failure is counted, and the record cleared.
+
+    Mutation: removing the reflogs anyway, skipping pack-refs, removing the
+    lock after an exit with a status, or failing the repack each fail it.
+    """
+    clone_path, _ = _clone_with_fetch_packs(tmp_path, fetches=2)
+    config_lock = clone_path / ".git" / "config.lock"
+    config_lock.write_text("[core]\n")
+    assert "refs/remotes/origin/master" in _reflogs(clone_path)  # the premise
+
+    assert _repack_clone(clone_path, timeout=60) is True
+
+    assert _count_pack_files(clone_path) == 1
+    assert _loose_refs(clone_path) == []
+    assert "refs/remotes/origin/master" in _reflogs(clone_path)
+    assert _lock_files(clone_path) == ["config.lock"]
+    [warning] = [
+        r
+        for r in records
+        if r["level"].name == "WARNING" and "git config" in r["message"]
+    ]
+    assert "lock" in warning["message"]
+    assert _ref_step_failures(emitted) == ["config"]
+    assert _record(clone_path) == ""
+
+
+def test_a_live_holders_ref_locks_survive_the_repack(tmp_path, records, emitted):
+    """With no op recorded for the clone, a packed-refs.lock or ref lock in it
+    may be a live op's (a libgit2 one takes no clone lock): the repack leaves
+    them at its start, its pack-refs then exits 128 on packed-refs.lock, and
+    after an exit with a status they are still not the repack's to remove. The
+    refs stay loose, it is counted, and git repack runs.
+
+    Mutation: removing what is left at the start whatever the record says, or
+    after any failed step, removes the live holder's locks.
+    """
+    clone_path, _ = _clone_with_fetch_packs(tmp_path, fetches=2)
+    git_dir = clone_path / ".git"
+    held = [
+        git_dir / "packed-refs.lock",
+        git_dir / "refs" / "remotes" / "origin" / "x.lock",
+    ]
+    for lock in held:
+        lock.write_text("held\n")
+
+    assert _repack_clone(clone_path, timeout=60) is True
+
+    assert [lock for lock in held if not lock.exists()] == []
+    assert "refs/remotes/origin/master" in _loose_refs(clone_path)
+    assert _count_pack_files(clone_path) == 1
+    assert _ref_step_failures(emitted) == ["pack_refs"]
+    [warning] = [
+        r
+        for r in records
+        if r["level"].name == "WARNING" and "pack-refs" in r["message"]
+    ]
+    assert "status 128" in warning["message"]
+    assert "packed-refs.lock" in warning["message"]
+
+
+def test_locks_a_dead_op_left_are_removed_whatever_their_age(tmp_path):
+    """When the clone's lock file records an op that never finished, its
+    process died with its git running: the locks in the clone are that git's,
+    however fresh, and go before the ref steps run, which then pack every ref.
+
+    Mutation: not removing them first leaves packed-refs.lock in place and
+    the refs loose (pack-refs fails on it).
+    """
+    clone_path, _ = _clone_with_fetch_packs(tmp_path, fetches=2)
+    git_dir = clone_path / ".git"
+    locks = [
+        git_dir / "packed-refs.lock",
+        git_dir / "config.lock",
+        git_dir / "refs" / "remotes" / "origin" / "master.lock",
+    ]
+    for lock in locks:
+        lock.touch()
+    _record_a_dead_op(clone_path)
+
+    assert _repack_clone(clone_path, timeout=60) is True
+
+    assert [lock for lock in locks if lock.exists()] == []
+    assert _loose_refs(clone_path) == []
+    assert _reflogs_setting(clone_path) == "false"
+    assert _count_pack_files(clone_path) == 1
+    assert _record(clone_path) == ""
+
+
+def test_a_repack_stays_recorded_while_what_a_dead_op_left_cannot_be_removed(
+    tmp_path,
+):
+    """Something a dead op left that cannot be removed (a directory where
+    packed-refs.new would be) keeps the repack recorded in the clone's lock
+    file, for the next op on the clone to try again; the repack itself is done,
+    and once that is gone the next repack clears the record.
+
+    Mutation: clearing the record whatever the clean-up managed fails it.
+    """
+    clone_path, _ = _clone_with_fetch_packs(tmp_path, fetches=2)
+    git_dir = clone_path / ".git"
+    stuck = git_dir / "packed-refs.new"
+    (stuck / "x").mkdir(parents=True)
+    _record_a_dead_op(clone_path)
+
+    assert _repack_clone(clone_path, timeout=60) is True
+
+    assert _count_pack_files(clone_path) == 1
+    assert _record(clone_path).strip() == str(os.getpid())
+    shutil.rmtree(stuck)
+    assert _repack_clone(clone_path, timeout=60) is True
+    assert _record(clone_path) == ""
+    assert _loose_refs(clone_path) == []
+
+
+def test_reflogs_that_cannot_be_removed_are_counted_and_the_repack_still_runs(
+    tmp_path, records, emitted
+):
+    """Reflogs whose removal fails (a directory in them the server cannot write
+    to) stay set aside: a warning, counted, and the repack is done all the
+    same. Once they can go, the next repack removes them with its own.
+
+    Mutation: not counting the failure, or failing the repack on it, fails it.
+    """
+    if os.geteuid() == 0:
+        pytest.skip("root removes them anyway")
+    clone_path, _ = _clone_with_fetch_packs(tmp_path, fetches=2)
+    git_dir = clone_path / ".git"
+    origin_logs = Path("refs") / "remotes" / "origin"
+    (git_dir / "logs" / origin_logs).chmod(0o500)
+    try:
+        assert _repack_clone(clone_path, timeout=60) is True
+
+        assert _count_pack_files(clone_path) == 1
+        assert _loose_refs(clone_path) == []
+        assert _reflogs_setting(clone_path) == "false"
+        assert _wait_for(lambda: _ref_step_failures(emitted) == ["reflogs"])
+        [aside] = _asides(clone_path)
+        assert [
+            r
+            for r in records
+            if r["level"].name == "WARNING" and str(aside) in r["message"]
+        ]
+    finally:
+        for stuck in [a / origin_logs for a in _asides(clone_path)]:
+            stuck.chmod(0o700)
+
+    assert _repack_clone(clone_path, timeout=60) is True
+    assert _wait_for(lambda: not _asides(clone_path))
+    assert _ref_step_failures(emitted) == ["reflogs"]
+
+
+def test_reflogs_that_cannot_be_moved_aside_stay_and_are_counted(
+    tmp_path, monkeypatch, records, emitted
+):
+    """A rename of logs/ that fails leaves the reflogs where they are, which is
+    a warning, counted, and the refs are still packed and the repack done.
+
+    Mutation: not counting it, or failing the repack on it, fails it.
+    """
+    clone_path, _ = _clone_with_fetch_packs(tmp_path, fetches=2)
+    real_rename = os.rename
+
+    def _rename(src, dst, **kwargs):
+        if Path(src).name == "logs":
+            raise PermissionError(errno.EACCES, "Permission denied", str(src))
+        return real_rename(src, dst, **kwargs)
+
+    monkeypatch.setattr(os, "rename", _rename)
+
+    assert _repack_clone(clone_path, timeout=60) is True
+
+    assert "refs/remotes/origin/master" in _reflogs(clone_path)
+    assert _loose_refs(clone_path) == []
+    assert _count_pack_files(clone_path) == 1
+    assert _ref_step_failures(emitted) == ["reflogs"]
+    assert [
+        r
+        for r in records
+        if r["level"].name == "WARNING" and "Could not move" in r["message"]
+    ]
+
+
+@pytest.mark.parametrize("refs_only", [False, True], ids=["repack", "refs-only"])
+def test_a_config_step_stopped_at_its_share_of_the_timeout_leaves_no_config_lock(
+    tmp_path, monkeypatch, emitted, refs_only
+):
+    """Git config holding config.lock past the ref steps' share of the timeout
+    is stopped like pack-refs, and its lock removed once its group is gone, the
+    record cleared. Before a repack, pack-refs is skipped and git repack runs;
+    with the ref steps alone, TimeoutError names the step. Counted as a failed
+    ref step either way.
+
+    Mutation: not cleaning up after the stop leaves config.lock; not waiting
+    for the watchdog after the SIGKILL leaves the locks held under CPU load;
+    raising before counting misses the ref steps alone.
+    """
+    clone_path, _ = _clone_with_fetch_packs(tmp_path, fetches=2)
+    real_git = shutil.which("git")
+    real_path = os.environ["PATH"]
+    state = tmp_path / "state"
+    state.mkdir()
+    _install_git_shim(
+        tmp_path,
+        monkeypatch,
+        f'echo "$3" >> "{state}/ran"\n'
+        'if [ "$3" = config ]; then\n'
+        '  : > "$2/.git/config.lock"\n'
+        "  trap '' TERM\n"
+        f'  : > "{state}/ready"\n'
+        "  while :; do /bin/sleep 1; done\n"
+        "fi\n"
+        f'exec "{real_git}" "$@"\n',
+        refs_steps=True,
+    )
+
+    # Timeouts long enough for the shim to start on a loaded machine: the
+    # deadline runs from before git config is spawned.
+    if refs_only:
+        with pytest.raises(TimeoutError, match="timeout ran out during git config"):
+            git_fetcher._pack_clone_refs(clone_path, timeout=6, term_grace=0.5)
+    else:
+        assert _repack_clone(clone_path, timeout=8, term_grace=0.5) is True
+        assert _count_pack_files(clone_path) == 1
+    assert _ref_step_failures(emitted) == ["config"]
+
+    assert (state / "ready").exists(), "git config never ran; test proves nothing"
+    assert "pack-refs" not in (state / "ran").read_text().split()
+    assert _lock_files(clone_path) == []
+    assert _record(clone_path) == ""
+    # Nothing of the SIGKILLed group, its watchdog included (which sh does
+    # not reap then), still holds the repack's or the clone's lock.
+    assert _free_once_a_stop_returns(
+        lambda: _lock_is_free(git_fetcher._repack_lock_dir(clone_path))
+    )
+    assert _free_once_a_stop_returns(lambda: _clone_lock_is_free(clone_path))
+    monkeypatch.setenv("PATH", real_path)
+    assert _repack_clone(clone_path, timeout=60) is True
+    assert _loose_refs(clone_path) == []
+
+
+def test_an_interrupted_ref_step_stops_its_git_and_removes_its_locks(
+    tmp_path, monkeypatch
+):
+    """Anything but the deadline unwinding through a ref step (a
+    KeyboardInterrupt in a foreground run) stops its git's group with no grace,
+    removes what it left once it is gone, clears the record, and is re-raised.
+
+    Mutation: re-raising without stopping git leaves it running.
+    """
+    clone_path, _ = _clone_with_fetch_packs(tmp_path, fetches=2)
+    state = tmp_path / "state"
+    state.mkdir()
+    _install_git_shim(
+        tmp_path,
+        monkeypatch,
+        'if [ "$3" = pack-refs ]; then\n'
+        '  : > "$2/.git/packed-refs.lock"\n'
+        f'  echo $$ > "{state}/git.pid"\n'
+        "  exec /bin/sleep 30\n"
+        "fi\n"
+        f'exec "{shutil.which("git")}" "$@"\n',
+        refs_steps=True,
+    )
+    real_communicate = subprocess.Popen.communicate
+    interrupted: list = []
+
+    def _communicate(self, *args, **kwargs):
+        if "pack-refs" in self.args and not interrupted:
+            interrupted.append(True)
+            assert _wait_for(lambda: (state / "git.pid").exists())
+            raise KeyboardInterrupt
+        return real_communicate(self, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess.Popen, "communicate", _communicate)
+
+    with pytest.raises(KeyboardInterrupt):
+        _repack_clone(clone_path, timeout=60)
+
+    assert _wait_gone(int((state / "git.pid").read_text()))
+    assert _lock_files(clone_path) == []
+    assert _record(clone_path) == ""
+
+
+_KILL_TEST_BRANCHES = 1000
+
+
+def _timed_repack(clone_path: Path, monkeypatch) -> dict:
+    """Repack ``clone_path``, timing each git command of it.
+
+    Returns {its subcommand: (start, end)}, in seconds from the repack's
+    start.
+    """
+    real_run = git_fetcher._RepackStep.run
+    started = time.monotonic()
+    times: dict = {}
+
+    def _run(self, argv, **kwargs):
+        begin = time.monotonic() - started
+        try:
+            return real_run(self, argv, **kwargs)
+        finally:
+            command = next(a for a in argv if a in ("config", "pack-refs", "repack"))
+            times[command] = (begin, time.monotonic() - started)
+
+    monkeypatch.setattr(git_fetcher._RepackStep, "run", _run)
+    try:
+        assert _repack_clone(clone_path, timeout=60) is True
+    finally:
+        monkeypatch.setattr(git_fetcher._RepackStep, "run", real_run)
+    return times
+
+
+def test_a_repack_killed_anywhere_in_pack_refs_loses_no_ref(
+    tmp_path, monkeypatch, emitted
+):
+    """Its pack-refs SIGKILLed (no grace) at points spread over its run, by the
+    ref steps' share of the timeout running out, a repack leaves every ref with
+    the target it had, for git and for libgit2, no lock and no record behind,
+    and a clone that fsck accepts and the next repack packs."""
+    clone_path, commits = _clone_with_fetch_packs(tmp_path, fetches=2)
+    clone = pygit2.Repository(str(clone_path))
+    for i in range(_KILL_TEST_BRANCHES):
+        clone.create_reference(f"refs/remotes/origin/b{i:05d}", commits[i % 3])
+    clone.free()
+    template = tmp_path / "template"
+    shutil.copytree(clone_path, template / "clone", symlinks=True)
+    before = _refs(template / "clone")
+    assert len(before) > _KILL_TEST_BRANCHES  # the premise
+    calibration = tmp_path / "calibration"
+    shutil.copytree(template, calibration, symlinks=True)
+    times = _timed_repack(calibration / "clone", monkeypatch)
+    start, end = times["pack-refs"]
+    assert end - start > 0.01, f"pack-refs too quick to stop part-way: {times}"
+    share = git_fetcher._REF_STEPS_TIMEOUT_SHARE
+
+    states = []
+    for i, fraction in enumerate((0.05, 0.25, 0.5, 0.75, 0.95, 1.2)):
+        work = tmp_path / f"kill-{i}"
+        shutil.copytree(template, work, symlinks=True)
+        clone_path = work / "clone"
+        refs_deadline = start + (end - start) * fraction
+        stopped_before = len(_ref_step_failures(emitted))
+        # The ref steps' share runs out at refs_deadline; git repack gets an
+        # hour.
+        timeout = max(refs_deadline / share, refs_deadline + 3600)
+        monkeypatch.setattr(
+            git_fetcher, "_REF_STEPS_TIMEOUT_SHARE", refs_deadline / timeout
+        )
+        done = _repack_clone(clone_path, timeout=timeout, term_grace=0)
+        monkeypatch.setattr(git_fetcher, "_REF_STEPS_TIMEOUT_SHARE", share)
+        stopped = len(_ref_step_failures(emitted)) > stopped_before
+        state = (fraction, done, stopped, len(_loose_refs(clone_path)))
+        states.append(state)
+
+        assert done is True, state
+        assert _refs(clone_path) == before, state
+        repo = pygit2.Repository(str(clone_path))
+        try:
+            for name, target in before.items():
+                if not name.endswith("/HEAD"):
+                    assert str(repo.references[name].target) == target, (name, state)
+        finally:
+            repo.free()
+        assert _lock_files(clone_path) == [], state
+        assert _record(clone_path) == "", state
+        _git(clone_path, "fsck", "--no-progress")
+        assert _repack_clone(clone_path, timeout=60) is True
+        assert _loose_refs(clone_path) == []
+        assert _refs(clone_path) == before
+    assert any(stopped for _, _, stopped, _ in states), states
+
+
+@pytest.mark.parametrize("refs_only", [False, True], ids=["repack", "refs-only"])
+def test_pack_refs_stopped_at_its_share_of_the_timeout_leaves_a_usable_clone(
+    tmp_path, monkeypatch, emitted, records, refs_only
+):
+    """Git pack-refs holds packed-refs.lock while it writes, and a ref's lock
+    while it removes that ref's file. Stopped with SIGKILL it leaves them, and
+    every later pack-refs, and every fetch that updates or prunes such a ref,
+    fails on them. They are removed once its process group is gone, as after a
+    stopped fetch (PER-17993). Before a repack the stop is a warning, counted,
+    and git repack then runs with the rest of the timeout; with the ref steps
+    alone TimeoutError names pack-refs, and the stop is counted too.
+
+    Mutation: not removing the locks after the stop fails the lock asserts
+    and the fetch after; cancelling git repack fails "repack"; raising
+    before counting fails "refs-only".
+    """
+    clone_path, _ = _clone_with_fetch_packs(tmp_path, fetches=2)
+    real_git = shutil.which("git")
+    real_path = os.environ["PATH"]
+    state = tmp_path / "state"
+    state.mkdir()
+    ref_lock = clone_path / ".git" / "refs" / "remotes" / "origin" / "master.lock"
+    _install_git_shim(
+        tmp_path,
+        monkeypatch,
+        f'echo "$3" >> "{state}/ran"\n'
+        'if [ "$3" = pack-refs ]; then\n'
+        '  : > "$2/.git/packed-refs.lock"\n'
+        f'  : > "{ref_lock}"\n'
+        "  trap '' TERM\n"
+        f'  : > "{state}/ready"\n'
+        "  while :; do /bin/sleep 1; done\n"
+        "fi\n"
+        f'exec "{real_git}" "$@"\n',
+        refs_steps=True,
+    )
+
+    # Timeouts long enough for git config and then the shim to start on a
+    # loaded machine: the deadline runs from before git config is spawned.
+    if refs_only:
+        with pytest.raises(TimeoutError, match="timeout ran out during git pack-refs"):
+            git_fetcher._pack_clone_refs(clone_path, timeout=6, term_grace=0.5)
+        assert _ref_step_failures(emitted) == ["pack_refs"]
+    else:
+        assert _repack_clone(clone_path, timeout=8, term_grace=0.5) is True
+        assert _count_pack_files(clone_path) == 1
+        assert _ref_step_failures(emitted) == ["pack_refs"]
+        stopped = "the ref steps' 4s of the repack's 8s timeout ran out during git"
+        assert [
+            r
+            for r in records
+            if r["level"].name == "WARNING" and f"{stopped} pack-refs" in r["message"]
+        ]
+
+    assert (state / "ready").exists(), "pack-refs never ran; test proves nothing"
+    assert not (clone_path / ".git" / "packed-refs.lock").exists()
+    assert not ref_lock.exists()
+    assert git_fetcher._repack_lock_fds == set()
+
+    remote = pygit2.Repository(str(tmp_path / "remote.git"))
+    tip = _commit(remote, "package policy\n# after the stop\n", remote.head.target)
+    remote.free()
+    clone = pygit2.Repository(str(clone_path))
+    clone.remotes["origin"].fetch(prune=pygit2.enums.FetchPrune.PRUNE)
+    assert clone.references["refs/remotes/origin/master"].target == tip
+    clone.free()
+    monkeypatch.setenv("PATH", real_path)
+    assert _repack_clone(clone_path, timeout=60) is True
+    assert _loose_refs(clone_path) == []
+
+
+def test_pack_refs_that_exits_0_but_leaves_the_refs_loose_is_counted(
+    tmp_path, records, emitted
+):
+    """Git pack-refs exits 0 when it cannot remove a ref's own file (here a
+    directory of refs the server cannot write to): what it said is a warning,
+    and refs left in files of their own are counted as a failed pack-refs.
+
+    Mutation: trusting the exit status leaves both unseen.
+    """
+    if os.geteuid() == 0:
+        pytest.skip("root removes them anyway")
+    clone_path, commits = _clone_with_fetch_packs(tmp_path, fetches=2)
+    clone = pygit2.Repository(str(clone_path))
+    for i in range(5):
+        clone.create_reference(f"refs/remotes/origin/b{i}", commits[0])
+    clone.free()
+    stuck = clone_path / ".git" / "refs" / "remotes" / "origin"
+    stuck.chmod(0o500)
+    try:
+        assert _repack_clone(clone_path, timeout=60) is True
+
+        assert "refs/remotes/origin/b4" in _loose_refs(clone_path)
+    finally:
+        stuck.chmod(0o700)
+    assert _count_pack_files(clone_path) == 1
+    assert _ref_step_failures(emitted) == ["pack_refs"]
+    warnings = [r["message"] for r in records if r["level"].name == "WARNING"]
+    assert [m for m in warnings if "exited 0 but left 6 refs in files" in m]
+    assert [m for m in warnings if "succeeded, and said" in m and "b4.lock" in m]
+
+
+def test_a_repack_whose_git_outlives_its_stop_stays_recorded(
+    tmp_path, monkeypatch, emitted
+):
+    """A git still running after its SIGKILL (stuck in uninterruptible I/O)
+    may still write into the clone, so its locks stay, and so does the
+    repack's record in the clone's lock file: the op that gets the lock once
+    that git is gone removes what it left, and clears the record. A repack
+    that ends cleanly clears its own. The ref step that ran past its share is
+    counted as failed, though the repack ends there.
+
+    Mutation: clearing the record whatever happened fails the first part; not
+    clearing it after a clean repack fails the last; raising before counting
+    fails the count.
+    """
+    clone_path, _ = _clone_with_fetch_packs(tmp_path, fetches=2)
+    real_git = shutil.which("git")
+    real_path = os.environ["PATH"]
+    real_stop = git_fetcher._stop_repack
+    _install_git_shim(
+        tmp_path,
+        monkeypatch,
+        'if [ "$3" = pack-refs ]; then\n'
+        '  : > "$2/.git/packed-refs.lock"\n'
+        "  while :; do /bin/sleep 1; done\n"
+        "fi\n"
+        f'exec "{real_git}" "$@"\n',
+        refs_steps=True,
+    )
+
+    def _stop_that_cannot_tell(proc, grace):
+        """Git is gone, but as a stop that timed out waiting reports it."""
+        os.killpg(proc.pid, signal.SIGKILL)
+        proc.wait()
+        return False
+
+    monkeypatch.setattr(git_fetcher, "_stop_repack", _stop_that_cannot_tell)
+    record = git_cli.clone_lock_path(clone_path)
+
+    # A 4 s share for the ref steps: git config, then the pack-refs shim, start
+    # within it on a loaded machine.
+    with pytest.raises(TimeoutError):
+        _repack_clone(clone_path, timeout=8, term_grace=0.5)
+
+    assert _ref_step_failures(emitted) == ["pack_refs"]
+    assert record.read_text().strip() == str(os.getpid())
+    assert (clone_path / ".git" / "packed-refs.lock").exists()
+    monkeypatch.setattr(git_fetcher, "_stop_repack", real_stop)
+    monkeypatch.setenv("PATH", real_path)
+    # That git is gone once nothing of its SIGKILLed group holds the lock.
+    assert _wait_for(lambda: _clone_lock_is_free(clone_path))
+    git_cli.clean_up_unfinished_op(clone_path)  # the next op on the clone
+    assert record.read_text() == ""
+    assert not (clone_path / ".git" / "packed-refs.lock").exists()
+    assert _repack_clone(clone_path, timeout=60) is True
+    assert record.read_text() == ""
+    assert _loose_refs(clone_path) == []
+
+
+def test_the_timeout_covers_the_ref_steps_and_the_repack_together(
+    tmp_path, monkeypatch
+):
+    """One deadline for the whole repack, so that it still bounds how long the
+    repack holds the clone's lock_source: a pack-refs that takes most of it
+    leaves git repack only the rest.
+
+    Mutation: giving each git command the full timeout lets this repack
+    finish.
+    """
+    clone_path = _fake_clone(tmp_path)
+    _install_git_shim(
+        tmp_path,
+        monkeypatch,
+        'if [ "$3" = pack-refs ]; then /bin/sleep 1.5; exit 0; fi\n'
+        'if [ "$3" = config ]; then exit 0; fi\n'
+        "/bin/sleep 1.5\n",
+        refs_steps=True,
+    )
+    started = time.monotonic()
+    with pytest.raises(TimeoutError, match="timeout ran out during git repack"):
+        _repack_clone(clone_path, timeout=2.5, term_grace=0.5)
+    assert time.monotonic() - started < 2.5 + 0.5 + 1.0
+
+
+def test_a_failed_pack_refs_is_a_warning_and_the_repack_still_runs(
+    tmp_path, monkeypatch, records, emitted
+):
+    """A pack-refs killed by the kernel's OOM killer (a SIGKILL) leaves the
+    refs loose and its locks behind; it is logged and counted, its locks go,
+    since a git killed by a signal cannot remove its own, and git repack still
+    merges the packs.
+
+    Mutation: failing the repack on a failed pack-refs fails the return
+    value and the pack count; not cleaning up after a signal leaves the lock;
+    not counting it leaves a clone whose refs never get packed unseen.
+    """
+    clone_path, _ = _clone_with_fetch_packs(tmp_path, fetches=2)
+    real_git = shutil.which("git")
+    ref_lock = clone_path / ".git" / "refs" / "remotes" / "origin" / "master.lock"
+    _install_git_shim(
+        tmp_path,
+        monkeypatch,
+        'if [ "$3" = pack-refs ]; then\n'
+        '  : > "$2/.git/packed-refs.lock"\n'
+        f'  : > "{ref_lock}"\n'
+        "  kill -9 $$\n"
+        "fi\n"
+        f'exec "{real_git}" "$@"\n',
+        refs_steps=True,
+    )
+
+    assert _repack_clone(clone_path, timeout=60) is True
+
+    assert _count_pack_files(clone_path) == 1
+    assert "refs/remotes/origin/master" in _loose_refs(clone_path)
+    assert _lock_files(clone_path) == []
+    [warning] = [
+        r
+        for r in records
+        if r["level"].name == "WARNING" and "pack-refs" in r["message"]
+    ]
+    # sh, which runs git under the watchdog, reports a signal as 128 + its
+    # number.
+    assert f"status {128 + int(signal.SIGKILL)}" in warning["message"]
+    assert _ref_step_failures(emitted) == ["pack_refs"]
+
+
+def test_a_repack_leaves_a_clone_alone_while_a_fetch_holds_its_lock(tmp_path):
+    """A git command-line fetch holds the clone's lock for as long as any
+    process of its own runs. The repack raises GitCliBusyError then, having run
+    nothing, so none of its ref steps touches the clone: its reflogs, its loose
+    refs, its config and a packed-refs.lock that may be the fetch's all stay as
+    they are.
+
+    Mutation: running the ref steps before taking the clone's lock changes
+    each of them.
+    """
+    clone_path, _ = _clone_with_fetch_packs(tmp_path, fetches=2)
+    git_dir = clone_path / ".git"
+    (git_dir / "packed-refs.lock").touch()
+    before = (
+        _reflogs(clone_path),
+        _loose_refs(clone_path),
+        _reflogs_setting(clone_path),
+        _count_pack_files(clone_path),
+    )
+    fetch = git_cli.take_clone_lock(clone_path)
+    assert fetch is not None
+    try:
+        with pytest.raises(git_cli.GitCliBusyError):
+            _repack_clone(clone_path, timeout=60)
+
+        after = (
+            _reflogs(clone_path),
+            _loose_refs(clone_path),
+            _reflogs_setting(clone_path),
+            _count_pack_files(clone_path),
+        )
+        assert after == before
+        assert (git_dir / "packed-refs.lock").exists()
+        assert not (git_dir / "packed-refs").exists()
+    finally:
+        git_cli.drop_clone_lock(fetch)
+    assert git_fetcher._repack_lock_fds == set()
+
+
+@pytest.mark.asyncio
+async def test_a_fetch_leaves_a_running_repack_s_files_alone(tmp_path, monkeypatch):
+    """The other way round: while git repack writes its temp packs (its
+    ``.tmp-<pid>-pack-*`` and pack-objects' ``tmp_pack_*``), the repack holds
+    the clone's lock, so a git command-line fetch is refused before its git
+    runs, and none of its clean-up (after a failed or killed git) can reach
+    them; a libgit2 fetch's clean-up of a dead op leaves the clone alone too.
+    """
+    clone_path, _ = _clone_with_fetch_packs(tmp_path, fetches=2)
+    clone = pygit2.Repository(str(clone_path))
+    clone.remotes.set_url("origin", (tmp_path / "remote.git").as_uri())
+    clone.free()
+    real_git = shutil.which("git")
+    state = tmp_path / "state"
+    state.mkdir()
+    pack = _pack_dir(clone_path)
+    live = [pack / ".tmp-77-pack-live.pack", pack / "tmp_pack_live"]
+    _install_git_shim(
+        tmp_path,
+        monkeypatch,
+        "".join(f': > "{p}"\n' for p in live)
+        + f': > "{state}/ready"\n'
+        + f'while [ ! -e "{state}/release" ]; do /bin/sleep 0.05; done\n'
+        + f'exec "{real_git}" "$@"\n',
+    )
+    repack = asyncio.ensure_future(run_sync(_repack_clone, clone_path, 60))
+    try:
+        assert await _wait_for_async(lambda: (state / "ready").exists())
+        source = GitPolicyScopeSource(
+            source_type="git",
+            url=(tmp_path / "remote.git").as_uri(),
+            branch="master",
+            auth=NoAuthData(),
+        )
+
+        with pytest.raises(git_cli.GitCliBusyError):
+            await git_cli.cli_fetch(
+                clone_path, "origin", source, prune=False, timeout=60
+            )
+        git_cli.clean_up_unfinished_op(clone_path)
+
+        assert [p for p in live if not p.exists()] == []
+    finally:
+        (state / "release").touch()
+    assert await repack is True
+    assert _count_pack_files(clone_path) == 1
+
+
+async def _clone_whose_pack_refs_was_killed(tmp_path, monkeypatch):
+    """A scope clone whose refs are packed, with one loose ref, whose next
+    repack died in pack-refs with its process (what a container's death does):
+    the repacking process SIGKILLed, and with it git's whole group (by the
+    watchdog the repack runs git under), and packed-refs.lock and a ref's lock
+    left in the clone.
+
+    Its remote has then deleted env2, so a fetch that prunes has to
+    rewrite packed-refs, and fails while the lock is there. Prune is on
+    from then on (on before, it would keep the refs loose:
+    _packing_refs). Returns the scope and the ref's lock.
+    """
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.fetched(2)
+    scope.remote.create_reference("refs/heads/env2", scope.tip)
+    await scope.sync()
+    GitPolicyFetcher.forget_repo(str(scope.clone_path))
+    assert _repack_clone(scope.clone_path, timeout=60) is True  # refs packed
+    clone = scope.clone_path
+    git_dir = clone / ".git"
+    ref_lock = git_dir / "refs" / "remotes" / "origin" / "master.lock"
+    # A ref the killed pack-refs was to pack, which the next one must.
+    scope.remote.create_reference("refs/heads/env3", scope.tip)
+    await scope.sync()
+    assert _loose_refs(clone) == ["refs/remotes/origin/env3"]
+
+    real_git = shutil.which("git")
+    real_path = os.environ["PATH"]
+    state = tmp_path / "state"
+    state.mkdir()
+    shim_dir = _install_git_shim(
+        tmp_path,
+        monkeypatch,
+        'if [ "$3" = pack-refs ]; then\n'
+        '  : > "$2/.git/packed-refs.lock"\n'
+        f'  : > "{ref_lock}"\n'
+        f'  echo $$ > "{state}/git.pid"\n'
+        "  exec /bin/sleep 600\n"
+        "fi\n"
+        f'exec "{real_git}" "$@"\n',
+        refs_steps=True,
+    )
+    monkeypatch.setenv("PATH", real_path)
+    # The shim goes on the repacking process's PATH only after its imports:
+    # importing GitPython runs `git version`.
+    repacker = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import os\n"
+            "from opal_server.git_fetcher import _repack_clone\n"
+            f"os.environ['PATH'] = {str(shim_dir)!r} + os.pathsep + os.environ['PATH']\n"
+            f"_repack_clone({str(clone)!r}, timeout=600)\n",
+        ],
+        env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        started = _wait_for(lambda: (state / "git.pid").exists())
+    finally:
+        repacker.kill()
+        _, repacker_stderr = repacker.communicate()
+    assert started, f"pack-refs never started: {repacker_stderr.decode()[-2000:]}"
+    git_pid = int((state / "git.pid").read_text())
+    assert _wait_gone(git_pid), "the watchdog did not take git with its process"
+    assert (git_dir / "packed-refs.lock").exists() and ref_lock.exists()
+    scope.remote.references.delete("refs/heads/env2")
+    stuck = _git(
+        clone,
+        "fetch",
+        "--prune",
+        "--no-tags",
+        "--no-auto-maintenance",
+        "-q",
+        "origin",
+        check=False,
+    )
+    assert stuck.returncode != 0, "the premise: a pruning fetch fails on the lock"
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_PRUNE", True)
+    return scope, ref_lock
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("restart", [True, False], ids=["restart", "no-restart"])
+async def test_a_pack_refs_killed_with_its_process_costs_no_fetch_or_repack(
+    tmp_path, monkeypatch, restart
+):
+    """A pack-refs killed with its process leaves its locks in the clone, with
+    nothing left to remove them (see _clone_whose_pack_refs_was_killed).
+
+    With a restart, the preload's sweep removes them, and the next fetch and
+    the next repack succeed at once. Without one, the next repack removes them
+    first (it holds the clone's lock), packs the refs, and the fetch after it
+    succeeds.
+
+    Mutation: not removing them when the repack starts fails "no-restart":
+    its pack-refs fails on them and the ref it was to pack stays loose.
+    """
+    scope, ref_lock = await _clone_whose_pack_refs_was_killed(tmp_path, monkeypatch)
+    clone = scope.clone_path
+    git_dir = clone / ".git"
+
+    def _repacked_at_once() -> None:
+        assert _repack_clone(clone, timeout=60) is True
+        assert not (git_dir / "packed-refs.lock").exists() and not ref_lock.exists()
+        assert _loose_refs(clone) == []
+
+    # The fetch that has to rewrite packed-refs, by git as the clone lock's
+    # other holders run it.
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", True)
+    if restart:
+        git_fetcher.sweep_scope_clone_leftovers(tmp_path / "base")
+    else:
+        _repacked_at_once()
+    tip = str(scope.push())
+    await scope.sync()
+    assert _refs(clone)["refs/remotes/origin/master"] == tip
+    assert "refs/remotes/origin/env2" not in _refs(clone)
+    assert scope.notified[-1][1] == tip
+    if restart:
+        _repacked_at_once()
+    _git(clone, "fsck", "--no-progress")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cli", [True, False], ids=["git", "libgit2"])
+async def test_a_pack_refs_killed_without_a_preload_costs_no_fetch(
+    tmp_path, monkeypatch, cli
+):
+    """`opal-server run` has no preload, so after the restart nothing sweeps
+    the clone, and a repack runs only after a fetch that succeeded: a pruning
+    fetch that kept failing on the dead pack-refs' locks would keep the clone
+    stale for good. The repack records itself in the clone's lock file, as
+    git_cli's ops do, so the next fetch finds an op there that never finished
+    and removes what it left first, with git or with libgit2; then the next
+    repack packs the refs.
+
+    Mutation: not recording the repack, or clearing the record before its
+    git is gone, fails both; a libgit2 fetch that does not read the record
+    fails "libgit2".
+    """
+    scope, ref_lock = await _clone_whose_pack_refs_was_killed(tmp_path, monkeypatch)
+    clone = scope.clone_path
+    git_dir = clone / ".git"
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", cli)
+    tip = str(scope.push())
+
+    await scope.sync()
+
+    assert _refs(clone)["refs/remotes/origin/master"] == tip
+    assert "refs/remotes/origin/env2" not in _refs(clone)
+    assert scope.notified[-1][1] == tip
+    assert not (git_dir / "packed-refs.lock").exists() and not ref_lock.exists()
+    GitPolicyFetcher.forget_repo(str(clone))
+    # Off, so that the ref steps pack the refs with libgit2 too (_packing_refs).
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_PRUNE", False)
+    assert _repack_clone(clone, timeout=60) is True
+    assert _loose_refs(clone) == []
+    _git(clone, "fsck", "--no-progress")

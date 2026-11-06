@@ -1,9 +1,4 @@
-from typing import Any, Coroutine
-
-try:
-    from typing import Protocol
-except ImportError:
-    from typing_extensions import Protocol
+from typing import Any, Coroutine, Protocol
 
 from fastapi_websocket_pubsub import PubSubClient, Topic, TopicList
 from opal_common.logger import logger

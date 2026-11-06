@@ -392,12 +392,6 @@ class OpalClientConfig(Confi):
         + "that opa was synced correctly and is ready to answer to authorization queries",
     )
 
-    OPA_HEALTH_CHECK_TRANSACTION_LOG_PATH = confi.str(
-        "OPA_HEALTH_CHECK_TRANSACTION_LOG_PATH",
-        "system/opal/transactions",
-        description="Path to OPA document that stores the OPA write transactions",
-    )
-
     OPAL_CLIENT_STAT_ID = confi.str(
         "OPAL_CLIENT_STAT_ID",
         None,

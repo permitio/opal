@@ -16,7 +16,9 @@ accounted for exactly once. Every test below names the single-line mutation it
 catches.
 """
 import asyncio
+import errno
 import math
+import os
 import re
 import time
 from pathlib import Path
@@ -34,6 +36,7 @@ from opal_common.schemas.policy_source import GitPolicyScopeSource, NoAuthData
 from opal_common.schemas.scopes import Scope
 from opal_server import config as server_config_module
 from opal_server.config import opal_server_config
+from opal_server.git_cli import drop_clone_lock, take_clone_lock
 from opal_server.git_fetcher import (
     BranchHeadNotFoundError,
     CloneNotPopulatedError,
@@ -164,6 +167,43 @@ def _gated_make_bundle(gate):
         return _ready()
 
     return fake_make_bundle, calls
+
+
+async def _open_once_every_request_waits(gate, emitted, requests, timeout=20.0):
+    """Open ``gate`` once each of ``requests`` concurrent requests is in the
+    wait: holding a slot, or shed by the cap. Whether all of them got there
+    within ``timeout`` seconds; the gate opens then all the same, so that
+    the requests end.
+
+    Not on a timer: a request that makes its first attempt after the gate
+    has opened finds the bundle ready and never waits, which a loaded
+    machine makes happen.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    try:
+        while (
+            scopes_api._clone_wait_inflight + _wait_outcomes(emitted).count("shed")
+            < requests
+        ):
+            if loop.time() >= deadline:
+                return False
+            await asyncio.sleep(0.005)
+        return True
+    finally:
+        gate["ready"] = True
+
+
+async def _until_a_slot_is_held(timeout=20.0):
+    """Wait until a request holds a wait slot; whether one did within
+    ``timeout`` seconds."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while scopes_api._clone_wait_inflight < 1:
+        if loop.time() >= deadline:
+            return False
+        await asyncio.sleep(0.005)
+    return True
 
 
 @pytest.fixture(autouse=True)
@@ -722,6 +762,169 @@ def test_no_wait_when_the_first_attempt_is_not_a_clone_in_progress(
     assert elapsed < bed.wait, "the route held the request anyway"
 
 
+# --- a git command-line clone --------------------------------------------
+
+
+class _CliClone:
+    """A scope on ``origin``, and its clone as a git command-line clone leaves
+    it just before it is put in place: complete, in the directory beside the
+    clone's path, with the clone's lock held."""
+
+    def __init__(self, origin, base_dir):
+        source = GitPolicyScopeSource(
+            source_type="git",
+            url=origin.url,
+            branch="master",
+            auth=NoAuthData(auth_type="none"),
+        )
+        self.scope = Scope(scope_id="live", policy=source, data={"entries": []})
+        self.fetcher = GitPolicyFetcher(Path(base_dir), "live", source)
+        self.repo_path = GitPolicyFetcher.repo_clone_path(Path(base_dir), source)
+        self.repo_path.parent.mkdir(parents=True)
+        self.beside = self.repo_path.parent / f".{self.repo_path.name}.clone-{'0' * 16}"
+        pygit2.clone_repository(origin.url, str(self.beside)).free()
+        self.head = str(origin.repo.references["refs/heads/master"].target)
+        self._lock = take_clone_lock(self.repo_path)
+        assert self._lock is not None
+
+    def put_in_place(self):
+        """What git_cli does once the clone is complete: rename it into place,
+        then release the clone's lock."""
+        os.rename(self.beside, self.repo_path)
+        self.release()
+
+    def release(self):
+        """What a clone whose process died leaves: its directory, with the
+        clone's lock free."""
+        if self._lock is not None:
+            drop_clone_lock(self._lock)
+            self._lock = None
+
+
+@pytest.fixture
+def cli_clone(git_origin, tmp_path, monkeypatch):
+    """The clone of a scope ``live`` that a git command-line clone is making,
+    under the BASE_DIR the route reads."""
+    monkeypatch.setattr(opal_server_config, "BASE_DIR", str(tmp_path))
+    clone = _CliClone(git_origin, tmp_path)
+    yield clone
+    clone.release()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "after_scan", [False, True], ids=["before-the-scan", "after-the-scan"]
+)
+@pytest.mark.parametrize("lands_at", [1, 2], ids=["first-attempt", "first-poll"])
+async def test_a_cli_clone_put_in_place_mid_check_is_served(
+    cli_clone, monkeypatch, emitted, lands_at, after_scan
+):
+    """git_cli puts a clone in place with one rename, then releases the
+    clone's lock. The rename can land after make_bundle found no clone and
+    before clone_under_way lists the directory beside it, or after that and
+    before the lock is tried: then no check sees a clone under way. The
+    request is served the clone now in place, on the first attempt or at a
+    poll of a held request, rather than answered 503 the moment its clone
+    becomes servable.
+
+    Mutation: dropping the second look at the clone's path in _make_bundle
+    re-raises NoSuchPathError and fails every case; taking that look only
+    when no directory was seen beside the path fails the after-the-scan
+    ones.
+    """
+    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", 5.0)
+    monkeypatch.setattr("opal_server.scopes.api._CLONE_WAIT_POLL_SECONDS", 0.02)
+    real_clone_under_way = scopes_api.clone_under_way
+    looked = []
+
+    def lands_while_looking(repo_path):
+        looked.append(repo_path)
+        lands = len(looked) == lands_at
+        if lands and not after_scan:
+            cli_clone.put_in_place()
+        under_way = real_clone_under_way(repo_path)
+        if lands and after_scan:
+            cli_clone.put_in_place()
+        return under_way
+
+    monkeypatch.setattr(scopes_api, "clone_under_way", lands_while_looking)
+
+    bundle = await scopes_api._make_bundle_waiting_for_clone(
+        cli_clone.fetcher, None, "live"
+    )
+
+    assert bundle.hash == cli_clone.head
+    assert len(looked) == lands_at
+    assert _wait_outcomes(emitted) == ([] if lands_at == 1 else ["served"])
+
+
+def test_a_dead_cli_clones_directory_holds_no_request(bed, cli_clone, emitted, sleeps):
+    """A directory beside the clone's path whose lock nobody holds was left by
+    a git command-line clone whose process died: nothing will put it in
+    place. A request for that clone gets what it gets with no clone at all,
+    at once (503 + Retry-After 5), rather than a hold for a clone nobody is
+    making that ends in a 503 + Retry-After 30.
+
+    Mutation: taking the directory alone for a clone under way, without
+    trying the clone's lock, holds the request and fails here.
+    """
+    cli_clone.release()
+
+    resp = TestClient(bed.app(cli_clone.scope)).get("/scopes/live/policy")
+
+    assert resp.status_code == 503
+    assert resp.headers["retry-after"] == "5"
+    assert not sleeps, f"the request was held for a dead clone: {sleeps}"
+    assert not _wait_outcomes(emitted), "counted a wait for a dead clone"
+
+
+@pytest.mark.asyncio
+async def test_a_held_request_ends_once_its_cli_clone_dies(bed, cli_clone, emitted):
+    """A request held for a git command-line clone whose process then dies is
+    answered at its next poll, with the 503 + Retry-After 5 of a clone that is
+    not there, rather than held to the end of its budget.
+
+    Mutation: taking the directory alone for a clone under way holds the
+    request for its whole 30s budget, and fails here after 10s.
+    """
+    bed.set_wait(30.0)
+    transport = httpx.ASGITransport(app=bed.app(cli_clone.scope))
+    async with httpx.AsyncClient(transport=transport, base_url="http://bed") as client:
+        asked = asyncio.ensure_future(client.get("/scopes/live/policy"))
+        held = await _until_a_slot_is_held()
+        cli_clone.release()
+        resp = await asyncio.wait_for(asked, 10)
+
+    assert held, "the request was not held while the clone was being made"
+    assert resp.status_code == 503
+    assert resp.headers["retry-after"] == "5"
+    assert _wait_outcomes(emitted) == ["error"]
+
+
+def test_a_clone_lock_that_cannot_be_tried_keeps_the_hold(
+    bed, cli_clone, emitted, monkeypatch
+):
+    """Where flock fails (a network filesystem without local locks, say),
+    nothing tells a running clone's directory from a dead one's, and the
+    request is held as for a clone under way.
+
+    Mutation: answering "no clone under way" when the lock cannot be tried
+    answers 503 + Retry-After 5 at once and fails here.
+    """
+    cli_clone.release()
+
+    def refused(repo_path):
+        raise OSError(errno.ENOLCK, "No locks available")
+
+    monkeypatch.setattr(scopes_api, "take_clone_lock", refused)
+
+    resp = TestClient(bed.app(cli_clone.scope)).get("/scopes/live/policy")
+
+    assert resp.status_code == 503
+    assert resp.headers["retry-after"] == "30"
+    assert _wait_outcomes(emitted) == ["timeout"]
+
+
 # --- what a retried attempt is allowed to do -----------------------------
 
 
@@ -772,45 +975,52 @@ def test_a_transient_fault_during_the_wait_keeps_its_own_retry_after(bed):
 # --- the cost of holding -------------------------------------------------
 
 
-def test_the_wait_does_not_block_the_event_loop(bed, monkeypatch, tmp_path):
+def test_the_wait_never_stalls_the_event_loop_for_a_poll(bed):
     """The hold must be an awaited sleep, not a blocking one: a worker holds
     many of these at once, and gunicorn kills a worker whose heartbeat stops.
 
-    Asserts the loop keeps running by scheduling an independent coroutine
-    while the route is waiting. The threshold has to sit in the GAP, not just
-    above zero: a blocked loop still yields at every executor round-trip, so
-    ~10 ticks get through even with a blocking sleep, and an earlier `> 5`
-    version of this test passed with `time.sleep` in place. A free loop
-    manages ~40 over the same 0.2s budget.
+    Bounds the event loop's longest stall while the route waits, watched by
+    an independent coroutine. A blocking sleep stalls the loop for a whole
+    poll (time.sleep sleeps at least that long); an awaited one, no longer
+    than the machine takes to schedule the watcher. So the bound is the
+    poll itself: a slow or CPU-throttled machine stays far below it, and a
+    blocking sleep always reaches it. How many times the watcher ran is not
+    asserted, since that measures the machine's speed, not blocking.
 
-    Mutation: swapping `await asyncio.sleep(...)` for `time.sleep(...)` drops
-    the tick count into single digits and fails here.
+    Mutation: swapping `await asyncio.sleep(...)` for `time.sleep(...)`
+    stalls the loop for 0.5s and fails here.
     """
-    ticks = []
-
-    async def ticker():
-        for _ in range(50):
-            await asyncio.sleep(0.005)
-            ticks.append(1)
-
-    bed.set_wait(0.2)
+    poll = 0.5
+    bed.set_poll(poll)
+    bed.set_wait(poll + 0.1)
     bed.install(_populating)
     app = bed.app()
+    gaps = []
 
-    @app.get("/tick")
-    async def _start_ticker():
-        asyncio.create_task(ticker())
+    async def watch():
+        loop = asyncio.get_running_loop()
+        last = loop.time()
+        while True:
+            await asyncio.sleep(0.001)
+            now = loop.time()
+            gaps.append(now - last)
+            last = now
+
+    @app.get("/watch")
+    async def _start_watch():
+        asyncio.get_running_loop().create_task(watch())
         return {}
 
     with TestClient(app) as client:
-        client.get("/tick")
+        client.get("/watch")
         resp = client.get("/scopes/live/policy")
 
     assert resp.status_code == 503
-    assert len(ticks) >= 20, (
-        f"the event loop advanced only {len(ticks)} ticks while one request "
-        "waited for a clone (a free loop manages ~40 in that budget) — the "
-        "wait is blocking the worker between polls"
+    assert gaps, "the watcher never ran"
+    assert max(gaps) < poll, (
+        f"the event loop stood still for {max(gaps):.3f}s while one request "
+        f"waited for a clone (poll {poll}s): the wait blocks the worker "
+        "between polls"
     )
 
 
@@ -835,7 +1045,9 @@ async def test_the_cap_sheds_the_excess_instead_of_holding_every_request(
     monkeypatch.setattr(
         "opal_server.scopes.api.opal_server_config.BASE_DIR", str(tmp_path)
     )
-    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", 5.0)
+    # Longer than _open_once_every_request_waits gives the requests to get
+    # there, so that no held request times out first.
+    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", 30.0)
     monkeypatch.setattr("opal_server.scopes.api._CLONE_WAIT_POLL_SECONDS", 0.02)
     monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT", 3)
 
@@ -844,14 +1056,14 @@ async def test_the_cap_sheds_the_excess_instead_of_holding_every_request(
     monkeypatch.setattr(GitPolicyFetcher, "make_bundle", fake)
     app = _app(FakeScopeRepository([_scope()]), tmp_path)
 
-    asyncio.get_running_loop().call_later(0.15, gate.__setitem__, "ready", True)
-
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://bed") as client:
-        responses = await asyncio.gather(
-            *(client.get("/scopes/live/policy") for _ in range(5))
+        *responses, all_in_the_wait = await asyncio.gather(
+            *(client.get("/scopes/live/policy") for _ in range(5)),
+            _open_once_every_request_waits(gate, emitted, 5),
         )
 
+    assert all_in_the_wait, "the 5 requests did not all reach the wait within 20s"
     codes = sorted(r.status_code for r in responses)
     assert codes == [
         200,
@@ -906,7 +1118,9 @@ async def test_a_cap_of_zero_means_no_cap(tmp_path, monkeypatch, emitted):
     monkeypatch.setattr(
         "opal_server.scopes.api.opal_server_config.BASE_DIR", str(tmp_path)
     )
-    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", 5.0)
+    # Longer than _open_once_every_request_waits gives the requests to get
+    # there, so that no held request times out first.
+    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", 30.0)
     monkeypatch.setattr("opal_server.scopes.api._CLONE_WAIT_POLL_SECONDS", 0.02)
     monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT", 0)
 
@@ -914,14 +1128,15 @@ async def test_a_cap_of_zero_means_no_cap(tmp_path, monkeypatch, emitted):
     fake, _calls = _gated_make_bundle(gate)
     monkeypatch.setattr(GitPolicyFetcher, "make_bundle", fake)
     app = _app(FakeScopeRepository([_scope()]), tmp_path)
-    asyncio.get_running_loop().call_later(0.15, gate.__setitem__, "ready", True)
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://bed") as client:
-        responses = await asyncio.gather(
-            *(client.get("/scopes/live/policy") for _ in range(4))
+        *responses, all_in_the_wait = await asyncio.gather(
+            *(client.get("/scopes/live/policy") for _ in range(4)),
+            _open_once_every_request_waits(gate, emitted, 4),
         )
 
+    assert all_in_the_wait, "the 4 requests did not all reach the wait within 20s"
     assert [r.status_code for r in responses] == [
         200
     ] * 4, f"cap=0 shed requests: {[r.status_code for r in responses]}"
@@ -978,7 +1193,8 @@ async def test_a_disconnected_client_stops_being_waited_for(
     monkeypatch.setattr(
         "opal_server.scopes.api.opal_server_config.BASE_DIR", str(tmp_path)
     )
-    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", 5.0)
+    budget = 5.0
+    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", budget)
     monkeypatch.setattr("opal_server.scopes.api._CLONE_WAIT_POLL_SECONDS", 0.02)
 
     polls = {"n": 0}
@@ -1004,9 +1220,12 @@ async def test_a_disconnected_client_stops_being_waited_for(
 
     assert resp.status_code == 503
     assert _wait_outcomes(emitted) == ["disconnected"], _wait_outcomes(emitted)
+    # The budget, not a guess at how fast this machine is: the request is
+    # answered after three 20 ms polls, and a hold that runs to its deadline
+    # takes the whole budget at least.
     assert (
-        elapsed < 1.0
-    ), f"kept waiting {elapsed:.3f}s for a client that had hung up (budget 5s)"
+        elapsed < budget
+    ), f"kept waiting {elapsed:.3f}s for a client that had hung up (budget {budget}s)"
     assert len(calls) <= 4, (
         f"{len(calls)} bundle attempts after the client disconnected: the "
         "check does not stop the loop"
@@ -1046,8 +1265,8 @@ async def test_a_cancelled_request_releases_its_slot_and_is_counted(
             _fetcher(tmp_path), None, "live", None
         )
     )
-    await asyncio.sleep(0.05)
-    assert scopes_api._clone_wait_inflight == 1, "the request never took a slot"
+    assert await _until_a_slot_is_held(), "the request never took a slot"
+    assert scopes_api._clone_wait_inflight == 1
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task

@@ -193,11 +193,6 @@ def test_purge_restriction_is_registered_on_the_notifier():
     assert PubSub._reject_external_purge_channel in ps.notifier._channel_restrictions
 
 
-# NOTE: these await the restriction directly under @pytest.mark.asyncio rather
-# than asyncio.run(...). asyncio.run() closes its loop and leaves the current
-# loop set to None, which on Python 3.9 breaks later SYNC tests that call
-# asyncio.get_event_loop() (e.g. reconnecting_broadcaster_test) — the same
-# py3.9 event-loop-isolation trap as commit 8400a75e.
 @pytest.mark.asyncio
 async def test_external_peer_publish_to_purge_channel_is_rejected():
     with pytest.raises(Unauthorized):

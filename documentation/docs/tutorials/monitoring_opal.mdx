@@ -8,10 +8,11 @@ title: Monitoring OPAL
 There are multiple ways you can monitor your OPAL deployment:
 
 - **Logs** - Using the structured logs outputted to stderr by both the OPAL-servers and OPAL-clients
-- **Health-checks** - OPAL exposes HTTP health check endpoints ([See below](##health-checks))
+- **Health-checks** - OPAL exposes HTTP health check endpoints ([See below](#health-checks))
 - [**Callbacks**](/tutorials/healthcheck_policy_and_update_callbacks#-data-update-callbacks) - Using the callback webhooks feature - having OPAL-clients report their updates
-- **Statistics** - Using the built-in statistics feature in OPAL ([See below](##opal-statistics))
-- **DataDog APM** - OPAL supports DataDog APM tracing (requires ddtrace v4.8.2+; OPAL itself requires Python 3.10+)
+- **Statistics** - Using the built-in statistics feature in OPAL ([See below](#opal-statistics))
+- **Metrics** - DogStatsD metrics, among them those of the scope clones' git operations ([See below](#scope-git-metrics))
+- **DataDog APM** - OPAL supports DataDog APM tracing (requires ddtrace v4.8.2+; OPAL itself requires Python 3.11+)
 
 ## Health checks
 
@@ -43,6 +44,20 @@ The state can then be retrieved as a JSON object by calling the `/statistics` ap
 
 - [opal_server/statistics.py](https://github.com/permitio/opal/blob/master/packages/opal-server/opal_server/statistics.py)
 
+## Scope git metrics
+
+With `OPAL_ENABLE_METRICS=true`, opal-server sends DogStatsD metrics to the agent at `DD_AGENT_HOST` (default `localhost`), port 8125, with `permit.opal.` before each name. In scopes mode (`OPAL_SCOPES=true`), these count what happens to the git operations on the scope clones:
+
+| Metric | Type | Tags | What it counts |
+| --- | --- | --- | --- |
+| `opal_server.scopes.git_op_failures` | count | `op`: `fetch`, `clone`<br/>`reason`: `timeout`, `git_error`, `local` | A fetch or clone of a scope's repository that failed. `timeout`: it ran past [`OPAL_SCOPES_GIT_FETCH_TIMEOUT`](/getting-started/configuration#opal_scopes_git_fetch_timeout); `git_error`: git or libgit2 reported an error. Both back the source off ([`OPAL_SCOPES_GIT_BACKOFF_BASE_SECONDS`](/getting-started/configuration#opal_scopes_git_backoff_base_seconds)). `local` comes only with [`OPAL_SCOPES_GIT_FETCH_WITH_CLI`](/getting-started/configuration#opal_scopes_git_fetch_with_cli) on: a failure on the server's own side, such as no git, a clone that cannot be set up, a filesystem that refuses the clone's lock or an unreadable [`OPAL_SCOPES_GIT_SSH_KNOWN_HOSTS`](/getting-started/configuration#opal_scopes_git_ssh_known_hosts). It does not back the source off, unless the source's URL or credentials cannot be given to git. |
+| `opal_server.scopes.git_op_skipped` | count | `reason`: `backoff`, `clone_busy`, `repack_running`, `pass_in_flight` | A git operation that did not run. `backoff`: a sync of the boot, periodic or pre-fork preload sync pass (not of the pass that `POST /scopes/refresh` starts), or one that a policy bundle request asked for, while its source is backed off. `clone_busy`: another git operation holds the clone's lock (the file `.<source id>.lock` beside the clone), so a fetch or clone with `OPAL_SCOPES_GIT_FETCH_WITH_CLI` on is skipped, a due repack waits for a later pass, and a clone that has to be removed to be cloned again is left as it is. `repack_running`: a due repack that did not start because another repack runs in the pod. `pass_in_flight`: a due repack put off while a sync pass runs in the same process. |
+| `opal_server.scopes.git_repack` | count | `outcome`: `ok`, `timeout`, `error`, `git_missing` | A repack of a scope clone ([`OPAL_SCOPES_GIT_REPACK_PACK_LIMIT`](/getting-started/configuration#opal_scopes_git_repack_pack_limit)), its ref steps included. `git_missing` is counted once per process, here or in `git_pack_refs`, the first time a repack finds no git. |
+| `opal_server.scopes.git_repack_seconds` | distribution | `outcome`: `ok`, `timeout`, `error` | How long a repack held the clone: its ref steps, any wait for a git worker thread, and the walks of the clone's refs and reflogs that size its log line included (for `ok`, the walks before and after git; otherwise the one before). The walks are not bounded by [`OPAL_SCOPES_GIT_REPACK_TIMEOUT`](/getting-started/configuration#opal_scopes_git_repack_timeout), so this can exceed it. |
+| `opal_server.scopes.git_pack_refs` | count | `outcome`: as for `git_repack` | A run of the repack's ref steps alone, on a clone that holds fewer packs than the repack limit and has refs to pack (with the libgit2 fetch pruning, reflogs to remove). |
+| `opal_server.scopes.git_pack_refs_seconds` | distribution | `outcome`: `ok`, `timeout`, `error` | How long such a run held the clone, measured as for `git_repack_seconds`. |
+| `opal_server.scopes.git_ref_step_failures` | count | `step`: `config`, `reflogs`, `pack_refs` | A ref step, in a repack or in a run of its own, that failed, ran past its share of [`OPAL_SCOPES_GIT_REPACK_TIMEOUT`](/getting-started/configuration#opal_scopes_git_repack_timeout), or left refs in files of their own. Before a repack, a failed ref step is a warning and the repack still runs. |
+
 ## DataDog APM Monitoring
 
 OPAL supports DataDog APM (Application Performance Monitoring) for observing your OPAL deployment's performance and traces.
@@ -50,7 +65,7 @@ OPAL supports DataDog APM (Application Performance Monitoring) for observing you
 ### Requirements
 
 - **ddtrace v4.8.2 or higher, below 5** - 4.8.2 is the first release with the fix for CVE-2026-50271 (GHSA-mw54-j2v2-42hr)
-- **Python 3.10 or higher** - OPAL's own floor (ddtrace v4 itself supports 3.9+)
+- **Python 3.11 or higher** - OPAL's own floor (ddtrace v4 itself supports 3.9+)
 
 ### Configuration
 

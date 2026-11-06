@@ -52,9 +52,6 @@ class OpalCommonConfig(Confi):
         True,
         description="Should we send logs to stderr? otherwise to stdout",
     )
-    LOG_SHOW_CODE_LINE = confi.bool(
-        "LOG_SHOW_CODE_LINE", True, description="Show code line in log messages"
-    )
     #  - log level
     LOG_LEVEL = confi.str("LOG_LEVEL", "INFO", description="The log level to show")
     #  - Which modules should be logged

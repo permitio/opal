@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -7,6 +8,11 @@ from fastapi_websocket_pubsub import Topic
 from opal_common.logger import configure_logs, logger, logs_configured
 from opal_common.monitoring import metrics
 from opal_server.config import opal_server_config
+from opal_server.git_cli import (
+    close_leftover_lock_fds,
+    validate_git_cli_settings,
+    wait_for_background_ops,
+)
 from opal_server.git_fetcher import (
     GitPolicyFetcher,
     drain_git_ops,
@@ -14,6 +20,7 @@ from opal_server.git_fetcher import (
     reclone_hung_enabled,
     reclone_hung_scope_clones,
     shutdown_git_executor,
+    sweep_scope_clone_leftovers,
 )
 from opal_server.metrics_setup import configure_server_metrics
 from opal_server.policy.watcher.task import BasePolicyWatcherTask
@@ -21,6 +28,14 @@ from opal_server.redis_utils import RedisDB
 from opal_server.scopes.purge import LeaderScopePurger
 from opal_server.scopes.scope_repository import ScopeRepository
 from opal_server.scopes.service import ScopesService
+
+
+class _UnknownChildWarningFilter(logging.Filter):
+    """Drops asyncio's warning about a child reaped before it got to it."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "will report returncode 255" not in record.getMessage()
+
 
 # Upper bound on the shutdown drain of in-flight scope purges. The drain is
 # best-effort: a purge's rmtree runs on a worker thread and completes whether or
@@ -228,6 +243,8 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         if opal_server_config.SCOPES:
             if not logs_configured():
                 configure_logs()
+            # Before any clone, and before a worker exists to refuse to start.
+            validate_git_cli_settings()
             # This runs in the gunicorn MASTER (scripts/gunicorn_conf.py::when_ready)
             # before any worker configured monitoring. Without
             # configure_server_metrics() the git metrics emitted during preload
@@ -237,7 +254,8 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             configure_server_metrics()
             logger.info("Preloading repo clones for scopes")
 
-            scopes = ScopeRepository(RedisDB(opal_server_config.REDIS_URL))
+            redis_db = RedisDB(opal_server_config.REDIS_URL)
+            scopes = ScopeRepository(redis_db)
             service = ScopesService(
                 base_dir=Path(opal_server_config.BASE_DIR),
                 scopes=scopes,
@@ -265,6 +283,17 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                 reclone_hung_scope_clones(
                     Path(opal_server_config.BASE_DIR), live_source_ids
                 )
+                # No git runs yet in this container: what git ops of earlier
+                # processes left in the clones (locks, partial packs, clones
+                # half made, SSH key files) goes, whichever fetcher made them.
+                # Never in the way of the start: whatever the sweep cannot do
+                # is logged and left.
+                try:
+                    sweep_scope_clone_leftovers(Path(opal_server_config.BASE_DIR))
+                except Exception as e:
+                    logger.error(
+                        "Preload: sweeping the scope clones failed: {err!r}", err=e
+                    )
                 # No repack here, where it would delay the start of every
                 # worker: the preload's fetches only mark their clones due, the
                 # marks are inherited across fork, and the leader's first pass
@@ -272,8 +301,50 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                 await service.sync_scopes(
                     notify_on_changes=False, run_due_repacks=False
                 )
+                # git command-line ops still being stopped finish on tasks of
+                # this loop; the ones that do not by the end of the loop get
+                # SIGKILL then, and their clones are cleaned up by the next op.
+                if not await wait_for_background_ops(
+                    opal_server_config.SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT
+                ):
+                    logger.warning(
+                        "Preload: git command-line ops still being stopped "
+                        "after {timeout}s; their process groups get SIGKILL now",
+                        timeout=opal_server_config.SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT,
+                    )
 
-            asyncio.run(_preload())
+            async def _preload_and_close():
+                # The client's pool keeps every connection it opened, one per
+                # scope read in flight at once, and binds them to this loop: it
+                # can close them only here, before asyncio.run closes the loop,
+                # whatever the sync did. Left open, their sockets stay in the
+                # master for as long as it lives, and reach every worker it
+                # forks. A close that fails is logged and left: it is never in
+                # the way of the start, nor in place of the preload's own error.
+                try:
+                    await _preload()
+                finally:
+                    try:
+                        await redis_db.close()
+                    except Exception as e:
+                        logger.warning(
+                            "Preload: closing its Redis client failed: {err!r}", err=e
+                        )
+
+            # The gunicorn master's SIGCHLD handler reaps every child, so
+            # asyncio finds each git command-line op's process reaped already
+            # and warns. git_cli reads git's exit status from the process's
+            # output instead, so the warning means nothing here.
+            unknown_child = _UnknownChildWarningFilter()
+            asyncio_logger = logging.getLogger("asyncio")
+            asyncio_logger.addFilter(unknown_child)
+            try:
+                asyncio.run(_preload_and_close())
+            finally:
+                asyncio_logger.removeFilter(unknown_child)
+                # A clone's lock left open here would be held in every forked
+                # worker for as long as it lives.
+                close_leftover_lock_fds()
 
             # Bounded window for a just-finished clone/fetch to clear its in-flight
             # marker before teardown+fork. Ops still lingering (hung remote) are
@@ -282,13 +353,16 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             # those threads persist in the master across the fork, so a forked
             # worker can race them on the shared clone dir. Log it — this is the
             # one condition that carries that risk, and it must not be silent.
+            # Only libgit2 ops can be left in flight here: a git command-line op
+            # the end of the loop cut short got SIGKILL, and left flight.
             drained = drain_git_ops(opal_server_config.SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT)
             if not drained:
                 logger.warning(
-                    "Preload drain timed out ({timeout}s) with git ops still "
-                    "in flight ({in_flight}); they persist in the master across "
-                    "fork. Consider raising SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT or "
-                    "lowering SCOPES_GIT_FETCH_TIMEOUT.",
+                    "Preload drain timed out ({timeout}s) with libgit2 git ops "
+                    "still in flight ({in_flight}); their threads persist in the "
+                    "master across fork. Consider raising "
+                    "SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT or lowering "
+                    "SCOPES_GIT_FETCH_TIMEOUT.",
                     timeout=opal_server_config.SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT,
                     in_flight=git_busy_count(),
                 )

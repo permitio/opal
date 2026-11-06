@@ -1,17 +1,11 @@
 from __future__ import annotations
 
 import asyncio
-import sys
 from functools import partial
-from typing import Any, Callable, Coroutine, Optional, Set, Tuple, TypeVar
+from typing import Any, Callable, Coroutine, Optional, ParamSpec, Set, Tuple, TypeVar
 
 import loguru
 from loguru import logger
-
-if sys.version_info < (3, 10):
-    from typing_extensions import ParamSpec
-else:
-    from typing import ParamSpec
 
 T_result = TypeVar("T_result")
 P_args = ParamSpec("P_args")
