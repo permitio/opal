@@ -415,9 +415,9 @@ These configuration variables are specific to the OPAL Server.
 
 #### OPAL_SERVER_WORKER_COUNT
 
-Default: `None` (calculated based on CPU cores)
+Default: `None`
 
-Worker count for the server (when run using CLI).
+Worker count for the server when it is started with `opal-server run`. When it is not set, `opal-server run --engine-type gunicorn` starts (CPU cores × 2) + 1 workers, and the default engine, uvicorn, starts one.
 
 #### OPAL_SERVER_HOST
 
