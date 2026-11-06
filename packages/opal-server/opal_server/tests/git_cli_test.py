@@ -1593,8 +1593,8 @@ def test_a_group_whose_processes_cannot_be_listed_counts_as_having_members(
 @pytest.mark.skipif(not os.path.isdir("/proc/self"), reason="the filter reads /proc")
 @pytest.mark.parametrize(
     "code, members",
-    [(errno.EMFILE, True), (errno.ENOENT, False)],
-    ids=["EMFILE", "gone"],
+    [(errno.EMFILE, True), (errno.ENOENT, False), (errno.EACCES, False)],
+    ids=["EMFILE", "gone", "another-user-s"],
 )
 def test_a_process_that_cannot_be_read_counts_as_a_member_unless_it_is_gone(
     code, members, monkeypatch
@@ -1604,7 +1604,9 @@ def test_a_process_that_cannot_be_read_counts_as_a_member_unless_it_is_gone(
     taken to have members, and the op waits rather than finish under a live
     git.
 
-    One whose stat is not there any more exited meanwhile.
+    One whose stat is not there any more exited meanwhile, and one this
+    user may not read (/proc mounted with hidepid=1) is another user's,
+    not git's.
     """
     live = subprocess.Popen(["sleep", "30"], start_new_session=True)
 

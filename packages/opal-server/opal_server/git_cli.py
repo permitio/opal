@@ -2097,6 +2097,8 @@ def live_members(pgid: int) -> bool:
                 fields = f.read().rpartition(")")[2].split()
         except (FileNotFoundError, ProcessLookupError):
             continue  # gone meanwhile
+        except PermissionError:
+            continue  # another user's (/proc's hidepid=1); git's are this one's
         except OSError:
             return True  # it may be the group's
         # After the command: state, ppid, pgrp, ...
