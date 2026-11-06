@@ -16,6 +16,7 @@ accounted for exactly once. Every test below names the single-line mutation it
 catches.
 """
 import asyncio
+import errno
 import math
 import os
 import re
@@ -776,6 +777,7 @@ class _CliClone:
             branch="master",
             auth=NoAuthData(auth_type="none"),
         )
+        self.scope = Scope(scope_id="live", policy=source, data={"entries": []})
         self.fetcher = GitPolicyFetcher(Path(base_dir), "live", source)
         self.repo_path = GitPolicyFetcher.repo_clone_path(Path(base_dir), source)
         self.repo_path.parent.mkdir(parents=True)
@@ -792,31 +794,43 @@ class _CliClone:
         self.release()
 
     def release(self):
+        """What a clone whose process died leaves: its directory, with the
+        clone's lock free."""
         if self._lock is not None:
             drop_clone_lock(self._lock)
             self._lock = None
 
 
 @pytest.fixture
-def cli_clone(git_origin, tmp_path):
-    clone = _CliClone(git_origin, tmp_path / "opal")
+def cli_clone(git_origin, tmp_path, monkeypatch):
+    """The clone of a scope ``live`` that a git command-line clone is making,
+    under the BASE_DIR the route reads."""
+    monkeypatch.setattr(opal_server_config, "BASE_DIR", str(tmp_path))
+    clone = _CliClone(git_origin, tmp_path)
     yield clone
     clone.release()
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "after_scan", [False, True], ids=["before-the-scan", "after-the-scan"]
+)
 @pytest.mark.parametrize("lands_at", [1, 2], ids=["first-attempt", "first-poll"])
 async def test_a_cli_clone_put_in_place_mid_check_is_served(
-    cli_clone, monkeypatch, emitted, lands_at
+    cli_clone, monkeypatch, emitted, lands_at, after_scan
 ):
-    """git_cli puts a clone in place with one rename, which can land after
-    make_bundle found no clone and before clone_under_way lists the directory
-    beside it: then neither sees a clone. The request is served the clone
-    now in place, on the first attempt or at a poll of a held request,
-    rather than answered 503 the moment its clone becomes servable.
+    """git_cli puts a clone in place with one rename, then releases the
+    clone's lock. The rename can land after make_bundle found no clone and
+    before clone_under_way lists the directory beside it, or after that and
+    before the lock is tried: then no check sees a clone under way. The
+    request is served the clone now in place, on the first attempt or at a
+    poll of a held request, rather than answered 503 the moment its clone
+    becomes servable.
 
     Mutation: dropping the second look at the clone's path in _make_bundle
-    re-raises NoSuchPathError, and fails both cases.
+    re-raises NoSuchPathError and fails every case; taking that look only
+    when no directory was seen beside the path fails the after-the-scan
+    ones.
     """
     monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", 5.0)
     monkeypatch.setattr("opal_server.scopes.api._CLONE_WAIT_POLL_SECONDS", 0.02)
@@ -825,9 +839,13 @@ async def test_a_cli_clone_put_in_place_mid_check_is_served(
 
     def lands_while_looking(repo_path):
         looked.append(repo_path)
-        if len(looked) == lands_at:
+        lands = len(looked) == lands_at
+        if lands and not after_scan:
             cli_clone.put_in_place()
-        return real_clone_under_way(repo_path)
+        under_way = real_clone_under_way(repo_path)
+        if lands and after_scan:
+            cli_clone.put_in_place()
+        return under_way
 
     monkeypatch.setattr(scopes_api, "clone_under_way", lands_while_looking)
 
@@ -838,6 +856,73 @@ async def test_a_cli_clone_put_in_place_mid_check_is_served(
     assert bundle.hash == cli_clone.head
     assert len(looked) == lands_at
     assert _wait_outcomes(emitted) == ([] if lands_at == 1 else ["served"])
+
+
+def test_a_dead_cli_clones_directory_holds_no_request(bed, cli_clone, emitted, sleeps):
+    """A directory beside the clone's path whose lock nobody holds was left by
+    a git command-line clone whose process died: nothing will put it in
+    place. A request for that clone gets what it gets with no clone at all,
+    at once (503 + Retry-After 5), rather than a hold for a clone nobody is
+    making that ends in a 503 + Retry-After 30.
+
+    Mutation: taking the directory alone for a clone under way, without
+    trying the clone's lock, holds the request and fails here.
+    """
+    cli_clone.release()
+
+    resp = TestClient(bed.app(cli_clone.scope)).get("/scopes/live/policy")
+
+    assert resp.status_code == 503
+    assert resp.headers["retry-after"] == "5"
+    assert not sleeps, f"the request was held for a dead clone: {sleeps}"
+    assert not _wait_outcomes(emitted), "counted a wait for a dead clone"
+
+
+@pytest.mark.asyncio
+async def test_a_held_request_ends_once_its_cli_clone_dies(bed, cli_clone, emitted):
+    """A request held for a git command-line clone whose process then dies is
+    answered at its next poll, with the 503 + Retry-After 5 of a clone that is
+    not there, rather than held to the end of its budget.
+
+    Mutation: taking the directory alone for a clone under way holds the
+    request for its whole 30s budget, and fails here after 10s.
+    """
+    bed.set_wait(30.0)
+    transport = httpx.ASGITransport(app=bed.app(cli_clone.scope))
+    async with httpx.AsyncClient(transport=transport, base_url="http://bed") as client:
+        asked = asyncio.ensure_future(client.get("/scopes/live/policy"))
+        held = await _until_a_slot_is_held()
+        cli_clone.release()
+        resp = await asyncio.wait_for(asked, 10)
+
+    assert held, "the request was not held while the clone was being made"
+    assert resp.status_code == 503
+    assert resp.headers["retry-after"] == "5"
+    assert _wait_outcomes(emitted) == ["error"]
+
+
+def test_a_clone_lock_that_cannot_be_tried_keeps_the_hold(
+    bed, cli_clone, emitted, monkeypatch
+):
+    """Where flock fails (a network filesystem without local locks, say),
+    nothing tells a running clone's directory from a dead one's, and the
+    request is held as for a clone under way.
+
+    Mutation: answering "no clone under way" when the lock cannot be tried
+    answers 503 + Retry-After 5 at once and fails here.
+    """
+    cli_clone.release()
+
+    def refused(repo_path):
+        raise OSError(errno.ENOLCK, "No locks available")
+
+    monkeypatch.setattr(scopes_api, "take_clone_lock", refused)
+
+    resp = TestClient(bed.app(cli_clone.scope)).get("/scopes/live/policy")
+
+    assert resp.status_code == 503
+    assert resp.headers["retry-after"] == "30"
+    assert _wait_outcomes(emitted) == ["timeout"]
 
 
 # --- what a retried attempt is allowed to do -----------------------------

@@ -49,7 +49,7 @@ from opal_common.topics.publisher import (
 from opal_common.urls import set_url_query_param
 from opal_server.config import opal_server_config
 from opal_server.data.data_update_publisher import DataUpdatePublisher
-from opal_server.git_cli import clone_under_way
+from opal_server.git_cli import clone_under_way, drop_clone_lock, take_clone_lock
 from opal_server.git_fetcher import (
     BranchHeadNotFoundError,
     CloneNotPopulatedError,
@@ -404,14 +404,38 @@ def _make_bundle(fetcher: GitPolicyFetcher, base_hash: Optional[str]) -> PolicyB
     except NoSuchPathError as exc:
         # GitPython's NoSuchPathError holds the path it did not find.
         path = pathlib.Path(str(exc))
-        if clone_under_way(path):
+        if _cli_clone_running(path):
             raise CloneNotPopulatedError(f"A clone into {exc} is under way") from exc
-        # The rename can land after make_bundle looked and before the
-        # directory beside the path was listed. It is atomic, so by now the
-        # clone is either in place or was never being made.
+        # The rename can land after make_bundle looked and before the check
+        # above. It is atomic and made under the clone's lock, so by now the
+        # clone is either in place or not coming.
         if not path.exists():
             raise
     return fetcher.make_bundle(base_hash)
+
+
+def _cli_clone_running(repo_path: pathlib.Path) -> bool:
+    """Whether a git command-line clone of ``repo_path`` is under way: a
+    directory a clone is made in sits beside it (clone_under_way), and the
+    clone's lock is held, as cli_clone holds it from before it makes that
+    directory until after it renames it into place.
+
+    A directory whose lock is free was left by a clone whose process
+    died, and nothing will put it in place. Taken for a clone under way
+    when the lock cannot be tried (a filesystem that refuses flock).
+    """
+    if not clone_under_way(repo_path):
+        return False
+    try:
+        fd = take_clone_lock(repo_path)
+    except OSError:
+        return True
+    if fd is None:
+        return True
+    # Held for no longer than this: a git op that starts meanwhile finds the
+    # clone busy and skips it, as for any other holder.
+    drop_clone_lock(fd)
+    return False
 
 
 async def _make_bundle_waiting_for_clone(
