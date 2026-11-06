@@ -231,6 +231,23 @@ class OpalClientConfig(Confi):
         description="The log format to use for inline Cedar logs",
     )
 
+    # OpenFGA policy store configuration ------------------------------------------
+    OPENFGA_STORE_ID = confi.str(
+        "OPENFGA_STORE_ID",
+        None,
+        description="Optional OpenFGA store ID. If not provided, OPAL client will look up or create a store using OPENFGA_STORE_NAME.",
+    )
+    OPENFGA_STORE_NAME = confi.str(
+        "OPENFGA_STORE_NAME",
+        "opal",
+        description="OpenFGA store name used when auto-discovering or auto-creating a store.",
+    )
+    OPENFGA_AUTHORIZATION_MODEL_ID = confi.str(
+        "OPENFGA_AUTHORIZATION_MODEL_ID",
+        None,
+        description="Optional initial OpenFGA authorization model ID.",
+    )
+
     # configuration for fastapi routes
     ALLOWED_ORIGINS = ["*"]
 
