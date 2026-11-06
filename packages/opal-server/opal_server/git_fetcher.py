@@ -2885,7 +2885,9 @@ class RepoInterface:
         try:
             repo.lookup_reference(f"refs/remotes/{remote}/{branch}")
             return True
-        except KeyError:
+        except (KeyError, pygit2.InvalidSpecError):
+            # Nor one that cannot be a ref (an empty name, ``x~1``): no fetch
+            # brings it, so its scope reports a missing branch.
             return False
 
     @staticmethod
@@ -2900,7 +2902,8 @@ class RepoInterface:
         try:
             (commit, _) = repo.resolve_refish(f"{remote}/{branch}")
             return commit.hex
-        except (pygit2.GitError, KeyError):
+        except (pygit2.GitError, KeyError, pygit2.InvalidSpecError):
+            # InvalidSpecError: an empty branch, as for has_remote_branch.
             return None
 
     @staticmethod

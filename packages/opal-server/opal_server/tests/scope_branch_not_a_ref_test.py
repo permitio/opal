@@ -8,7 +8,9 @@ check of the clone's remote-tracking ref for it raised InvalidSpecError
 before the fetch, so the clone was not fetched in the pass and its other
 scopes kept serving what they had. The check now takes such a branch for
 one the clone does not have, as it takes a missing branch, and the pass
-goes on to the fetch.
+goes on to the fetch. So do the lookups of the branch after the fetch,
+and in a phase-2 sync of a scope on it: such a scope reports a missing
+branch, and the fetch made through it marks the clone for its repack.
 
 No fetch can bring such a branch, so PUT /scopes answers 422 for one and
 stores nothing.
@@ -26,6 +28,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from opal_common.schemas.policy_source import GitPolicyScopeSource, NoAuthData
 from opal_common.schemas.scopes import Scope
+from opal_common.tests.log_capture import capture_records
 from opal_server import git_fetcher
 from opal_server.config import opal_server_config
 from opal_server.git_fetcher import GitPolicyFetcher
@@ -157,6 +160,48 @@ async def test_a_branch_that_cannot_be_a_ref_does_not_stop_the_fetch_of_its_clon
 
     assert _remote_tracking_head(base_dir, sibling) == origin.head.commit.hexsha
     assert "s-sibling" in pubsub.notified_scopes()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("branch", _BRANCHES_THAT_CANNOT_BE_REFS)
+async def test_scopes_on_a_branch_that_cannot_be_a_ref_report_it_missing(
+    tmp_path, monkeypatch, branch
+):
+    """Two scopes on such a branch: the first listed, through which phase 1
+    fetches the clone, and one synced in phase 2. The fetch marks the clone
+    due for its repack, and the pass logs one missing-branch line for the
+    branch and no failed sync.
+
+    Mutation: InvalidSpecError raised by RepoInterface.has_remote_branch
+    fails the phase-2 sync, and raised by RepoInterface.get_commit_hash the
+    phase-1 sync of an empty branch.
+    """
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_REPACK_PACK_LIMIT", 2)
+    origin = _origin(tmp_path / "origin")
+    url = origin.working_tree_dir
+    sibling = _scope("s-sibling", url)
+    scopes = _Scopes(
+        [_scope("s-bad", url, branch), sibling, _scope("s-bad-2", url, branch)]
+    )
+    svc = ScopesService(
+        base_dir=tmp_path / "opal", scopes=scopes, pubsub_endpoint=_PubSub()
+    )
+    await svc.sync_scope(scope_id="s-sibling")
+    # A pack of a fetch before the pass's, so that the pass's fetch takes a
+    # git clone (refs packed by git) to the pack limit; a libgit2 clone,
+    # its refs each in a file of their own, is marked below the limit.
+    _commit(origin, "policy/b.rego", "package b\n")
+    await svc.sync_scope(scope_id="s-sibling", force_fetch=True)
+    _commit(origin, "policy/c.rego", "package c\n")
+    git_fetcher._repacks_due.clear()
+
+    with capture_records() as logs:
+        await svc.sync_scopes(run_due_repacks=False)
+
+    assert set(git_fetcher._repacks_due) == {GitPolicyFetcher.source_id(sibling.policy)}
+    assert [r["message"] for r in logs.emitted if r["level"].name == "ERROR"] == [
+        f"Did not find target branch on remote: {branch} ({url})"
+    ]
 
 
 def _client(store: _Scopes, pubsub: _PubSub, base_dir: Path) -> TestClient:
