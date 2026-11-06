@@ -975,45 +975,52 @@ def test_a_transient_fault_during_the_wait_keeps_its_own_retry_after(bed):
 # --- the cost of holding -------------------------------------------------
 
 
-def test_the_wait_does_not_block_the_event_loop(bed, monkeypatch, tmp_path):
+def test_the_wait_never_stalls_the_event_loop_for_a_poll(bed):
     """The hold must be an awaited sleep, not a blocking one: a worker holds
     many of these at once, and gunicorn kills a worker whose heartbeat stops.
 
-    Asserts the loop keeps running by scheduling an independent coroutine
-    while the route is waiting. The threshold has to sit in the GAP, not just
-    above zero: a blocked loop still yields at every executor round-trip, so
-    ~10 ticks get through even with a blocking sleep, and an earlier `> 5`
-    version of this test passed with `time.sleep` in place. A free loop
-    manages ~40 over the same 0.2s budget.
+    Bounds the event loop's longest stall while the route waits, watched by
+    an independent coroutine. A blocking sleep stalls the loop for a whole
+    poll (time.sleep sleeps at least that long); an awaited one, no longer
+    than the machine takes to schedule the watcher. So the bound is the
+    poll itself: a slow or CPU-throttled machine stays far below it, and a
+    blocking sleep always reaches it. How many times the watcher ran is not
+    asserted, since that measures the machine's speed, not blocking.
 
-    Mutation: swapping `await asyncio.sleep(...)` for `time.sleep(...)` drops
-    the tick count into single digits and fails here.
+    Mutation: swapping `await asyncio.sleep(...)` for `time.sleep(...)`
+    stalls the loop for 0.5s and fails here.
     """
-    ticks = []
-
-    async def ticker():
-        for _ in range(50):
-            await asyncio.sleep(0.005)
-            ticks.append(1)
-
-    bed.set_wait(0.2)
+    poll = 0.5
+    bed.set_poll(poll)
+    bed.set_wait(poll + 0.1)
     bed.install(_populating)
     app = bed.app()
+    gaps = []
 
-    @app.get("/tick")
-    async def _start_ticker():
-        asyncio.create_task(ticker())
+    async def watch():
+        loop = asyncio.get_running_loop()
+        last = loop.time()
+        while True:
+            await asyncio.sleep(0.001)
+            now = loop.time()
+            gaps.append(now - last)
+            last = now
+
+    @app.get("/watch")
+    async def _start_watch():
+        asyncio.get_running_loop().create_task(watch())
         return {}
 
     with TestClient(app) as client:
-        client.get("/tick")
+        client.get("/watch")
         resp = client.get("/scopes/live/policy")
 
     assert resp.status_code == 503
-    assert len(ticks) >= 20, (
-        f"the event loop advanced only {len(ticks)} ticks while one request "
-        "waited for a clone (a free loop manages ~40 in that budget) — the "
-        "wait is blocking the worker between polls"
+    assert gaps, "the watcher never ran"
+    assert max(gaps) < poll, (
+        f"the event loop stood still for {max(gaps):.3f}s while one request "
+        f"waited for a clone (poll {poll}s): the wait blocks the worker "
+        "between polls"
     )
 
 
@@ -1186,7 +1193,8 @@ async def test_a_disconnected_client_stops_being_waited_for(
     monkeypatch.setattr(
         "opal_server.scopes.api.opal_server_config.BASE_DIR", str(tmp_path)
     )
-    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", 5.0)
+    budget = 5.0
+    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", budget)
     monkeypatch.setattr("opal_server.scopes.api._CLONE_WAIT_POLL_SECONDS", 0.02)
 
     polls = {"n": 0}
@@ -1212,9 +1220,12 @@ async def test_a_disconnected_client_stops_being_waited_for(
 
     assert resp.status_code == 503
     assert _wait_outcomes(emitted) == ["disconnected"], _wait_outcomes(emitted)
+    # The budget, not a guess at how fast this machine is: the request is
+    # answered after three 20 ms polls, and a hold that runs to its deadline
+    # takes the whole budget at least.
     assert (
-        elapsed < 1.0
-    ), f"kept waiting {elapsed:.3f}s for a client that had hung up (budget 5s)"
+        elapsed < budget
+    ), f"kept waiting {elapsed:.3f}s for a client that had hung up (budget {budget}s)"
     assert len(calls) <= 4, (
         f"{len(calls)} bundle attempts after the client disconnected: the "
         "check does not stop the loop"
