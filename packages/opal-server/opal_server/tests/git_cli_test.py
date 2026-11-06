@@ -9,6 +9,7 @@ import asyncio
 import base64
 import ctypes
 import errno
+import io
 import os
 import re
 import shlex
@@ -831,6 +832,17 @@ def test_credentials_are_left_out_of_the_remote_s_repr():
     assert "s3cret" not in repr(remote) and "t0ken" not in repr(remote)
 
 
+def test_the_remote_s_repr_names_only_the_url():
+    """The repr goes into logs and tracebacks, so it names the URL git is
+    given and nothing else: not a user that is a secret as a word of its own,
+    nor the text kept from redaction."""
+    remote = git_cli._remote_for_git(
+        "https://ci@127.0.0.1:8443/repo.git", _source("https://127.0.0.1:8443/repo.git")
+    )
+    assert remote.word_secrets and remote.kept
+    assert repr(remote) == f"_Remote(url={remote.url!r})"
+
+
 @pytest.mark.asyncio
 async def test_a_clone_into_an_empty_directory_takes_its_place(git_origin, tmp_path):
     dest = tmp_path / "cli"
@@ -1096,6 +1108,17 @@ async def test_a_dead_op_s_git_dir_that_fails_to_stat_keeps_what_the_op_left(
 
     assert git_cli.remove_dead_op_leftovers(clone) is True
     assert not leftover.exists()
+
+
+def test_a_clone_path_that_is_a_file_has_nothing_of_a_dead_op_to_remove(tmp_path):
+    """A file where a clone would be (a name in the clones directory that could
+    be a source id's) has no git dir: as for a clone that is not there, nothing
+    a dead op left is in it, and all of it counts as gone."""
+    stray = tmp_path / "stray"
+    stray.write_text("not a clone")
+
+    assert git_cli.remove_dead_op_leftovers(stray) is True
+    assert stray.read_text() == "not a clone"
 
 
 @pytest.mark.asyncio
@@ -1690,6 +1713,35 @@ def test_a_process_that_cannot_be_read_counts_as_a_member_unless_it_is_gone(
         live.wait()
 
     assert found is members
+
+
+def test_a_member_listed_after_another_user_s_process_still_counts(monkeypatch):
+    """A process this user may not read (another user's, under /proc's
+    hidepid=1) says nothing of the group, and the look through /proc goes on
+    past it: a live member listed after it is found."""
+    pgid = 4242
+    stats = {"/proc/100/stat": None, "/proc/200/stat": f"200 (git) S 1 {pgid} 0"}
+    real_isdir, real_listdir = os.path.isdir, os.listdir
+
+    def _open(path, *args, **kwargs):
+        if stats[str(path)] is None:
+            raise PermissionError(errno.EACCES, os.strerror(errno.EACCES))
+        return io.StringIO(stats[str(path)])
+
+    with monkeypatch.context() as patched:
+        patched.setattr(git_cli.os, "killpg", lambda group, signal: None)
+        patched.setattr(
+            git_cli.os.path, "isdir", lambda p: p == "/proc/self" or real_isdir(p)
+        )
+        patched.setattr(
+            git_cli.os,
+            "listdir",
+            lambda p: ["self", "100", "200"] if p == "/proc" else real_listdir(p),
+        )
+        patched.setattr(git_cli, "open", _open, raising=False)
+        found = git_cli.live_members(pgid)
+
+    assert found is True
 
 
 @pytest.fixture
@@ -2360,6 +2412,61 @@ async def test_what_can_be_a_credential_is_redacted_from_git_s_errors_and_no_mor
     assert info.value.stderr_tail == shown
 
 
+@pytest.mark.parametrize(
+    "url, text, shown",
+    [
+        ("https://alice:zz@127.0.0.1/r.git", "refused zzz", "refused ***"),
+        ("https://ci@127.0.0.1/r.git", "ci failed", "*** failed"),
+        ("https://ci@127.0.0.1/r.git", "pci, then ci", "pci, then ***"),
+        ("https://ci@127.0.0.1/r.git", "ci2 failed", "ci2 failed"),
+        ("https://ci-@127.0.0.1/r.git", "ci-x", "***x"),
+        ("https://-ci@127.0.0.1/r.git", "x-ci", "x***"),
+        ("https://ci@127.0.0.1/r.git", "-" * 300 + " ci", "-" * 300 + " ***"),
+    ],
+    ids=[
+        "overlapping",
+        "word-at-the-start",
+        "word-at-the-end",
+        "longer-word-at-the-start",
+        "ends-in-punctuation",
+        "starts-with-punctuation",
+        "word-at-the-end-of-a-long-text",
+    ],
+)
+def test_redaction_at_the_edges_of_the_text_and_of_words(url, text, shown):
+    """A password is redacted wherever it is, places that overlap included
+    (``zz`` twice in ``zzz``), so that no part of it is left.
+
+    A user alone is redacted where it is a word of its own: at the very
+    start or end of the text, however long the text, and where its own
+    punctuation meets a letter; not where a letter or digit runs on into
+    it (``pci``, ``ci2``).
+    """
+    assert git_cli._remote_for_git(url, _source(url)).redact(text) == shown
+
+
+@pytest.mark.parametrize(
+    "password, redacted",
+    [
+        ("x-oauth-basic", True),
+        ("X-OAuth-Basic", True),
+        ("x-oauth-basic2", False),
+        ("zebra", False),
+    ],
+)
+def test_the_user_is_a_secret_only_with_the_password_x_oauth_basic(password, redacted):
+    """GitHub's form for a token as the user has the password x-oauth-basic,
+    in any case: the user is then redacted. With any other password, however
+    close, the user is no secret and shows."""
+    url = f"https://t0kenvalue:{password}@127.0.0.1/r.git"
+    remote = git_cli._remote_for_git(url, _source(url))
+
+    shown = remote.redact("fatal: t0kenvalue was refused")
+
+    user = "***" if redacted else "t0kenvalue"
+    assert shown == f"fatal: {user} was refused"
+
+
 @pytest.mark.parametrize("cut", ["tail", "kept"])
 @pytest.mark.asyncio
 async def test_no_part_of_a_secret_cut_by_the_error_s_length_limits_shows(
@@ -2426,13 +2533,14 @@ async def test_a_credential_with_a_newline_or_a_nul_is_refused(
 ):
     """git's credential protocol cannot carry a newline, and no environment
     variable can hold a NUL: such a user, password or token is refused as the
-    source's, before git runs."""
+    source's, before git runs, with git's status for a fatal error."""
     url = git_http.url("repo.git", userinfo=userinfo)
     auth = GitHubTokenAuthData(token=token) if token else None
 
-    with pytest.raises(GitCliRefusedSourceError, match="newline or a NUL"):
+    with pytest.raises(GitCliRefusedSourceError, match="newline or a NUL") as info:
         await _clone(url, tmp_path / "cli", _source(url, auth))
 
+    assert info.value.returncode == 128
     assert git_http.requests == []
 
 

@@ -1505,6 +1505,58 @@ def test_the_sweep_removes_a_key_dir_with_no_key_once_it_is_old_enough(
     assert not old.exists()
 
 
+def test_a_key_dir_with_no_key_is_left_alone_for_one_minute(tmp_path, monkeypatch):
+    """The setup grace is one minute: a key directory with no key and no
+    held lock stays at just under a minute old and goes at just over it."""
+    monkeypatch.setattr(git_cli, "_SHM", str(tmp_path))
+    monkeypatch.setattr(git_cli.tempfile, "tempdir", str(tmp_path))
+    now = time.time()
+    monkeypatch.setattr(git_cli.time, "time", lambda: now)
+    young, aged = (tmp_path / f"opal-git-ssh-{_dead_pid()}-{n}" for n in ("y1", "a1"))
+    young.mkdir()
+    aged.mkdir()
+    os.utime(young, (now - 59.5, now - 59.5))
+    os.utime(aged, (now - 60.5, now - 60.5))
+
+    git_cli.remove_dead_key_dirs()
+
+    assert young.exists()
+    assert not aged.exists()
+
+
+def test_a_key_dir_with_no_key_goes_once_it_is_a_minute_old(tmp_path, monkeypatch):
+    """The setup grace ends at one minute: a key directory with no key and no
+    held lock that is a minute old to the second goes."""
+    monkeypatch.setattr(git_cli, "_SHM", str(tmp_path))
+    monkeypatch.setattr(git_cli.tempfile, "tempdir", str(tmp_path))
+    made = int(time.time()) - 3600
+    monkeypatch.setattr(git_cli.time, "time", lambda: made + 60.0)
+    aged = tmp_path / f"opal-git-ssh-{_dead_pid()}-m1"
+    aged.mkdir()
+    os.utime(aged, (made, made))
+    assert os.lstat(aged).st_mtime == made
+
+    git_cli.remove_dead_key_dirs()
+
+    assert not aged.exists()
+
+
+def test_a_key_dir_made_while_the_clock_read_the_epoch_goes(tmp_path, monkeypatch):
+    """A key directory made while the clock still read the epoch (a host with
+    no clock battery, before NTP set it) is long past the setup grace once the
+    clock is right: with no key and no held lock, it goes."""
+    monkeypatch.setattr(git_cli, "_SHM", str(tmp_path))
+    monkeypatch.setattr(git_cli.tempfile, "tempdir", str(tmp_path))
+    dirs = [tmp_path / f"opal-git-ssh-{_dead_pid()}-e{made}" for made in (0, 1)]
+    for made, path in enumerate(dirs):
+        path.mkdir()
+        os.utime(path, (made, made))
+
+    git_cli.remove_dead_key_dirs()
+
+    assert [path.exists() for path in dirs] == [False, False]
+
+
 def test_a_key_dir_whose_age_cannot_be_read_is_judged_by_its_lock(
     tmp_path, monkeypatch
 ):
