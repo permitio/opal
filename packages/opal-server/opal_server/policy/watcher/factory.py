@@ -1,5 +1,6 @@
 from functools import partial
 from typing import Any, List, Optional
+import os
 
 from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
 from opal_common.confi.confi import load_conf_if_none
@@ -129,6 +130,8 @@ def setup_watcher_task(
             policy_bundle_path=opal_server_config.POLICY_BUNDLE_TMP_PATH,
             policy_bundle_git_add_pattern=opal_server_config.POLICY_BUNDLE_GIT_ADD_PATTERN,
             region=policy_bundle_aws_region,
+            aws_role_arn=opal_server_config.POLICY_BUNDLE_AWS_ROLE_ARN,
+            aws_web_id_token_file=opal_server_config.POLICY_BUNDLE_AWS_WEB_IDENTITY_TOKEN_FILE,
         )
     else:
         raise ValueError("Unknown value for OPAL_POLICY_SOURCE_TYPE")
