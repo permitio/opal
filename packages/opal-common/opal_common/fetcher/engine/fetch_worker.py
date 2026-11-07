@@ -25,6 +25,7 @@ async def fetch_worker(queue: asyncio.Queue, engine):
         # get a event from the queue
         event, callback = await queue.get()
         # take care of it
+        fetcher = res = data = None
         try:
             # get fetcher for the event
             fetcher = register.get_fetcher_for_event(event)
@@ -44,3 +45,10 @@ async def fetch_worker(queue: asyncio.Queue, engine):
         finally:
             # Notify the queue that the "work item" has been processed.
             queue.task_done()
+            # Drop references to the processed event and its (potentially large)
+            # fetched payload. Otherwise these locals stay bound in the worker's
+            # frame while it blocks on the next `queue.get()`, so every idle
+            # worker pins its last dataset + response in memory indefinitely
+            # (one retained copy per worker -> a memory high-water mark that only
+            # resets on process restart). See issues #770 / #844.
+            event = callback = fetcher = res = data = None
