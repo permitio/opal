@@ -6,10 +6,12 @@ from typing import Any, ClassVar, Optional, Set, Union, cast
 import httpx
 from aiohttp import ClientResponse, ClientSession, ClientTimeout
 from opal_common.config import opal_common_config
+from opal_common.fetcher.conditional import CacheValidators, NotModified, ValidatedData
 from opal_common.fetcher.events import FetcherConfig, FetchEvent
 from opal_common.fetcher.fetch_provider import BaseFetchProvider
 from opal_common.fetcher.logger import get_logger
 from opal_common.http_utils import is_http_error_response, redact_url
+from opal_common.schemas.wire_defaults import OmitNewFieldsWhenDefaultMixin
 from opal_common.security.sslcontext import get_custom_ssl_context
 from pydantic import ConfigDict, field_validator
 
@@ -25,12 +27,13 @@ class HttpMethods(Enum):
     DELETE = "delete"
 
 
-class HttpFetcherConfig(FetcherConfig):
+class HttpFetcherConfig(OmitNewFieldsWhenDefaultMixin, FetcherConfig):
     """Config for HttpFetchProvider's Adding HTTP headers."""
 
     # ``headers`` carries Authorization tokens and ``data`` the (possibly
     # sensitive) payload - mask both in repr/str so they never leak into logs.
     _redacted_repr_fields: ClassVar[Set[str]] = {"headers", "data"}
+    _omit_when_default_fields: ClassVar[Set[str]] = {"conditional_requests"}
 
     model_config = ConfigDict(use_enum_values=True)
 
@@ -39,6 +42,11 @@ class HttpFetcherConfig(FetcherConfig):
     process_data: bool = True
     method: HttpMethods = HttpMethods.GET
     data: Any = None
+    # Send the validators of the previous fetch (``If-None-Match`` /
+    # ``If-Modified-Since``) and return ``NotModified`` on ``304``. The data is
+    # returned wrapped in ``ValidatedData``, so only callers that keep the
+    # validators should turn this on. GET only - ignored for other methods.
+    conditional_requests: bool = False
 
     @field_validator("method")
     @classmethod
@@ -96,19 +104,46 @@ class HttpFetchProvider(BaseFetchProvider):
     async def __aexit__(self, exc_type=None, exc_val=None, tb=None):
         await self._session.__aexit__(exc_type, exc_val, tb)
 
+    def _is_conditional(self) -> bool:
+        return (
+            self._event.config.conditional_requests
+            and HttpMethods(self._event.config.method) == HttpMethods.GET
+        )
+
     async def _fetch_(self):
         logger.debug(f"{self.__class__.__name__} fetching from {redact_url(self._url)}")
         http_method = self.match_http_method_from_type(
             self._session, self._event.config.method
         )
+        request_kwargs = dict(self._ssl_context_kwargs)
+        if self._is_conditional() and self._event.validators is not None:
+            request_kwargs["headers"] = self._event.validators.to_request_headers()
         if self._event.config.data is not None:
             result: Union[ClientResponse, httpx.Response] = await http_method(
-                self._url, data=self._event.config.data, **self._ssl_context_kwargs
+                self._url, data=self._event.config.data, **request_kwargs
             )
         else:
-            result = await http_method(self._url, **self._ssl_context_kwargs)
+            result = await http_method(self._url, **request_kwargs)
+        # Check for a 304 before raise_for_status(): httpx raises on any non-2xx
+        # (so the 304 would be retried as a failure), and aiohttp lets it through
+        # to _process_, where decoding the empty body fails.
+        if self._is_conditional() and self._status_code(result) == 304:
+            return result
         result.raise_for_status()
         return result
+
+    @staticmethod
+    def _status_code(res: Union[ClientResponse, httpx.Response]) -> int:
+        return res.status_code if isinstance(res, httpx.Response) else res.status
+
+    @staticmethod
+    def _validators_from_response(
+        res: Union[ClientResponse, httpx.Response]
+    ) -> CacheValidators:
+        return CacheValidators(
+            etag=res.headers.get("ETag"),
+            last_modified=res.headers.get("Last-Modified"),
+        )
 
     @staticmethod
     def match_http_method_from_type(
@@ -131,6 +166,23 @@ class HttpFetchProvider(BaseFetchProvider):
         if is_http_error_response(res):
             return res
 
+        if not self._is_conditional():
+            return await self._process_data(res)
+
+        received = self._validators_from_response(res)
+        if self._status_code(res) == 304:
+            # A 304 may leave out validators that did not change - keep the ones
+            # we sent for those.
+            sent = self._event.validators or CacheValidators()
+            return NotModified(
+                validators=CacheValidators(
+                    etag=received.etag or sent.etag,
+                    last_modified=received.last_modified or sent.last_modified,
+                )
+            )
+        return ValidatedData(data=await self._process_data(res), validators=received)
+
+    async def _process_data(self, res: Union[ClientResponse, httpx.Response]):
         # if we are asked to process the data before we return it
         if self._event.config.process_data:
             data = await self._response_to_data(res, is_json=self._event.config.is_json)

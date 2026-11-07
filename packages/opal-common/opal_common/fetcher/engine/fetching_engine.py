@@ -1,7 +1,8 @@
 import asyncio
 import uuid
-from typing import Coroutine, Dict, List, Union
+from typing import Coroutine, Dict, List, Optional, Union
 
+from opal_common.fetcher.conditional import CacheValidators
 from opal_common.fetcher.engine.base_fetching_engine import BaseFetchingEngine
 from opal_common.fetcher.engine.core_callbacks import OnFetchFailureCallback
 from opal_common.fetcher.engine.fetch_worker import fetch_worker
@@ -130,6 +131,7 @@ class FetchingEngine(BaseFetchingEngine):
         callback: Coroutine,
         config: Union[FetcherConfig, dict, None] = None,
         fetcher="HttpFetchProvider",
+        validators: Optional[CacheValidators] = None,
     ) -> FetchEvent:
         """Simplified default fetching handler for queuing a fetch task.
 
@@ -138,6 +140,7 @@ class FetchingEngine(BaseFetchingEngine):
             callback (Coroutine): a callback to call with the fetched result
             config (FetcherConfig, optional): Configuration to be used by the fetcher. Defaults to None.
             fetcher (str, optional): Which fetcher class to use. Defaults to "HttpFetchProvider".
+            validators (CacheValidators, optional): Validators from the previous fetch, for a conditional fetch. Defaults to None.
         Returns:
             the queued event (which will be mutated to at least have an Id)
 
@@ -152,7 +155,11 @@ class FetchingEngine(BaseFetchingEngine):
 
         # init a URL event
         event = FetchEvent(
-            url=url, fetcher=fetcher, config=config, retry=self._retry_config
+            url=url,
+            fetcher=fetcher,
+            config=config,
+            retry=self._retry_config,
+            validators=validators,
         )
         return await self.queue_fetch_event(event, callback)
 

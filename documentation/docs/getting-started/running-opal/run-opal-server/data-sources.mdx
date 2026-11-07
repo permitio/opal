@@ -75,6 +75,28 @@ export OPAL_DATA_CONFIG_SOURCES='{"config": {"entries": [{"url": "https://api.pe
 
 Please be advised, this will not work so great in docker-compose. Docker compose does not know how to deal with env vars that contain spaces, and it treats single quotes (i.e: `''`) as part of the value. But with `docker run` you should be fine.
 
+#### Skipping unchanged data (conditional requests)
+
+Data sources are refetched in full on every reconnect and every `periodic_update_interval`. If a source returns an `ETag` or `Last-Modified` header, you can let the client skip unchanged data by setting `conditional_requests` in the entry's `config`:
+
+```json
+{
+    "url": "https://api.example.com/roles",
+    "topics": ["policy_data"],
+    "dst_path": "/roles",
+    "config": {
+        "conditional_requests": true
+    }
+}
+```
+
+The client then sends the validators of its last fetch (`If-None-Match` / `If-Modified-Since`). On a `304 Not Modified` it keeps the data already in the policy store and writes nothing; the update report marks the entry with `not_modified: true`, and the transaction counts as successful.
+
+- Only `GET` requests are made conditional; the option is ignored for other methods.
+- Validators are kept in memory. The client drops them whenever it reloads all its data sources (initial load, reconnect, inline OPA restart, a manual trigger), so these loads are always full fetches.
+- Before trusting a `304`, the client checks that the policy store still has data at `dst_path` and refetches in full if it doesn't. This covers an external OPA that restarted with an empty store. A source whose data is legitimately empty is therefore always refetched.
+- [OPAL_DATA_UPDATER_CONDITIONAL_FETCH_MAX_AGE](/getting-started/configuration#opal_data_updater_conditional_fetch_max_age) optionally forces a full fetch once the last one is older than the given number of seconds.
+
 #### Delegating the sources config to an API server
 
 For more dynamic cases where you'd need different clients to load different sets of data at different times;

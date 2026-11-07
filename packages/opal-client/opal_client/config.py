@@ -408,6 +408,13 @@ class OpalClientConfig(Confi):
     SPLIT_ROOT_DATA = confi.bool(
         "SPLIT_ROOT_DATA", False, description="Split writing data updates to root path"
     )
+    DATA_UPDATER_CONDITIONAL_FETCH_MAX_AGE = confi.float(
+        "DATA_UPDATER_CONDITIONAL_FETCH_MAX_AGE",
+        None,
+        description="For data sources fetched with conditional requests (HttpFetcherConfig.conditional_requests), "
+        "the max age in seconds of the stored validators; once older, the next fetch is unconditional. "
+        "A backstop for policy stores that lose data without OPAL noticing. Unset (default) means no max age",
+    )
 
     def on_load(self):
         # LOGGER
