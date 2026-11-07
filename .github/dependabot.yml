@@ -1,0 +1,151 @@
+# Dependabot version updates for OPAL.
+#
+# This repo had no dependency automation. It matters beyond OPAL itself, because OPAL is
+# the upstream that DOWNSTREAM consumers inherit: permitio/pdp-v2 installs opal-client and
+# opal-common, so the floors and caps declared here decide what a PDP image can resolve.
+# Several CVE waivers in the PDP exist purely because a cap here forbids the fixed version
+# (see the note at the bottom of this file). See PER-15358.
+#
+# The cooldown/group/limit shape, commit prefixes and labels match the configs proposed
+# for permitio/permit-opa (#50) and permitio/PDP (#338), so reviewers learn one convention.
+#
+# `cooldown` is supply-chain defence, not noise reduction: most malicious-release incidents
+# are caught within a week. Security updates are never delayed by it. Only semver-strict ecosystems
+# support the semver-specific knobs, so pip and npm get them while docker and
+# github-actions get default-days only.
+version: 2
+updates:
+  # OPAL's Python dependencies. The library pins live in packages/requires.txt and
+  # packages/<pkg>/requires.txt, which each setup.py reads at runtime. Dependabot's pip
+  # fetcher does not need a recognisable filename: it reads every *.txt in a configured
+  # directory and its immediate subdirectories, keeping the ones whose lines all parse
+  # as requirements (dependabot-core python/shared_file_fetcher.rb). So:
+  #   "/"                    covers requirements.txt (dev/test toolchain) and, one level
+  #                          down, packages/requires.txt (fastapi, starlette, pydantic, ...)
+  #   "/packages/opal-*"     covers each package's own requires.txt (ddtrace, gitpython)
+  # These are library RANGES, so expect PRs that widen a cap (`<4` -> `<5`); raising a
+  # floor (e.g. the gitpython security floor, see the note at the bottom) stays manual.
+  # Confirm the files are picked up on the first run under Insights > Dependency graph >
+  # Dependabot.
+  - package-ecosystem: "pip"
+    directories:
+      - "/"
+      - "/packages/opal-common"
+      - "/packages/opal-client"
+      - "/packages/opal-server"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "deps"
+      prefix-development: "deps-dev"
+    labels:
+      - "dependencies"
+
+  # Docusaurus documentation site.
+  - package-ecosystem: "npm"
+    directory: "/documentation"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "deps"
+      prefix-development: "deps-dev"
+    labels:
+      - "dependencies"
+
+  # Docker base images.
+  # Note: cooldown.semver-major-days is not supported for docker (Dependabot only
+  # supports it on semver-strict ecosystems like pip and npm).
+  #
+  # There is real work waiting here. docker/Dockerfile builds on python:3.10-bookworm
+  # and python:3.10-slim-bookworm, and Python 3.10 reaches END OF LIFE in October 2026 -
+  # the PDP already moved off python:3.10 for that reason plus four CPython CVEs that
+  # only had 3.13 fixes (PER-15358). It also pulls `alpine:latest` twice, which is a
+  # floating tag with no reproducibility at all.
+  #
+  # What this entry can and can't see: it tracks FROM lines (the python bases,
+  # permitio/cedar-agent). It cannot see the OPA tag (an ARG fed to `skopeo copy`) or the
+  # EOPA tag (a `wget` URL) - those stay manual bumps.
+  #
+  # The python minor is held: the Dockerfile hard-codes /usr/local/lib/python3.10 and
+  # opal-server declares python_requires <3.13, so an automatic 3.10 -> 3.1x tag bump
+  # would only produce a red PR. Move off 3.10 (EOL Oct 2026) deliberately, then drop
+  # the ignore. Patch-level 3.10.x digest/tag updates still come through.
+  #
+  # /app-tests/git-leak/seed is a test-only image, included so its base doesn't rot.
+  - package-ecosystem: "docker"
+    directories:
+      - "/docker"
+      - "/app-tests/git-leak/seed"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "python"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+    commit-message:
+      prefix: "deps"
+    labels:
+      - "dependencies"
+
+  # GitHub Actions versions.
+  # Note: cooldown.semver-major-days is not supported for github-actions.
+  #
+  # This is the entry with the most immediate payoff. The workflows currently mix
+  # actions/checkout@v2 and @v3 (plus one SHA-pinned v7.0.0); actions/setup-python@v2,
+  # @v4 and @v5; docker/build-push-action@v2 and @v6; docker/setup-buildx-action@v1 and
+  # @v3; docker/setup-qemu-action@v1 and @v3; and docker/login-action@v2. The @v1/@v2
+  # generations are several years old and run on Node runtimes GitHub has deprecated.
+  # pypa/gh-action-pypi-publish@release/v1 is a branch ref, which Dependabot does not
+  # bump.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "deps"
+    labels:
+      - "dependencies"
+
+# DOWNSTREAM NOTE (PER-15358)
+# ---------------------------
+# These pins in packages/opal-common/requires.txt (and packages/opal-server/requires.txt
+# for gitpython) are the reason permitio/pdp-v2 carries CVE waivers it cannot otherwise
+# retire. The pip entry above now watches those files, but it widens caps rather than
+# raising floors, so the gitpython floor below needs raising by hand. (The starlette <1
+# cap that used to be here was lifted to >=1.3.1,<2 by #959.)
+#
+#   ddtrace>=3.0.0,<4      - the <4 cap forbids 4.8.2, which fixes CVE-2026-50271. The PDP
+#                            works around it by dropping "baggage" from
+#                            DD_TRACE_PROPAGATION_STYLE_EXTRACT.
+#   gitpython>=3.1.32,<4   - the FLOOR is the problem here, not the cap. 3.1.59 fixes
+#                            CVE-2026-78676, a CRITICAL (CVSS 9.8) argument-injection RCE
+#                            via git-config re-serialization into core.hooksPath, and
+#                            3.1.58 fixes six more. A floor of 3.1.32 lets any consumer
+#                            resolve a vulnerable version; pdp-v2:0.9.14 shipped 3.1.57 and
+#                            had to add its own explicit floor to get out of it.
