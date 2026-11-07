@@ -231,6 +231,44 @@ class OpalClientConfig(Confi):
         description="The log format to use for inline Cedar logs",
     )
 
+    # OpenFGA policy store configuration ------------------------------------------
+    POLICY_STORE_OPENFGA_STORE_ID = confi.str(
+        "POLICY_STORE_OPENFGA_STORE_ID",
+        None,
+        description="Optional OpenFGA store ID. If not provided, OPAL client will look up or create a store using POLICY_STORE_OPENFGA_STORE_NAME.",
+    )
+    POLICY_STORE_OPENFGA_STORE_NAME = confi.str(
+        "POLICY_STORE_OPENFGA_STORE_NAME",
+        "opal",
+        description="OpenFGA store name used when auto-discovering or auto-creating a store.",
+    )
+    POLICY_STORE_OPENFGA_AUTHORIZATION_MODEL_ID = confi.str(
+        "POLICY_STORE_OPENFGA_AUTHORIZATION_MODEL_ID",
+        None,
+        description="Optional initial OpenFGA authorization model ID.",
+    )
+    OPENFGA_STORE_ID = confi.str(
+        "OPENFGA_STORE_ID",
+        confi.delay(
+            lambda POLICY_STORE_OPENFGA_STORE_ID=None: POLICY_STORE_OPENFGA_STORE_ID
+        ),
+        description="Alias for POLICY_STORE_OPENFGA_STORE_ID.",
+    )
+    OPENFGA_STORE_NAME = confi.str(
+        "OPENFGA_STORE_NAME",
+        confi.delay(
+            lambda POLICY_STORE_OPENFGA_STORE_NAME="opal": POLICY_STORE_OPENFGA_STORE_NAME
+        ),
+        description="Alias for POLICY_STORE_OPENFGA_STORE_NAME.",
+    )
+    OPENFGA_AUTHORIZATION_MODEL_ID = confi.str(
+        "OPENFGA_AUTHORIZATION_MODEL_ID",
+        confi.delay(
+            lambda POLICY_STORE_OPENFGA_AUTHORIZATION_MODEL_ID=None: POLICY_STORE_OPENFGA_AUTHORIZATION_MODEL_ID
+        ),
+        description="Alias for POLICY_STORE_OPENFGA_AUTHORIZATION_MODEL_ID.",
+    )
+
     # configuration for fastapi routes
     ALLOWED_ORIGINS = ["*"]
 
