@@ -1,0 +1,23 @@
+model
+  schema 1.1
+
+type user
+
+type organization
+  relations
+    define member: [user]
+    define admin: [user]
+
+type folder
+  relations
+    define org: [organization]
+    define owner: [user] or admin from org
+    define editor: [user] or owner
+    define viewer: [user, organization#member] or editor
+
+type document
+  relations
+    define parent: [folder]
+    define owner: [user] or owner from parent
+    define editor: [user] or owner or editor from parent
+    define viewer: [user, user:*] or editor or viewer from parent
