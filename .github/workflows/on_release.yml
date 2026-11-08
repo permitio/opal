@@ -205,7 +205,7 @@ jobs:
       - name: Python setup
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11.8'
+          python-version: '3.11'
 
       - name: Bump version - packaging__.py
         id: version
@@ -290,7 +290,7 @@ jobs:
       - name: Python setup
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11.8'
+          python-version: '3.11'
 
       - name: Bump version - packaging__.py
         run: |
