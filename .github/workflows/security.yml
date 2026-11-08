@@ -1,0 +1,84 @@
+# The scheduled security jobs, which post to the security Slack channel: the security scan twice
+# a week and the security digest once a week. A manual run picks one with the mode input. They do
+# not run on pull requests and are not part of the CI check; each job's result is its own, and a
+# failed run is red in Actions. Each cron in on.schedule is named once more in its job's if:,
+# since GitHub does not allow expressions in on:.
+name: Security
+
+on:
+  schedule:
+    - cron: "23 4 * * 1,4"
+    - cron: "41 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Which job to run
+        type: choice
+        options: [security, weekly]
+        default: security
+
+permissions: {}
+
+# Runs of the same job wait for each other and are never cancelled.
+concurrency:
+  group: security-${{ inputs.mode || github.event.schedule }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash --noprofile --norc -euo pipefail {0}
+
+jobs:
+  # Twice a week and in the security mode: .github/scripts/security-scan.sh scans the published
+  # packages' dependency ranges at their floor and ceiling, the latest releases on PyPI, the latest
+  # opal-server and opal-client images, the open Dependabot alerts and the full history, writes
+  # the report to the job summary and posts it to SECURITY_SLACK_WEBHOOK_URL. Findings are
+  # reported and pass; a source that did not complete fails the job, and so does a secret that
+  # TruffleHog verified. TruffleHog runs only in a manual run. The job runs in the security-scan
+  # environment, which holds DEPENDABOT_ALERTS_TOKEN, a token that can read the alerts, which the
+  # GITHUB_TOKEN cannot; the job's own token only checks out the repository. A secret that is not
+  # set skips what needs it, and the report says so. Only the step that runs the script gets the
+  # secrets, and the script passes each to the one command that needs it.
+  security-scan:
+    name: security-scan
+    if: github.event.schedule == '23 4 * * 1,4' || inputs.mode == 'security'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: security-scan
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Scan and report
+        env:
+          TRUFFLEHOG: ${{ github.event_name == 'workflow_dispatch' && 'run' || 'skip' }}
+          DEPENDABOT_ALERTS_TOKEN: ${{ secrets.DEPENDABOT_ALERTS_TOKEN }}
+          GITLEAKS_HISTORY_ACCEPT_SHA256: ${{ secrets.GITLEAKS_HISTORY_ACCEPT_SHA256 }}
+          SECURITY_SLACK_WEBHOOK_URL: ${{ secrets.SECURITY_SLACK_WEBHOOK_URL }}
+        run: .github/scripts/security-scan.sh --trufflehog "$TRUFFLEHOG"
+
+  # Weekly and in the weekly mode: .github/scripts/digest.sh posts the security digest to
+  # SECURITY_SLACK_WEBHOOK_URL, even when nothing needs attention: the open Dependabot pull
+  # requests, the last security scan, and newer releases of the binaries in .github/binaries.lock
+  # that are at least 7 days old. The job's token reads the pull requests and the runs.
+  digest:
+    name: digest
+    if: github.event.schedule == '41 6 * * 1' || inputs.mode == 'weekly'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read  # the open Dependabot pull requests
+      actions: read  # the runs of security.yml, for the last security scan
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Write and post the digest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SECURITY_SLACK_WEBHOOK_URL: ${{ secrets.SECURITY_SLACK_WEBHOOK_URL }}
+        run: .github/scripts/digest.sh
