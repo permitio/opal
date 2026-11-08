@@ -333,6 +333,71 @@ jobs:
             docker buildx build --platform linux/amd64,linux/arm64 --target "$target" -f docker/Dockerfile .
           done
 
+  secret-scan:
+    # gitleaks (rules in .gitleaks.toml) over the commits this run brings in: a PR's commits,
+    # or the pushed range. Older history is left out, so it cannot block an unrelated PR.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # A shallow clone lacks the range, and gitleaks would pass having scanned nothing.
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          # From the release's gitleaks_8.30.1_checksums.txt
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          archive="$RUNNER_TEMP/gitleaks.tar.gz"
+          curl -fsSL --retry 3 -o "$archive" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  ${archive}" | sha256sum -c -
+          tar -xzf "$archive" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" version
+      - name: Scan the new commits
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          if [[ "$EVENT" == "pull_request" ]]; then
+            range="$PR_BASE..$PR_HEAD"
+          elif [[ "$EVENT" == "push" && ! "$PUSH_BEFORE" =~ ^0+$ ]]; then
+            range="$PUSH_BEFORE..$SHA"
+          else
+            # A new branch or a manual run: the head commit
+            range="$SHA^!"
+          fi
+          count=$(git rev-list --count "$range")
+          echo "$range: $count commit(s)"
+          if [[ "$count" -eq 0 ]]; then
+            echo "::error::$range has no commits, so the scan would check nothing"
+            exit 1
+          fi
+          # The findings quote lines from the commits; keep workflow commands in them inert.
+          stop_token="$(openssl rand -hex 16)"
+          echo "::stop-commands::${stop_token}"
+          status=0
+          "$RUNNER_TEMP/gitleaks" git --redact --no-banner --no-color --verbose --exit-code 2 \
+            --log-opts="$range" . 2>&1 | tee "$RUNNER_TEMP/gitleaks.log" || status=$?
+          echo "::${stop_token}::"
+          scanned=$(sed -nE 's/.* ([0-9]+) commits scanned.*/\1/p' "$RUNNER_TEMP/gitleaks.log")
+          if [[ "$status" -eq 2 ]]; then
+            echo "::error::secrets in $range (redacted above): rewrite the commits, rotate them"
+            exit 1
+          elif [[ "$status" -ne 0 ]]; then
+            echo "::error::gitleaks did not complete (exit $status)"
+            exit 1
+          elif [[ "${scanned:-0}" -eq 0 ]]; then
+            echo "::error::gitleaks reports 0 commits scanned for $range ($count expected)"
+            exit 1
+          fi
+
   ci:
     # The branch ruleset requires only this check, so the jobs above and their
     # matrix legs can be renamed without editing the ruleset. always(): GitHub
@@ -340,7 +405,7 @@ jobs:
     # fail, when a needed job fails or is cancelled.
     name: CI
     if: always()
-    needs: [build, e2e-tests, e2e-tests-alpine, binary-stages]
+    needs: [build, e2e-tests, e2e-tests-alpine, binary-stages, secret-scan]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
