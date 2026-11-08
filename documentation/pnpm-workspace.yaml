@@ -1,3 +1,6 @@
+# Only resolve versions published at least 7 days ago (10080 minutes).
+minimumReleaseAge: 10080
+
 # Transitive security pins (formerly yarn `resolutions`):
 #   node-forge 1.4.0  - clears RSA/Ed25519 signature forgery + basicConstraints bypass
 #   lodash     4.18.1 - clears _.template code injection
