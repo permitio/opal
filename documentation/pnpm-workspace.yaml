@@ -1,4 +1,6 @@
-# Only resolve versions published at least 7 days ago (10080 minutes).
+# Only resolve versions published at least 7 days ago (10080 minutes). Every `pnpm install`,
+# --frozen-lockfile included, also fails on a lockfile entry younger than that. To take an
+# urgent fix sooner, list its exact version under minimumReleaseAgeExclude.
 minimumReleaseAge: 10080
 
 # Transitive security pins (formerly yarn `resolutions`):
