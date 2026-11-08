@@ -333,70 +333,60 @@ jobs:
             docker buildx build --platform linux/amd64,linux/arm64 --target "$target" -f docker/Dockerfile .
           done
 
-  secret-scan:
-    # gitleaks (rules in .gitleaks.toml) over the commits this run brings in: a PR's commits,
-    # or the pushed range. Older history is left out, so it cannot block an unrelated PR.
+  # Scans the commits that are new in the run for secrets, with .github/scripts/gitleaks-range.sh
+  # and the gitleaks that .github/binaries.lock pins. The range depends on the run:
+  #   - a pull request: its commits, from its base to its head. A pull request always adds a
+  #     commit, so a range without one did not run.
+  #   - a push: from before to after. A push may add no commit, which passes with a notice. A push
+  #     that creates a branch sends the zero SHA as before; its range starts at origin/master.
+  #   - a manual run: the commits that are not on master. A run on master has none, which passes
+  #     with a notice.
+  secrets:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          # A shallow clone lacks the range, and gitleaks would pass having scanned nothing.
+          # A shallow clone lacks the range; gitleaks-range.sh refuses to run on one.
           fetch-depth: 0
           persist-credentials: false
       - name: Install gitleaks
-        env:
-          GITLEAKS_VERSION: 8.30.1
-          # From the release's gitleaks_8.30.1_checksums.txt
-          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
         run: |
-          archive="$RUNNER_TEMP/gitleaks.tar.gz"
-          curl -fsSL --retry 3 -o "$archive" \
-            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          echo "${GITLEAKS_SHA256}  ${archive}" | sha256sum -c -
-          tar -xzf "$archive" -C "$RUNNER_TEMP" gitleaks
-          "$RUNNER_TEMP/gitleaks" version
+          token=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
+          echo "::stop-commands::$token"
+          trap 'echo "::$token::"' EXIT
+          .github/scripts/fetch-tool.sh gitleaks
       - name: Scan the new commits
         env:
-          EVENT: ${{ github.event_name }}
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
-          PR_HEAD: ${{ github.event.pull_request.head.sha }}
-          PUSH_BEFORE: ${{ github.event.before }}
-          SHA: ${{ github.sha }}
-        run: |
-          if [[ "$EVENT" == "pull_request" ]]; then
-            range="$PR_BASE..$PR_HEAD"
-          elif [[ "$EVENT" == "push" && ! "$PUSH_BEFORE" =~ ^0+$ ]]; then
-            range="$PUSH_BEFORE..$SHA"
-          else
-            # A new branch or a manual run: the head commit
-            range="$SHA^!"
-          fi
-          count=$(git rev-list --count "$range")
-          echo "$range: $count commit(s)"
-          if [[ "$count" -eq 0 ]]; then
-            echo "::error::$range has no commits, so the scan would check nothing"
-            exit 1
-          fi
-          # The findings quote lines from the commits; keep workflow commands in them inert.
-          stop_token="$(openssl rand -hex 16)"
-          echo "::stop-commands::${stop_token}"
-          status=0
-          "$RUNNER_TEMP/gitleaks" git --redact --no-banner --no-color --verbose --exit-code 2 \
-            --log-opts="$range" . 2>&1 | tee "$RUNNER_TEMP/gitleaks.log" || status=$?
-          echo "::${stop_token}::"
-          scanned=$(sed -nE 's/.* ([0-9]+) commits scanned.*/\1/p' "$RUNNER_TEMP/gitleaks.log")
-          if [[ "$status" -eq 2 ]]; then
-            echo "::error::secrets in $range (redacted above): rewrite the commits, rotate them"
-            exit 1
-          elif [[ "$status" -ne 0 ]]; then
-            echo "::error::gitleaks did not complete (exit $status)"
-            exit 1
-          elif [[ "${scanned:-0}" -eq 0 ]]; then
-            echo "::error::gitleaks reports 0 commits scanned for $range ($count expected)"
-            exit 1
-          fi
+          RANGE_BASE: >-
+            ${{ (github.event_name == 'workflow_dispatch' || github.event.created)
+            && 'origin/master' || github.event.pull_request.base.sha || github.event.before }}
+          RANGE_HEAD: >-
+            ${{ github.event_name == 'workflow_dispatch' && 'HEAD'
+            || github.event.pull_request.head.sha || github.event.after }}
+          IF_EMPTY: ${{ github.event_name == 'pull_request' && 'error' || 'notice' }}
+        run: .github/scripts/gitleaks-range.sh --if-empty "$IF_EMPTY" "$RANGE_BASE" "$RANGE_HEAD"
+
+  # On a pull request only: fails when the pull request adds a dependency with a known
+  # vulnerability of high or critical severity, from GitHub's dependency graph, and on a failure
+  # comments the summary on the pull request, which needs pull-requests: write. A fork's token is
+  # read-only: the action then warns that it cannot comment, and the result is still the review's.
+  # It reads no configuration file from the checkout, and checks out nothing. The graph reads
+  # requirements.txt, the docs site's pnpm lockfile and the workflows' actions; it does not read
+  # packages/*/requires.txt.
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write  # the action comments its summary on the pull request on a failure
+    steps:
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v5.0.0
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
 
   ci:
     # The branch ruleset requires only this check, so the jobs above and their
@@ -405,7 +395,7 @@ jobs:
     # fail, when a needed job fails or is cancelled.
     name: CI
     if: always()
-    needs: [build, e2e-tests, e2e-tests-alpine, binary-stages, secret-scan]
+    needs: [build, e2e-tests, e2e-tests-alpine, binary-stages, secrets, dependency-review]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -432,12 +422,12 @@ jobs:
           if [[ -n "$unlisted" || -n "$unknown" ]]; then
             exit 1
           fi
-      - name: Require every job to succeed
+      # .github/scripts/ci-aggregate.sh says how it decides: each job must succeed in the runs
+      # that select it, and a job in PULL_REQUEST_JOBS is selected on a pull request only.
+      - name: Check the needed jobs
         env:
           NEEDS: ${{ toJSON(needs) }}
-        run: |
-          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<<"$NEEDS"
-          if ! jq -e 'all(.[]; .result == "success")' <<<"$NEEDS" >/dev/null; then
-            echo "A required job did not succeed." >&2
-            exit 1
-          fi
+          EVENT: ${{ github.event_name }}
+          EXPECTED_JOBS: 6
+          PULL_REQUEST_JOBS: dependency-review
+        run: .github/scripts/ci-aggregate.sh

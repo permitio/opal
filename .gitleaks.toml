@@ -15,6 +15,12 @@ description = "Permit API key"
 regex = '''permit_key_[A-Za-z0-9]{20,}'''
 keywords = ["permit_key_"]
 
+# Tests, examples and docs use fake Permit API keys that start with permit_key_FAKE. A fake key
+# may appear anywhere, also where a default rule such as generic-api-key matches it.
+[[allowlists]]
+description = "Fake Permit API keys"
+regexes = ['''^permit_key_FAKE[A-Za-z0-9_]*$''']
+
 # The placeholder in the docs' curl examples: --header 'Authorization: Bearer MY_MASTER_TOKEN'.
 [[allowlists]]
 description = "MY_MASTER_TOKEN placeholder"
