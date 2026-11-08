@@ -35,7 +35,8 @@
 # Exit codes: 0 when every section was read and the digest posted, or the webhook is not set; 1
 # when the digest could not be posted; 2 when a section could not be read (the digest is posted
 # all the same), or the digest did not run: the arguments are wrong, jq, gh or curl is missing,
-# GITHUB_REPOSITORY is not owner/name, or DIGEST_NOW is not a number.
+# GITHUB_REPOSITORY is not owner/name, or DIGEST_NOW is not a number; and 2 when notify.sh did not
+# run because SECURITY_SLACK_WEBHOOK_URL is not an https URL.
 # shellcheck disable=SC2329 # section runs each section's function by name.
 set -euo pipefail
 

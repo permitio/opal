@@ -65,8 +65,9 @@
 #
 # Exit codes: 0 when every source completed or was skipped and no secret was verified; 1 when
 # TruffleHog verified a secret, or the report could not be posted; 2 when a source did not
-# complete, the arguments are wrong, jq is missing, GITHUB_REPOSITORY is not owner/name, or the
-# report cannot be written.
+# complete, the arguments are wrong, jq, gh or curl is missing, GITHUB_REPOSITORY is not
+# owner/name, the report cannot be written, or notify.sh did not run because
+# SECURITY_SLACK_WEBHOOK_URL is not an https URL.
 # shellcheck disable=SC2329 # run_source runs each source's function by name.
 set -euo pipefail
 
