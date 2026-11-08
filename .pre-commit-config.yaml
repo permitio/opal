@@ -6,21 +6,21 @@ default_language_version:
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: cef0300fd0fc4d2a87a85fa2093c6b283ea36f4b  # frozen: v5.0.0
     hooks:
       - id: check-yaml
       - id: end-of-file-fixer
       - id: trailing-whitespace
   - repo: https://github.com/psf/black
-    rev: 23.1.0
+    rev: b0d1fba7ac3be53c71fb0d3211d911e629f8aecb  # frozen: 23.1.0
     hooks:
       - id: black
   - repo: https://github.com/pycqa/isort
-    rev: 5.12.0
+    rev: e44834b7b294701f596c9118d6c370f86671a50d  # frozen: 5.12.0
     hooks:
       - id: isort
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.2.4
+    rev: ec0f41b9573937aebab66e3ca5b00d00a7b339fa  # frozen: v2.2.4
     hooks:
       - id: codespell
         args: [--skip, "*.json,*.lock,*pnpm-lock.yaml"]
@@ -28,7 +28,25 @@ repos:
   # prek / pre-commit>=4 reject the whole manifest. Pinned to v1.7.6 (not v1.7.7,
   # whose docstring wrapping differs) so the bump introduces no reformatting.
   - repo: https://github.com/PyCQA/docformatter
-    rev: v1.7.6
+    rev: 4cf1ea547d79f6e15ce51eae0eb5f986053ab65c  # frozen: v1.7.6
     hooks:
       - id: docformatter
         args: [--in-place]
+  # Workflow checks. actionlint runs shellcheck on `run:` blocks when shellcheck is on
+  # PATH (it is on GitHub's Ubuntu runners). zizmor adds its online audits when GH_TOKEN
+  # is set; the pre-commit workflow runs it in a step of its own that has the token.
+  - repo: https://github.com/rhysd/actionlint
+    rev: 914e7df21a07ef503a81201c76d2b11c789d3fca  # frozen: v1.7.12
+    hooks:
+      - id: actionlint
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: c92afdf2c6ca336aaa8f39e2bd8d48f62dbd8e1f  # frozen: v1.31.1
+    hooks:
+      - id: zizmor
+  # Secrets in staged changes, with the rules in .gitleaks.toml. It scans the staged diff
+  # only, so `--all-files` runs (as in CI) check nothing; tests.yml's secret-scan job covers
+  # a PR's commits.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e  # frozen: v8.30.1
+    hooks:
+      - id: gitleaks

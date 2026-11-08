@@ -1,0 +1,67 @@
+# gitleaks configuration: the default rules plus Permit API keys, which GitHub secret
+# scanning does not detect. Used by the pre-commit hook and the CI secret scan.
+#
+# Each allowlist entry covers known false positives only, limited to the rules that fire on
+# them, so a different kind of secret in the same file is still reported. Old paths are
+# listed so a full-history scan stays readable.
+title = "OPAL gitleaks config"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "permit-api-key"
+description = "Permit API key"
+regex = '''permit_key_[A-Za-z0-9]{20,}'''
+keywords = ["permit_key_"]
+
+# The placeholder in the docs' curl examples: --header 'Authorization: Bearer MY_MASTER_TOKEN'.
+[[allowlists]]
+description = "MY_MASTER_TOKEN placeholder"
+targetRules = ["curl-auth-header"]
+regexes = ['''^MY_MASTER_TOKEN$''']
+
+# Sample values in the docs: an OPENSSH key redacted to XXX, and example
+# OPAL_POLICY_REPO_WEBHOOK_SECRET / OPAL_AUTH_MASTER_TOKEN values that are public because the
+# docs print them.
+[[allowlists]]
+description = "documentation samples"
+targetRules = ["generic-api-key", "private-key"]
+paths = [
+  '''^documentation/docs/.*/run-opal-server/(putting-all-together|security-parameters)\.mdx$''',
+  '''^documentation/docs/tutorials/track_a_git_repo\.mdx$''',
+  '''^docs/HOWTO/(get_started_with_opal_using_docker|track_a_git_repo)\.md$''',
+]
+
+# The docs site's search widget key, which the published site ships to every browser.
+[[allowlists]]
+description = "docs search widget key"
+targetRules = ["generic-api-key"]
+paths = ['''^documentation/docusaurus\.config\.js$''']
+
+# Tokens in the wire-compat test corpus: fixed strings the serialization tests compare, not
+# issued by anything.
+[[allowlists]]
+description = "wire-compat test corpus"
+targetRules = ["generic-api-key"]
+paths = [
+  '''^packages/opal-common/opal_common/tests/wire_compat/(payloads\.py|golden/[^/]+\.json)$''',
+]
+
+# The encrypted RSA key the JWT signer tests write and load.
+[[allowlists]]
+description = "JWT signer test key"
+targetRules = ["private-key"]
+paths = ['''^(packages/opal-common/)?opal_common/authentication/tests/jwt_signer_test\.py$''']
+
+# The HS256 secret of the example policy the OPA engine tests load.
+[[allowlists]]
+description = "example JWT policy fixture"
+targetRules = ["generic-api-key"]
+paths = ['''^(packages/opal-common/opal_common/engine|opal/common/opa)/tests/fixtures/jwt\.rego$''']
+
+# Admin login and secrets of the throwaway Gitea container the app tests run locally.
+[[allowlists]]
+description = "app-tests local Gitea"
+targetRules = ["curl-auth-user", "generic-api-key"]
+paths = ['''^app-tests/(run\.sh|docker-compose-app-tests\.yml)$''']
