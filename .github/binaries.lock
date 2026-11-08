@@ -1,0 +1,92 @@
+# Release binaries that CI and the scheduled security scan download, each pinned by version and
+# sha256. The digest job of .github/workflows/security.yml reports newer releases that are at
+# least 7 days old; move an entry to one by hand, with the sha256 sums from the release's own
+# checksum files.
+#
+# .github/scripts/fetch-tool.sh <name> reads this file. It downloads the entry's release for the
+# machine it runs on, checks the sha256 before it unpacks anything, and installs the binary as
+# bin/<name>. It exits 2 when the lock is missing, has no complete entry for the name or this
+# platform, bin/<name> exists and is not a regular file, the download fails, the sha256 does not
+# match, or the binary cannot be unpacked or installed.
+#
+# Each entry starts with a [name] line and holds "key = value" lines. Blank lines and lines that
+# start with # are ignored.
+#
+#   version                 the release version, as the URL spells it without a "v" prefix
+#   url                     the download URL, https only; {version}, {os} and {arch} are
+#                           replaced with the version and the platform's names
+#   archive                 the download's format: tar.gz, the only one fetch-tool.sh unpacks
+#   binary                  the binary's path inside the archive, as tar -tzf lists it; the same
+#                           placeholders are replaced
+#   os.<os>                 optional: the release's name for an OS (darwin, linux) when it
+#                           differs, such as os.darwin = macOS
+#   arch.<arch>             optional: the release's name for an architecture (amd64, arm64) when
+#                           it differs, such as arch.amd64 = x86_64
+#   sha256.<os>/<arch>      the download's sha256 in lowercase hex; every entry has one for each
+#                           of darwin/arm64, darwin/amd64, linux/amd64 and linux/arm64
+
+[gitleaks]
+version = 8.30.1
+url = https://github.com/gitleaks/gitleaks/releases/download/v{version}/gitleaks_{version}_{os}_{arch}.tar.gz
+archive = tar.gz
+binary = gitleaks
+arch.amd64 = x64
+sha256.darwin/arm64 = b40ab0ae55c505963e365f271a8d3846efbc170aa17f2607f13df610a9aeb6a5
+sha256.darwin/amd64 = dfe101a4db2255fc85120ac7f3d25e4342c3c20cf749f2c20a18081af1952709
+sha256.linux/amd64 = 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+sha256.linux/arm64 = e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080
+
+[prek]
+version = 0.5.9
+url = https://github.com/j178/prek/releases/download/v{version}/prek-{arch}-{os}.tar.gz
+archive = tar.gz
+binary = prek-{arch}-{os}/prek
+os.darwin = apple-darwin
+os.linux = unknown-linux-gnu
+arch.amd64 = x86_64
+arch.arm64 = aarch64
+sha256.darwin/arm64 = cc9020726b7c86cce420b75d70f48b9ffa161bb5095a99678c0a87218f48d493
+sha256.darwin/amd64 = a7e6be8c62be36c5eda5cb70cc053b29e2941853dc0c3d859710f2651052d516
+sha256.linux/amd64 = 2fee13923018dd517c19dba032ddcae8010cadfb81bc47e742ad5e8981a3f126
+sha256.linux/arm64 = cf9cb3eeb5537064c9d73d78313a79ee707f3faa340ca0db1f5646d7897bc7dd
+
+[trivy]
+version = 0.76.1
+url = https://github.com/aquasecurity/trivy/releases/download/v{version}/trivy_{version}_{os}-{arch}.tar.gz
+archive = tar.gz
+binary = trivy
+os.darwin = macOS
+os.linux = Linux
+arch.amd64 = 64bit
+arch.arm64 = ARM64
+sha256.darwin/arm64 = 11a9b6cd2752011b54f01ea4bd0dbfa9f0c41dc6538d5a3f9d23955f471bf4e5
+sha256.darwin/amd64 = 7aa762eacd582052d053b62dcf972a1ab058abe39a57ccae234ed8894945b6b7
+sha256.linux/amd64 = c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0
+sha256.linux/arm64 = e174dff2a6dba5e3ae41f8d0537a6324405bd08132497340304c6b20e0f16a1f
+
+# Run only through .github/scripts/security-scan.sh, which never prints its output: with
+# --results=verified, it reports secrets that work.
+[trufflehog]
+version = 3.99.7
+url = https://github.com/trufflesecurity/trufflehog/releases/download/v{version}/trufflehog_{version}_{os}_{arch}.tar.gz
+archive = tar.gz
+binary = trufflehog
+sha256.darwin/arm64 = 5540ef352fc88b1f580e91603689782c0107ca7d4a96c1aeb2714b3a98c766ce
+sha256.darwin/amd64 = 6bdbc7b0aaeefcb50275036b49be1a3561b3c2e5902879300339abf9c64914c0
+sha256.linux/amd64 = bdbea0508e439b144f49de14e775908de5f902f3d14ea7ae8354bae72b0b72ef
+sha256.linux/arm64 = 3060f7c9f18c70afdc432984cacabdd1e9103729b5d5fee7fb6755a90d1c59d4
+
+# vuln.sh resolves the published packages' requirement ranges with it (uv pip compile).
+[uv]
+version = 0.13.6
+url = https://github.com/astral-sh/uv/releases/download/{version}/uv-{arch}-{os}.tar.gz
+archive = tar.gz
+binary = uv-{arch}-{os}/uv
+os.darwin = apple-darwin
+os.linux = unknown-linux-gnu
+arch.amd64 = x86_64
+arch.arm64 = aarch64
+sha256.darwin/arm64 = 60fbd5c8a1ed681845eea28d9d622fcde03c51e91a43465b64a1e17db1ed3472
+sha256.darwin/amd64 = 63ba17fdda55ad1a230d4b37fc6017ffa10c23688c83818bd3bfdf914c652a02
+sha256.linux/amd64 = f29c3e94ffabd7e6f3ba521dba169a9b7ec12100bf3257087f0f24f6123f3645
+sha256.linux/arm64 = 229e194255c7958d86d56e8790d969a6f74736592133f0dfd0076f754c642c1d

@@ -1,0 +1,8 @@
+# zizmor configuration (https://docs.zizmor.sh/configuration/). Findings that a workflow keeps on
+# purpose are ignored inline, next to the line, with the reason.
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        # Every action, GitHub's own included, is pinned to a full commit SHA.
+        "*": hash-pin

@@ -1,3 +1,5 @@
+# Runs every hook in .pre-commit-config.yaml on every file with prek. The job keeps the name
+# pre-commit, which the branch ruleset requires.
 name: pre-commit
 
 on:
@@ -17,32 +19,31 @@ defaults:
   run:
     shell: bash --noprofile --norc -euo pipefail {0}
 
+env:
+  # The number of hooks in .pre-commit-config.yaml; change it when a hook is added or removed.
+  EXPECTED_HOOKS: "12"
+
 jobs:
   pre-commit:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      with:
-        persist-credentials: false
-    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
-      with:
-        python-version: 3.12.x
-    - name: install pre-commit
-      run: python -m pip install pre-commit==4.7.0
-    - name: show environment
-      run: python -m pip freeze --local
-    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
-      with:
-        path: ~/.cache/pre-commit
-        key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
-    - name: run pre-commit
-      env:
-        SKIP: zizmor
-      run: pre-commit run --show-diff-on-failure --color=always --all-files
-    # On its own so that only zizmor gets the token, which turns on its online audits
-    # (impostor commits, known-vulnerable actions, ref confusion).
-    - name: run zizmor with online audits
-      env:
-        GH_TOKEN: ${{ github.token }}
-      run: pre-commit run zizmor --show-diff-on-failure --color=always --all-files
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      # The Python hooks run on 3.12 (default_language_version in .pre-commit-config.yaml).
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: 3.12.x
+      - name: Install prek
+        run: |
+          token=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
+          echo "::stop-commands::$token"
+          trap 'echo "::$token::"' EXIT
+          .github/scripts/fetch-tool.sh prek
+      # zizmor runs its online audits with GH_TOKEN (impostor commits, known-vulnerable actions,
+      # tags that do not match their version comment).
+      - name: Run the hooks
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/prek-count.sh
