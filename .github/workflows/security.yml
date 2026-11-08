@@ -35,8 +35,10 @@ jobs:
   # the report to the job summary and posts it to SECURITY_SLACK_WEBHOOK_URL. Findings are
   # reported and pass; a source that did not complete fails the job, and so does a secret that
   # TruffleHog verified. TruffleHog runs only in a manual run. The job runs in the security-scan
-  # environment, which holds DEPENDABOT_ALERTS_TOKEN, a token that can read the alerts, which the
-  # GITHUB_TOKEN cannot; the job's own token only checks out the repository. A secret that is not
+  # environment, which holds the security GitHub App's SECURITY_APP_CLIENT_ID and
+  # SECURITY_APP_PRIVATE_KEY. The App has only "Dependabot alerts: read"; the job mints its token
+  # for this repository and this run, because the GITHUB_TOKEN cannot read the alerts. No personal
+  # access token is used. The job's own token only checks out the repository. A secret that is not
   # set skips what needs it, and the report says so. Only the step that runs the script gets the
   # secrets, and the script passes each to the one command that needs it.
   security-scan:
@@ -47,15 +49,27 @@ jobs:
     environment: security-scan
     permissions:
       contents: read
+    env:
+      HAS_SECURITY_APP: ${{ secrets.SECURITY_APP_CLIENT_ID != '' && secrets.SECURITY_APP_PRIVATE_KEY != '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Mint a token that can read this repository's Dependabot alerts
+        id: alerts-token
+        if: env.HAS_SECURITY_APP == 'true'
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510  # v3.3.0
+        with:
+          client-id: ${{ secrets.SECURITY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SECURITY_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-vulnerability-alerts: read
       - name: Scan and report
         env:
           TRUFFLEHOG: ${{ github.event_name == 'workflow_dispatch' && 'run' || 'skip' }}
-          DEPENDABOT_ALERTS_TOKEN: ${{ secrets.DEPENDABOT_ALERTS_TOKEN }}
+          DEPENDABOT_ALERTS_TOKEN: ${{ steps.alerts-token.outputs.token }}
           GITLEAKS_HISTORY_ACCEPT_SHA256: ${{ secrets.GITLEAKS_HISTORY_ACCEPT_SHA256 }}
           SECURITY_SLACK_WEBHOOK_URL: ${{ secrets.SECURITY_SLACK_WEBHOOK_URL }}
         run: .github/scripts/security-scan.sh --trufflehog "$TRUFFLEHOG"
