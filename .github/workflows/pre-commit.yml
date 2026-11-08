@@ -49,3 +49,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: .github/scripts/prek-count.sh
+      # The scripts that decide the required checks: ci-aggregate.sh (CI) and prek-count.sh (this
+      # job), each run on made-up results.
+      - name: Test the check scripts
+        run: |
+          .github/scripts/tests/ci-aggregate.test.sh
+          .github/scripts/tests/prek-count.test.sh
