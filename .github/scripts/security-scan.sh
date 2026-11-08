@@ -8,8 +8,8 @@
 #                                   whose Dependabot alerts it reads; required
 #   DEPENDABOT_ALERTS_TOKEN         a GitHub App installation token that can read the
 #                                   repository's Dependabot alerts, which the GITHUB_TOKEN
-#                                   cannot (security.yml mints it from SECURITY_APP_CLIENT_ID and
-#                                   SECURITY_APP_PRIVATE_KEY); without it that source is skipped,
+#                                   cannot (security.yml mints it from OPAL_CI_APP_CLIENT_ID and
+#                                   OPAL_CI_APP_PRIVATE_KEY); without it that source is skipped,
 #                                   and the report says so
 #   GITLEAKS_HISTORY_ACCEPT_SHA256  the sha256 digests of the accepted history findings' gitleaks
 #                                   fingerprints, one per line
@@ -250,10 +250,10 @@ fit='def clip($n): gsub("\\p{Cc}"; " ") | if utf8bytelength <= $n then .
 scan_alerts() {
   local name=dependabot-alerts count
   if [[ -z $alerts_token ]]; then
-    echo "security-scan: no Dependabot alerts token (the security GitHub App's" \
-      "SECURITY_APP_CLIENT_ID and SECURITY_APP_PRIVATE_KEY are not set), so the open" \
+    echo "security-scan: no Dependabot alerts token (the permitio-opal-ci GitHub App's" \
+      "OPAL_CI_APP_CLIENT_ID and OPAL_CI_APP_PRIVATE_KEY are not set), so the open" \
       "Dependabot alerts were not read; the GITHUB_TOKEN cannot read them"
-    echo "no Dependabot alerts token: SECURITY_APP_CLIENT_ID and SECURITY_APP_PRIVATE_KEY are not set" >"$results/$name.state"
+    echo "no Dependabot alerts token: OPAL_CI_APP_CLIENT_ID and OPAL_CI_APP_PRIVATE_KEY are not set" >"$results/$name.state"
     return 3
   fi
   if ! GH_TOKEN=$alerts_token gh api --paginate \
