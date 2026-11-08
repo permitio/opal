@@ -2,7 +2,9 @@
 # a week and the security digest once a week. A manual run picks one with the mode input. They do
 # not run on pull requests and are not part of the CI check; each job's result is its own, and a
 # failed run is red in Actions. Each cron in on.schedule is named once more in its job's if:,
-# since GitHub does not allow expressions in on:.
+# since GitHub does not allow expressions in on:. Both jobs run in the security-scan environment,
+# which holds SECURITY_SLACK_WEBHOOK_URL and admits master only, so a manual run starts from
+# master.
 name: Security
 
 on:
@@ -35,12 +37,13 @@ jobs:
   # the report to the job summary and posts it to SECURITY_SLACK_WEBHOOK_URL. Findings are
   # reported and pass; a source that did not complete fails the job, and so does a secret that
   # TruffleHog verified. TruffleHog runs only in a manual run. The job runs in the security-scan
-  # environment, which holds the permitio-opal-ci GitHub App's OPAL_CI_APP_CLIENT_ID and
-  # OPAL_CI_APP_PRIVATE_KEY. The App has only "Dependabot alerts: read"; the job mints its token
-  # for this repository and this run, because the GITHUB_TOKEN cannot read the alerts. No personal
-  # access token is used. The job's own token only checks out the repository. A secret that is not
-  # set skips what needs it, and the report says so. Only the step that runs the script gets the
-  # secrets, and the script passes each to the one command that needs it.
+  # environment, which holds the webhook and the permitio-opal-ci GitHub App's
+  # OPAL_CI_APP_CLIENT_ID and OPAL_CI_APP_PRIVATE_KEY. The App has only "Dependabot alerts: read";
+  # the job mints its token for this repository and this run, because the GITHUB_TOKEN cannot read
+  # the alerts. No personal access token is used. The job's own token only checks out the
+  # repository. A secret that is not set skips what needs it, and the report says so. Only the
+  # step that runs the script gets the secrets, and the script passes each to the one command that
+  # needs it.
   security-scan:
     name: security-scan
     if: github.event.schedule == '23 4 * * 1,4' || inputs.mode == 'security'
@@ -77,12 +80,15 @@ jobs:
   # Weekly and in the weekly mode: .github/scripts/digest.sh posts the security digest to
   # SECURITY_SLACK_WEBHOOK_URL, even when nothing needs attention: the open Dependabot pull
   # requests, the last security scan, and newer releases of the binaries in .github/binaries.lock
-  # that are at least 7 days old. The job's token reads the pull requests and the runs.
+  # that are at least 7 days old. The job's token reads the pull requests and the runs. The job runs
+  # in the security-scan environment for the webhook, which is an environment secret; only the step
+  # that runs the script gets it.
   digest:
     name: digest
     if: github.event.schedule == '41 6 * * 1' || inputs.mode == 'weekly'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    environment: security-scan
     permissions:
       contents: read
       pull-requests: read  # the open Dependabot pull requests
