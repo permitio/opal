@@ -279,7 +279,9 @@ jobs:
     needs:
       - build_and_test
     runs-on: ubuntu-latest
-    # The pypi environment has no protection rules; it scopes the PyPI token to this job.
+    # The pypi environment has no protection rules, so it adds no approval step. PYPI_TOKEN is still
+    # a repository secret that any workflow can read; moved into this environment, it would be
+    # readable by this job only.
     environment:
       name: pypi
       url: https://pypi.org/p/opal-common/
