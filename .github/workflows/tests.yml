@@ -365,6 +365,10 @@ jobs:
           echo "::stop-commands::$token"
           trap 'echo "::$token::"' EXIT
           .github/scripts/fetch-tool.sh gitleaks
+      # gitleaks-range.sh in a throwaway repository: a clean range passes, a range that adds a
+      # key fails, and a scan that cannot run fails apart from both.
+      - name: Test gitleaks-range.sh
+        run: .github/scripts/tests/gitleaks-range.test.sh
       - name: Scan the new commits
         env:
           RANGE_BASE: >-
