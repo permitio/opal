@@ -4,9 +4,27 @@ minimumReleaseAge: 10080
 # Transitive security pins (formerly yarn `resolutions`):
 #   node-forge 1.4.0  - clears RSA/Ed25519 signature forgery + basicConstraints bypass
 #   lodash     4.18.1 - clears _.template code injection
+# The pins below cross the major their parent declares, because no patched release
+# exists in that major. Remove each one once the parent named in its comment
+# accepts the patched major.
 overrides:
   node-forge: 1.4.0
   lodash: 4.18.1
+  # GHSA-5gmw-xhrv-c9v3, GHSA-85c8-ppgw-ccpr (critical): fixed in 2.1.2; 1.x has no fix.
+  # @docusaurus/core declares ^1.0.2. 2.0.0 only dropped Node 18.
+  tinypool: 2.2.0
+  # GHSA-5c6j-r48x-rmvq, GHSA-qj8w-gfj5-8c6v, GHSA-m5mm-p8h7-m29v: fixed in 7.1.3; 6.x has
+  # no fix. copy-webpack-plugin 11 and css-minimizer-webpack-plugin 5 (pulled in by
+  # @docusaurus/bundler) declare ^6.0.x. 7.0.0 only dropped Node < 20.
+  serialize-javascript: 7.1.4
+  # GHSA-w5hq-g745-h8pq: fixed in 11.1.1; 8.x has no fix. sockjs 0.3.24 (pulled in by
+  # webpack-dev-server, used by `pnpm start` only) declares ^8.3.2 and calls
+  # require('uuid').v4, which 11.x still exports for CommonJS.
+  sockjs>uuid: 11.1.1
+  # GHSA-238p-pmpm-9mq7: fixed in 0.18.2; 0.16.x has no fix. mermaid 11 declares ^0.16.47
+  # and loads katex only for $$math$$ in diagrams, which these docs do not use.
+  # 0.18.10, not 0.18.11: 0.18.11 is deprecated upstream as accidentally breaking.
+  katex: 0.18.10
 
 # Build-script permissions (pnpm blocks postinstall scripts by default).
 #   @parcel/watcher - native module for fast file-watching in `pnpm start`; allowed.
