@@ -21,9 +21,12 @@ on:
 
 permissions: {}
 
-# Runs of the same job wait for each other and are never cancelled.
+# One group per job, the same for its scheduled and its manual runs, so two runs of a job never
+# overlap: a new run waits, and a running one is never cancelled.
 concurrency:
-  group: security-${{ inputs.mode || github.event.schedule }}
+  group: >-
+    security-${{ (github.event.schedule == '41 6 * * 1' || inputs.mode == 'weekly')
+    && 'digest' || 'scan' }}
   cancel-in-progress: false
 
 defaults:
