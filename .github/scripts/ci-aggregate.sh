@@ -6,18 +6,16 @@
 #   EXPECTED_JOBS      the number of jobs CI needs
 #   EVENT              github.event_name: pull_request, push or workflow_dispatch
 #   PULL_REQUEST_JOBS  the jobs that run on pull requests only (space separated)
-#   ADVISORY_JOBS      the jobs that may fail or be cancelled without failing CI
 #
 # Every run selects every job, except that a job in PULL_REQUEST_JOBS is selected on a pull
 # request only. A job the run does not select may be skipped. Every other result than success
-# fails CI, except that a job in ADVISORY_JOBS may fail or be cancelled; that is printed as a
-# warning.
+# fails CI.
 #
 # Exit codes: 0 when every needed job succeeded or was not selected; 1 when a job failed, was
 # cancelled, or was skipped in a run that selects it; 2 when the check did not run: the script
 # was given arguments, jq is not installed, NEEDS is not a JSON object of job results or does not
-# hold EXPECTED_JOBS of them, a list names a job CI does not need, or the event is not one CI
-# knows.
+# hold EXPECTED_JOBS of them, PULL_REQUEST_JOBS names a job CI does not need, or the event is not
+# one CI knows.
 set -euo pipefail
 
 fail() {
@@ -37,7 +35,6 @@ expected=${EXPECTED_JOBS:-}
 [[ $expected =~ ^[1-9][0-9]*$ ]] || fail "EXPECTED_JOBS \"$expected\" is not a positive number"
 event=${EVENT:-}
 pull_request_jobs=${PULL_REQUEST_JOBS:-}
-advisory_jobs=${ADVISORY_JOBS:-}
 contains "pull_request push workflow_dispatch" "$event" ||
   fail "CI does not run on the event \"${event//[^a-z_]/}\""
 
@@ -58,15 +55,9 @@ done <<<"$results"
 [[ $count -eq $expected ]] ||
   fail "$count job results, but EXPECTED_JOBS is $expected; CI did not check every job"
 
-# check_needed <list name> <jobs> fails when the list names a job CI does not need.
-check_needed() {
-  local job
-  for job in $2; do
-    contains "$jobs" "$job" || fail "$1 names $job, which CI does not need"
-  done
-}
-check_needed PULL_REQUEST_JOBS "$pull_request_jobs"
-check_needed ADVISORY_JOBS "$advisory_jobs"
+for job in $pull_request_jobs; do
+  contains "$jobs" "$job" || fail "PULL_REQUEST_JOBS names $job, which CI does not need"
+done
 
 # selected <job> succeeds when the run selects the job.
 selected() {
@@ -79,7 +70,6 @@ selected() {
 
 problems=''
 notices=''
-warnings=''
 while IFS=$'\t' read -r job result; do
   [[ -n $job ]] || continue
   case $result in
@@ -91,13 +81,7 @@ while IFS=$'\t' read -r job result; do
       notices+="$job was not selected in a $event run"$'\n'
     fi
     ;;
-  failure | cancelled)
-    if contains "$advisory_jobs" "$job"; then
-      warnings+="$job $result; it is advisory, so CI does not fail"$'\n'
-    else
-      problems+=", $job $result"
-    fi
-    ;;
+  failure | cancelled) problems+=", $job $result" ;;
   *) fail "job $job has a result CI does not know" ;;
   esac
 done <<<"$results"
@@ -111,9 +95,6 @@ echo "ci-aggregate: $event run: $count job results"
 while IFS= read -r line; do
   [[ -z $line ]] || echo "::notice title=CI::$line"
 done <<<"$notices"
-while IFS= read -r line; do
-  [[ -z $line ]] || echo "::warning title=CI::$line"
-done <<<"$warnings"
 if [[ -n $problems ]]; then
   echo "::error title=CI::Jobs that did not succeed in this $event run: ${problems#, }"
   exit 1
