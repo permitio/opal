@@ -41,6 +41,8 @@ env:
 
 jobs:
   build:
+    permissions:
+      contents: read
     services:
       redis:
         image: redis:8.10.3
@@ -132,6 +134,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     name: E2E Tests
+    permissions:
+      contents: read
     steps:
       # BUILD PHASE
       - name: Checkout
@@ -232,6 +236,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     name: E2E Tests (Alpine)
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -344,6 +350,8 @@ jobs:
   secrets:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
