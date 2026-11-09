@@ -270,18 +270,13 @@ def test_output_that_is_not_a_json_report(trivy, output):
     assert not trivy.findings.exists()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="trivy.sh exits with jq's code 5, without DID NOT RUN, when a JSON report that passes"
-    " the schema check has Results that are not a list: the jq that counts the packages runs"
-    " under set -e with no || fail",
-)
 def test_a_report_whose_results_are_not_a_list(trivy):
     trivy.report({"SchemaVersion": 2, "ArtifactType": "filesystem", "Results": "none"})
 
     result = trivy.scan("report")
 
     assert result.returncode == 2
+    assert "trivy: Trivy's report has no list of packages" in result.stdout
     assert last_line(result.stdout) == "trivy: DID NOT RUN"
 
 

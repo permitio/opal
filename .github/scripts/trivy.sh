@@ -84,7 +84,7 @@ jq -e '.SchemaVersion == 2 and has("ArtifactType")' "$work/report.json" >/dev/nu
   fail "Trivy's output is not a JSON report"
 
 packages=$(jq '[.Results // [] | .[].Packages // [] | .[] | select(.Relationship != "root")]
-  | length' "$work/report.json")
+  | length' "$work/report.json" 2>/dev/null) || fail "Trivy's report has no list of packages"
 if [[ -n $expected ]]; then
   [[ $packages -eq $expected ]] ||
     fail "Trivy listed $packages packages for $target, which has $expected pins"
@@ -101,10 +101,13 @@ jq -r "$vulns"'
       " (" + join(", ") + ")" end);
     map(select(fixable)) | sort_by(.Severity != "CRITICAL", .VulnerabilityID, .PkgName) | .[]
   | ids + "  " + .Severity + ", fixed in " + .FixedVersion + ": " + .PkgName + " "
-    + .InstalledVersion' "$work/report.json"
-fixable=$(jq "$vulns"' | map(select(fixable)) | length' "$work/report.json")
+    + .InstalledVersion' "$work/report.json" 2>/dev/null ||
+  fail "Trivy's report has no list of vulnerabilities"
+fixable=$(jq "$vulns"' | map(select(fixable)) | length' "$work/report.json") ||
+  fail "counting the vulnerabilities in Trivy's report failed"
 counts=$(jq -r "$vulns"' | group_by(.Severity) | map("\(length) \(.[0].Severity)")
-  | join(", ") | if . == "" then "none" else . end' "$work/report.json")
+  | join(", ") | if . == "" then "none" else . end' "$work/report.json") ||
+  fail "counting the vulnerabilities in Trivy's report failed"
 if [[ -n $findings ]]; then
   # clip($n) turns each control character into a space and cuts a value to at most $n bytes, the
   # last three of them "..."; link drops a URL that is not a plain https link or is longer than
