@@ -1,3 +1,12 @@
+# Git hooks, run by prek (https://prek.j178.dev): `prek install` once, then they run on every
+# commit; `prek run --all-files` runs them all, as the pre-commit workflow does. Each remote rev
+# is a commit SHA, and its "# frozen:" comment names the tag it points at; `prek update` moves
+# them to the newest release that is at least 7 days old.
+minimum_prek_version: "0.5.5"
+update:
+  cooldown_days: 7
+  freeze: true
+
 # The pinned formatter versions below (black 23.1.0, isort 5.12.0, docformatter
 # 1.7.x) do not run on Python 3.13+, so pin the hook toolchain to 3.12 (the version
 # CI uses). Without this, hooks fail on machines whose default python is newer.
@@ -6,21 +15,21 @@ default_language_version:
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: cef0300fd0fc4d2a87a85fa2093c6b283ea36f4b  # frozen: v5.0.0
     hooks:
       - id: check-yaml
       - id: end-of-file-fixer
       - id: trailing-whitespace
   - repo: https://github.com/psf/black
-    rev: 23.1.0
+    rev: b0d1fba7ac3be53c71fb0d3211d911e629f8aecb  # frozen: 23.1.0
     hooks:
       - id: black
   - repo: https://github.com/pycqa/isort
-    rev: 5.12.0
+    rev: e44834b7b294701f596c9118d6c370f86671a50d  # frozen: 5.12.0
     hooks:
       - id: isort
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.2.4
+    rev: ec0f41b9573937aebab66e3ca5b00d00a7b339fa  # frozen: v2.2.4
     hooks:
       - id: codespell
         args: [--skip, "*.json,*.lock,*pnpm-lock.yaml"]
@@ -28,7 +37,40 @@ repos:
   # prek / pre-commit>=4 reject the whole manifest. Pinned to v1.7.6 (not v1.7.7,
   # whose docstring wrapping differs) so the bump introduces no reformatting.
   - repo: https://github.com/PyCQA/docformatter
-    rev: v1.7.6
+    rev: 4cf1ea547d79f6e15ce51eae0eb5f986053ab65c  # frozen: v1.7.6
     hooks:
       - id: docformatter
         args: [--in-place]
+  # Workflow checks. actionlint runs shellcheck on `run:` blocks when shellcheck is on
+  # PATH (it is on GitHub's Ubuntu runners).
+  - repo: https://github.com/rhysd/actionlint
+    rev: 914e7df21a07ef503a81201c76d2b11c789d3fca  # frozen: v1.7.12
+    hooks:
+      - id: actionlint
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: c92afdf2c6ca336aaa8f39e2bd8d48f62dbd8e1f  # frozen: v1.31.1
+    hooks:
+      # zizmor runs its online audits when GH_TOKEN or GITHUB_TOKEN is set, as CI does.
+      - id: zizmor
+        args: [--no-progress, --config, .github/zizmor.yml]
+  # The scripts under .github/scripts. The older shell scripts elsewhere in the repository
+  # (app-tests, docker, scripts) are not checked yet: they have findings to fix first, and some
+  # ship in the images.
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: a6564f5d57444e123433a5c9af733e3975c77229  # frozen: v0.11.0.1-1
+    hooks:
+      - id: shellcheck
+        files: ^\.github/scripts/
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: 479be5958357ba5ab65ce47172117348516860e9  # frozen: v3.14.1-1
+    hooks:
+      - id: shfmt
+        args: [--write, -i, "2"]
+        files: ^\.github/scripts/
+  # Secrets in staged changes, with the rules in .gitleaks.toml. It scans the staged diff
+  # only, so `--all-files` runs (as in CI) check nothing; the secrets job of tests.yml covers
+  # a PR's commits, and the scheduled security scan the full history.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e  # frozen: v8.30.1
+    hooks:
+      - id: gitleaks

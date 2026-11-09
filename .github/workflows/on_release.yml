@@ -4,17 +4,24 @@ on:
     # job will automatically run after a new "release" is create on github.
     types: [published]
 
+# Each job grants itself only what it uses.
+permissions: {}
+
+# The actions below stay on the majors this workflow has released with, pinned to the commit
+# those majors pointed at; Dependabot proposes newer majors as separate PRs.
 jobs:
   # Validate that the release tag and prerelease flag are consistent.
   # Pre-releases must have a semver prerelease identifier (rc, beta, alpha, dev)
   # and GA releases must not.
   validate_release:
     runs-on: ubuntu-latest
+    permissions: {}
     steps:
       - name: Validate release tag matches prerelease flag
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
-          TAG="${{ github.event.release.tag_name }}"
-          IS_PRERELEASE="${{ github.event.release.prerelease }}"
           # Strip optional 'v' prefix for checking
           VERSION="${TAG#v}"
           # Check if the tag contains a prerelease identifier (hyphen after version numbers)
@@ -38,63 +45,55 @@ jobs:
   build_and_test:
     needs: validate_release
     runs-on: ubuntu-latest
-    env:
-      github_token: ${{ secrets.TOKEN_GITHUB }}
     permissions:
-      id-token: write
-      contents: write
-      pull-requests: write
+      contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@0717577d45739eb3c851188b29f50ed6c0b2194e  # v2.8.0
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130  # v3.7.0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3.12.0
 
       - name: Login to DockerHub
-        uses: docker/login-action@v2
+        uses: docker/login-action@465a07811f14bebb1938fbed4728c6a1ff8901fc  # v2.2.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Docker Compose install
-        run: |
-          curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-          chmod +x /usr/local/bin/docker-compose
-
       - name: Echo version tag
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          echo "The version tag that will be published to docker hub is: ${{ github.event.release.tag_name }}"
+          echo "The version tag that will be published to docker hub is: $RELEASE_TAG"
 
+      # Release images build without a registry cache: layers from an earlier image must not
+      # end up in a release.
       - name: Build client for testing
         id: build_client
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6.19.2
         with:
           context: .
           file: docker/Dockerfile
           push: false
           target: client
-          cache-from: type=registry,ref=permitio/opal-client:latest
-          cache-to: type=inline
           load: true
           tags: |
             permitio/opal-client:test
 
       - name: Build server for testing
         id: build_server
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6.19.2
         with:
           context: .
           file: docker/Dockerfile
           push: false
           target: server
-          cache-from: type=registry,ref=permitio/opal-server:latest
-          cache-to: type=inline
           load: true
           tags: |
             permitio/opal-server:test
@@ -119,9 +118,7 @@ jobs:
       - build_and_test
     runs-on: ubuntu-latest
     permissions:
-      id-token: write
-      contents: write
-      pull-requests: write
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -168,31 +165,37 @@ jobs:
             version_suffix: "-alpine"
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@0717577d45739eb3c851188b29f50ed6c0b2194e  # v2.8.0
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130  # v3.7.0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3.12.0
 
       - name: Login to DockerHub
-        uses: docker/login-action@v2
+        uses: docker/login-action@465a07811f14bebb1938fbed4728c6a1ff8901fc  # v2.2.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Prepare tags
         id: tags
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+          REPOSITORY: ${{ matrix.repository }}
+          VERSION_SUFFIX: ${{ matrix.version_suffix }}
         run: |
-          version_tag="${{ github.event.release.tag_name }}"
-          repo="${{ matrix.repository }}"
-          suffix="${{ matrix.version_suffix }}"
+          version_tag="$RELEASE_TAG"
+          repo="$REPOSITORY"
+          suffix="$VERSION_SUFFIX"
           latest_tag="latest${suffix}"
           tags="${repo}:${version_tag}${suffix}"
-          if [ "${{ github.event.release.prerelease }}" != "true" ]; then
+          if [ "$IS_PRERELEASE" != "true" ]; then
             tags="${repo}:${latest_tag}"$'\n'"${tags}"
           fi
           {
@@ -200,25 +203,26 @@ jobs:
             echo "${tags}"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
-          echo "cache_ref=${repo}:${latest_tag}" >> "$GITHUB_OUTPUT"
 
       - name: Python setup
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with:
-          python-version: '3.11.8'
+          python-version: '3.11'
 
       - name: Bump version - packaging__.py
         id: version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           # Install required packages
-          pip install semver packaging
+          pip install semver==3.1.0 packaging==26.3
 
           # Get version tag and remove 'v' prefix
-          version_tag=${{ github.event.release.tag_name }}
+          version_tag="$RELEASE_TAG"
           version_tag=${version_tag#v}
 
           # Convert semver to PyPI version using the script
-          pypi_version=$(python semver2pypi.py $version_tag)
+          pypi_version=$(python semver2pypi.py "$version_tag")
 
           # Update only the __version__ in __packaging__.py
           sed -i "s/__version__ = VERSION_STRING/__version__ = \"$pypi_version\"/" packages/__packaging__.py
@@ -237,18 +241,16 @@ jobs:
 
       - name: Build and push ${{ matrix.name }}
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6.19.2
         with:
           # Build from this checkout, which holds the version bump above. Without a context the
           # action builds from the Git context (the tagged commit), and the images installed the
-          # packages as 0.0.0.
+          # packages as 0.0.0. No registry cache, as in build_and_test.
           context: .
           file: docker/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           target: ${{ matrix.target }}
-          cache-from: type=registry,ref=${{ steps.tags.outputs.cache_ref }}
-          cache-to: type=inline
           tags: ${{ steps.tags.outputs.tags }}
 
       - name: Check that the pushed image installs the release version
@@ -277,32 +279,39 @@ jobs:
     needs:
       - build_and_test
     runs-on: ubuntu-latest
+    # The pypi environment has no protection rules, so it adds no approval step. PYPI_TOKEN is still
+    # a repository secret that any workflow can read; moved into this environment, it would be
+    # readable by this job only.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/opal-common/
     permissions:
-      id-token: write
-      contents: write
-      pull-requests: write
+      contents: write  # upload the dists to the release
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@0717577d45739eb3c851188b29f50ed6c0b2194e  # v2.8.0
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Python setup
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with:
-          python-version: '3.11.8'
+          python-version: '3.11'
 
       - name: Bump version - packaging__.py
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           # Install required packages
-          pip install semver packaging
+          pip install semver==3.1.0 packaging==26.3
 
           # Get version tag and remove 'v' prefix
-          version_tag=${{ github.event.release.tag_name }}
+          version_tag="$RELEASE_TAG"
           version_tag=${version_tag#v}
 
           # Convert semver to PyPI version using the script
-          pypi_version=$(python semver2pypi.py $version_tag)
+          pypi_version=$(python semver2pypi.py "$version_tag")
 
           # Update only the __version__ in __packaging__.py
           sed -i "s/__version__ = VERSION_STRING/__version__ = \"$pypi_version\"/" packages/__packaging__.py
@@ -320,7 +329,7 @@ jobs:
 
       - name: Build every sub-packages
         run: |
-          pip install wheel
+          pip install wheel==0.48.0
 
           # Helper: rename sdist to use underscores in package name (PEP 625)
           normalize_sdist() {
@@ -336,22 +345,22 @@ jobs:
             done
           }
 
-          cd packages/opal-common/ ; rm -rf *.egg-info build/ dist/
+          cd packages/opal-common/ || exit 1 ; rm -rf ./*.egg-info build/ dist/
           python setup.py sdist bdist_wheel
           normalize_sdist
-          cd ../..
-          cd packages/opal-client/ ; rm -rf *.egg-info build/ dist/
+          cd ../.. || exit 1
+          cd packages/opal-client/ || exit 1 ; rm -rf ./*.egg-info build/ dist/
           python setup.py sdist bdist_wheel
           normalize_sdist
-          cd ../..
-          cd packages/opal-server/ ; rm -rf *.egg-info build/ dist/
+          cd ../.. || exit 1
+          cd packages/opal-server/ || exit 1 ; rm -rf ./*.egg-info build/ dist/
           python setup.py sdist bdist_wheel
           normalize_sdist
-          cd ../..
+          cd ../.. || exit 1
 
       # Upload package distributions to the release - All assets in one step
       - name: Upload assets to release
-        uses: shogo82148/actions-upload-release-asset@v1.7.5
+        uses: shogo82148/actions-upload-release-asset@8f032eff0255912cc9c8455797fd6d72f25c7ab7  # v1.7.5
         with:
           upload_url: ${{ github.event.release.upload_url }}
           asset_path: |
@@ -362,35 +371,28 @@ jobs:
       # Publish package distributions to PyPI
       # skip-existing allows re-runs to succeed if some files were already uploaded
       # verbose enables detailed error messages from PyPI for debugging upload failures
+      # The PyPI token stays until trusted publishing is set up for the three projects; that
+      # is its own change.
       - name: Publish package distributions to PyPI - Opal-Common
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
         with:
-          password: ${{ secrets.PYPI_TOKEN }}
+          password: ${{ secrets.PYPI_TOKEN }}  # zizmor: ignore[use-trusted-publishing] see above
           packages-dir: packages/opal-common/dist/
           skip-existing: true
           verbose: true
-        env:
-          name: pypi
-          url: https://pypi.org/p/opal-common/
 
       - name: Publish package distributions to PyPI - Opal-Client
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
         with:
-          password: ${{ secrets.PYPI_TOKEN }}
+          password: ${{ secrets.PYPI_TOKEN }}  # zizmor: ignore[use-trusted-publishing] see above
           packages-dir: packages/opal-client/dist/
           skip-existing: true
           verbose: true
-        env:
-          name: pypi
-          url: https://pypi.org/p/opal-client/
 
       - name: Publish package distributions to PyPI - Opal-Server
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
         with:
-          password: ${{ secrets.PYPI_TOKEN }}
+          password: ${{ secrets.PYPI_TOKEN }}  # zizmor: ignore[use-trusted-publishing] see above
           packages-dir: packages/opal-server/dist/
           skip-existing: true
           verbose: true
-        env:
-          name: pypi
-          url: https://pypi.org/p/opal-server/

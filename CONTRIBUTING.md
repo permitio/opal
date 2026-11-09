@@ -60,7 +60,7 @@ Please follow these guidelines:
 5. **Check Quality**: Run all tests and linters:
     ```bash
     pytest
-    pre-commit run --all-files
+    prek run --all-files
     ```
 6. **Submit PR**: Open a pull request, linking to the issue and explaining your changes clearly.
 
@@ -100,9 +100,10 @@ We are excited to have you onboard as a contributor to OPAL! 🎉
     source venv/bin/activate
     pip install -r requirements.txt
     ```
-3. Install the pre-commit hooks:
+3. Install [prek](https://prek.j178.dev) 0.5.5 or later, which runs the hooks in
+   `.pre-commit-config.yaml`, and install the hooks:
     ```bash
-    pre-commit install
+    prek install
     ```
 
 ### Running OPAL Servers and Clients
@@ -169,7 +170,7 @@ pnpm start
 
 You can run the linting and formatting checks using the following command:
 ```bash
-pre-commit run --all-files
+prek run --all-files
 ```
 
 ### Running the Tests

@@ -1,0 +1,179 @@
+# Dependabot version and security updates.
+# https://docs.github.com/code-security/reference/supply-chain-security/dependabot-options-reference
+# describes the options.
+#
+# - Every entry runs weekly on Monday with at most 5 open pull requests. The cooldown holds a
+#   new release back for 7 days, and a major release for 14 on pip and npm, the ecosystems that
+#   support per-level days, so a broken or malicious release has time to be pulled first.
+# - The version update groups take minor and patch releases only: a major release gets a pull
+#   request of its own.
+# - Security updates are a repository setting. The security group of an entry puts all of its
+#   security updates in one pull request; cooldown and open-pull-requests-limit do not apply to
+#   them. Dependabot has no security updates for docker or pre-commit, so those entries have no
+#   security group.
+# - No labels: Dependabot applies its default labels, dependencies and one for the ecosystem, and
+#   creates them when the repository does not have them.
+# - Commit prefixes: deps for what the published packages and images install, deps-dev for the
+#   tools that build and check them (actions, hooks, docs site).
+# - An ignore entry needs a comment that says why, and when it can go.
+version: 2
+updates:
+  # The published packages' requirements. Each setup.py reads its install_requires from
+  # packages/requires.txt and packages/<pkg>/requires.txt. Dependabot's pip fetcher reads every
+  # *.txt in a configured directory and its immediate subdirectories whose lines parse as
+  # requirements, so "/" covers requirements.txt (dev and test tools) and packages/requires.txt,
+  # and each package directory covers its own requires.txt.
+  #
+  # These are library ranges, which every downstream install resolves, so a floor must not rise
+  # just because a newer release exists: increase-if-necessary leaves a requirement alone while
+  # its range admits the new release, and moves only the cap when a release falls outside it.
+  # Raising a floor, for a security fix say, stays a manual change.
+  - package-ecosystem: pip
+    directories:
+      - /
+      - /packages/opal-common
+      - /packages/opal-client
+      - /packages/opal-server
+    versioning-strategy: increase-if-necessary
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: deps
+      prefix-development: deps-dev
+    groups:
+      minor-and-patch:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: [minor, patch]
+      # Declared in more than one requires.txt. Without a group, a major update opens one pull
+      # request per directory, and those have to be merged together to keep the packages in step.
+      shared-majors:
+        applies-to: version-updates
+        patterns: [aiohttp, click, gitpython, pyjwt, tenacity]
+        update-types: [major]
+      security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  # The Docusaurus documentation site (pnpm).
+  - package-ecosystem: npm
+    directory: /documentation
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: deps-dev
+    groups:
+      minor-and-patch:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: [minor, patch]
+      security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  # The published images. Dependabot reads FROM lines only, so it cannot see the OPA image
+  # (copied by skopeo from ARG opa_tag/opa_digest) or the EOPA binary (a wget URL checked against
+  # ARG checksums); bump those by hand. It does not update the two `alpine:latest` stages either.
+  # The python bases are two-part tags without a digest (python:3.12-bookworm), so Dependabot has
+  # nothing to offer inside 3.12, and the ignore below holds the minor: no python base pull
+  # requests come from this entry. Today it tracks permitio/cedar-agent.
+  - package-ecosystem: docker
+    directory: /docker
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: deps
+    groups:
+      minor-and-patch:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: [minor, patch]
+    ignore:
+      # opal-server's python_requires stops below 3.13, and the Dockerfile hard-codes the
+      # python3.12 site-packages path, so a python minor bump here would only be a red pull
+      # request. Remove this when opal-server supports the next minor and the Dockerfile moves
+      # with it.
+      - dependency-name: python
+        update-types: [version-update:semver-minor, version-update:semver-major]
+
+  # The test-only image of app-tests/git-leak. Its python base is not tied to opal-server's range,
+  # so nothing is held here.
+  - package-ecosystem: docker
+    directory: /app-tests/git-leak/seed
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: deps-dev
+    groups:
+      minor-and-patch:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  # The actions that the workflows in .github/workflows use, each pinned to a commit SHA with a
+  # version comment, which Dependabot updates together. on_release.yml stays on older majors on
+  # purpose: it runs only when a release is published, so each major update arrives as a pull
+  # request of its own, to be checked before a release. The cooldown has no per-level days here.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: deps-dev
+    groups:
+      tooling:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: [minor, patch]
+      security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  # The hooks in .pre-commit-config.yaml. Each rev is a commit SHA with a "# frozen: <tag>"
+  # comment: Dependabot moves the SHA to the newest tag's commit and rewrites the comment. The
+  # cooldown has no per-level days here.
+  - package-ecosystem: pre-commit
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: deps-dev
+    groups:
+      tooling:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: [minor, patch]
+    ignore:
+      # The formatters are pinned on purpose (see .pre-commit-config.yaml): a bump rewrites files
+      # across the tree, so it cannot pass CI as a Dependabot pull request and has to land by hand
+      # together with the reformat. Remove an entry once its formatter is replaced or brought
+      # current that way.
+      - dependency-name: https://github.com/psf/black
+      - dependency-name: https://github.com/pycqa/isort
+      - dependency-name: https://github.com/PyCQA/docformatter

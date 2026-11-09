@@ -6,11 +6,24 @@ name: Tests
 on:
   push:
     branches: [ master, 'release/**' ]
+  # No base-branch filter: a PR stacked on another PR's branch gets the full CI too.
   pull_request:
-    branches: [ master, 'release/**' ]
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push to a PR cancels that PR's older runs; runs on master and release branches are
+# never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash --noprofile --norc -euo pipefail {0}
 
 env:
   # With the docker-container builder that setup-buildx-action creates, buildx (>= 0.30)
@@ -21,12 +34,18 @@ env:
   # logs, where editing the description later cannot remove them. Set for the whole
   # workflow so a build job added later is covered too.
   BUILDX_METADATA_PROVENANCE: disabled
+  # build-push-action (>= v6) also uploads each build's record, provenance included, as a
+  # workflow artifact that any signed-in GitHub user can download from this public repo's
+  # runs. These builds are only loaded for the tests, so nothing needs the record.
+  DOCKER_BUILD_RECORD_UPLOAD: "false"
 
 jobs:
   build:
+    permissions:
+      contents: read
     services:
       redis:
-        image: redis
+        image: redis:8.10.3
         ports:
           - 6379:6379
         options: >-
@@ -34,7 +53,7 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
       # Every leg reports its own result; with fail-fast one failing leg
@@ -54,18 +73,22 @@ jobs:
             common-and-client-only: true
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        persist-credentials: false
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
       with:
         python-version: ${{ matrix.python-version }}
     - name: Install dependencies
+      env:
+        COMMON_AND_CLIENT_ONLY: ${{ matrix.common-and-client-only }}
       run: |
-        python -m pip install --upgrade pip
-        python -m pip install flake8
-        if [ "${{ matrix.common-and-client-only }}" = "true" ]; then
+        python -m pip install pip==26.2.2
+        python -m pip install flake8==7.5.0
+        if [ "$COMMON_AND_CLIENT_ONLY" = "true" ]; then
           pip install -e ./packages/opal-common -e ./packages/opal-client \
-            pytest pytest-asyncio pytest-rerunfailures
+            pytest==9.2.0 pytest-asyncio==1.4.1 pytest-rerunfailures==16.7
         else
           pip install -r requirements.txt
         fi
@@ -91,8 +114,10 @@ jobs:
         # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     - name: Test with pytest
+      env:
+        COMMON_AND_CLIENT_ONLY: ${{ matrix.common-and-client-only }}
       run: |
-        if [ "${{ matrix.common-and-client-only }}" = "true" ]; then
+        if [ "$COMMON_AND_CLIENT_ONLY" = "true" ]; then
           # These three need a running/importable opal-server, which this leg
           # cannot install (see the matrix note). Everything else in the two
           # relaxed packages runs - including the wire_compat corpus, the enum
@@ -106,30 +131,28 @@ jobs:
         fi
 
   e2e-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     name: E2E Tests
+    permissions:
+      contents: read
     steps:
       # BUILD PHASE
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v1
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1  # v4.4.0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
-
-      - name: Docker Compose install
-        run: |
-          curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-          chmod +x /usr/local/bin/docker-compose
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
 
       - name: Build client
         id: build_client
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
         with:
           context: .
           file: docker/Dockerfile
@@ -143,7 +166,7 @@ jobs:
 
       - name: Build server
         id: build_server
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
         with:
           context: .
           file: docker/Dockerfile
@@ -181,7 +204,7 @@ jobs:
           done
 
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: "3.11"
 
@@ -198,9 +221,10 @@ jobs:
           OPAL_TESTS_POLICY_REPO_DEPLOY_KEY: ${{ secrets.OPAL_TESTS_POLICY_REPO_DEPLOY_KEY }}
         run: |
           # Prepare git for using tests policy repo
-          export OPAL_POLICY_REPO_SSH_KEY_PATH=$(realpath .)/opal-tests-policy-repo-key
-          echo "$OPAL_TESTS_POLICY_REPO_DEPLOY_KEY" > $OPAL_POLICY_REPO_SSH_KEY_PATH
-          chmod 400 $OPAL_POLICY_REPO_SSH_KEY_PATH
+          OPAL_POLICY_REPO_SSH_KEY_PATH="$(realpath .)/opal-tests-policy-repo-key"
+          export OPAL_POLICY_REPO_SSH_KEY_PATH
+          echo "$OPAL_TESTS_POLICY_REPO_DEPLOY_KEY" > "$OPAL_POLICY_REPO_SSH_KEY_PATH"
+          chmod 400 "$OPAL_POLICY_REPO_SSH_KEY_PATH"
 
           git config --global core.sshCommand "ssh -i $OPAL_POLICY_REPO_SSH_KEY_PATH -o IdentitiesOnly=yes"
           git config --global user.name "$GITHUB_ACTOR"
@@ -209,29 +233,27 @@ jobs:
           ./run.sh
 
   e2e-tests-alpine:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     name: E2E Tests (Alpine)
+    permissions:
+      contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v1
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1  # v4.4.0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
-
-      - name: Docker Compose install
-        run: |
-          curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-          chmod +x /usr/local/bin/docker-compose
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
 
       - name: Build client (alpine)
         id: build_client_alpine
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
         with:
           context: .
           file: docker/Dockerfile
@@ -245,7 +267,7 @@ jobs:
 
       - name: Build server (alpine)
         id: build_server_alpine
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
         with:
           context: .
           file: docker/Dockerfile
@@ -308,14 +330,75 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130  # v3.7.0
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1  # v4.4.0
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3.12.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
       - name: Build the OPA and EOPA stages for linux/amd64 and linux/arm64
         run: |
           for target in opa-extractor eopa-extractor; do
             docker buildx build --platform linux/amd64,linux/arm64 --target "$target" -f docker/Dockerfile .
           done
+
+  # Scans the commits that are new in the run for secrets, with .github/scripts/gitleaks-range.sh
+  # and the gitleaks that .github/binaries.lock pins. The range depends on the run:
+  #   - a pull request: its commits, from its base to its head. A pull request always adds a
+  #     commit, so a range without one did not run.
+  #   - a push: from before to after. A push may add no commit, which passes with a notice. A push
+  #     that creates a branch sends the zero SHA as before; its range starts at origin/master.
+  #   - a manual run: the commits that are not on master. A run on master has none, which passes
+  #     with a notice.
+  secrets:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # A shallow clone lacks the range; gitleaks-range.sh refuses to run on one.
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install gitleaks
+        run: |
+          token=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
+          echo "::stop-commands::$token"
+          trap 'echo "::$token::"' EXIT
+          .github/scripts/fetch-tool.sh gitleaks
+      # gitleaks-range.sh in a throwaway repository: a clean range passes, a range that adds a
+      # key fails, and a scan that cannot run fails apart from both.
+      - name: Test gitleaks-range.sh
+        run: .github/scripts/tests/gitleaks-range.test.sh
+      - name: Scan the new commits
+        env:
+          RANGE_BASE: >-
+            ${{ (github.event_name == 'workflow_dispatch' || github.event.created)
+            && 'origin/master' || github.event.pull_request.base.sha || github.event.before }}
+          RANGE_HEAD: >-
+            ${{ github.event_name == 'workflow_dispatch' && 'HEAD'
+            || github.event.pull_request.head.sha || github.event.after }}
+          IF_EMPTY: ${{ github.event_name == 'pull_request' && 'error' || 'notice' }}
+        run: .github/scripts/gitleaks-range.sh --if-empty "$IF_EMPTY" "$RANGE_BASE" "$RANGE_HEAD"
+
+  # On a pull request only: fails when the pull request adds a dependency with a known
+  # vulnerability of high or critical severity, from GitHub's dependency graph, and on a failure
+  # comments the summary on the pull request, which needs pull-requests: write. A fork's token is
+  # read-only: the action then warns that it cannot comment, and the result is still the review's.
+  # It reads no configuration file from the checkout, and checks out nothing. The graph reads
+  # requirements.txt, the docs site's pnpm lockfile and the workflows' actions; it does not read
+  # packages/*/requires.txt.
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write  # the action comments its summary on the pull request on a failure
+    steps:
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v5.0.0
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
 
   ci:
     # The branch ruleset requires only this check, so the jobs above and their
@@ -324,7 +407,7 @@ jobs:
     # fail, when a needed job fails or is cancelled.
     name: CI
     if: always()
-    needs: [build, e2e-tests, e2e-tests-alpine, binary-stages]
+    needs: [build, e2e-tests, e2e-tests-alpine, binary-stages, secrets, dependency-review]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -351,12 +434,12 @@ jobs:
           if [[ -n "$unlisted" || -n "$unknown" ]]; then
             exit 1
           fi
-      - name: Require every job to succeed
+      # .github/scripts/ci-aggregate.sh says how it decides: each job must succeed in the runs
+      # that select it, and a job in PULL_REQUEST_JOBS is selected on a pull request only.
+      - name: Check the needed jobs
         env:
           NEEDS: ${{ toJSON(needs) }}
-        run: |
-          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<<"$NEEDS"
-          if ! jq -e 'all(.[]; .result == "success")' <<<"$NEEDS" >/dev/null; then
-            echo "A required job did not succeed." >&2
-            exit 1
-          fi
+          EVENT: ${{ github.event_name }}
+          EXPECTED_JOBS: 6
+          PULL_REQUEST_JOBS: dependency-review
+        run: .github/scripts/ci-aggregate.sh

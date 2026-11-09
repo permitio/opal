@@ -140,3 +140,6 @@ dmypy.json
 
 # Private Claude Code working artifacts (plans/specs) — never commit
 .claude/
+
+# Release binaries that .github/scripts/fetch-tool.sh installs
+/bin/
