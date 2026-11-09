@@ -10,12 +10,15 @@ root_dir = os.path.abspath(
 sys.path.append(root_dir)
 
 import asyncio
+import ssl
 from multiprocessing import Process
 
 import pytest
 import uvicorn
 from fastapi import Depends, FastAPI, Header, HTTPException
+from opal_common.config import opal_common_config
 from opal_common.fetcher import FetchingEngine
+from opal_common.fetcher.providers import http_fetch_provider
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
 
 # Configurable
@@ -121,6 +124,35 @@ async def test_authorized_http_get_from_dict(server):
         await engine.queue_url(f"{BASE_URL}{AUTHORIZED_DATA_ROUTE}", callback, config)
         await asyncio.wait_for(got_data_event.wait(), 5)
         assert got_data_event.is_set()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("client", ["aiohttp", "httpx"])
+async def test_http_get_with_custom_ssl_context(server, monkeypatch, client):
+    """A custom ssl context (self-signed certificates allowed) must work with
+    both http clients, and httpx must get it on the client (``verify``)."""
+    custom_ssl_context = ssl.create_default_context()
+    monkeypatch.setattr(opal_common_config, "HTTP_FETCHER_PROVIDER_CLIENT", client)
+    monkeypatch.setattr(
+        http_fetch_provider, "get_custom_ssl_context", lambda: custom_ssl_context
+    )
+    httpx_clients = []
+    original_httpx_client = http_fetch_provider.httpx.AsyncClient
+
+    def recording_httpx_client(*args, **kwargs):
+        httpx_clients.append(kwargs)
+        return original_httpx_client(*args, **kwargs)
+
+    monkeypatch.setattr(
+        http_fetch_provider.httpx, "AsyncClient", recording_httpx_client
+    )
+
+    async with FetchingEngine() as engine:
+        data = await engine.handle_url(f"{BASE_URL}{DATA_ROUTE}")
+        assert data[DATA_KEY] == DATA_VALUE
+
+    if client == "httpx":
+        assert [kwargs["verify"] for kwargs in httpx_clients] == [custom_ssl_context]
 
 
 @pytest.mark.flaky(reruns=1)

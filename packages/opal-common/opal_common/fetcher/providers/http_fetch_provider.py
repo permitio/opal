@@ -80,8 +80,17 @@ class HttpFetchProvider(BaseFetchProvider):
         if self._event.config.headers is not None:
             headers = self._event.config.headers
         if opal_common_config.HTTP_FETCHER_PROVIDER_CLIENT == "httpx":
+            # httpx takes the ssl context once, on the client (``verify``),
+            # and does not accept aiohttp's per-request ``ssl`` argument
             self._session = httpx.AsyncClient(
-                headers=headers, timeout=timeout, trust_env=True
+                headers=headers,
+                timeout=timeout,
+                trust_env=True,
+                verify=(
+                    self._custom_ssl_context
+                    if self._custom_ssl_context is not None
+                    else True
+                ),
             )
         else:
             self._session = ClientSession(
@@ -101,12 +110,15 @@ class HttpFetchProvider(BaseFetchProvider):
         http_method = self.match_http_method_from_type(
             self._session, self._event.config.method
         )
+        ssl_context_kwargs = (
+            self._ssl_context_kwargs if isinstance(self._session, ClientSession) else {}
+        )
         if self._event.config.data is not None:
             result: Union[ClientResponse, httpx.Response] = await http_method(
-                self._url, data=self._event.config.data, **self._ssl_context_kwargs
+                self._url, data=self._event.config.data, **ssl_context_kwargs
             )
         else:
-            result = await http_method(self._url, **self._ssl_context_kwargs)
+            result = await http_method(self._url, **ssl_context_kwargs)
         result.raise_for_status()
         return result
 
