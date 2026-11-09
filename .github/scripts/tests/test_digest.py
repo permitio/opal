@@ -600,6 +600,25 @@ def test_writes_the_job_summary(digest):
     )
 
 
+def test_a_job_summary_that_cannot_be_written(digest, tmp_path):
+    summary = tmp_path / "missing" / "summary.md"
+
+    result = digest.run(GITHUB_STEP_SUMMARY=str(summary))
+
+    assert result.returncode == 2
+    assert "digest: writing the job summary failed" in result.stdout
+    assert digest.notified is None
+
+
+def test_a_temporary_directory_that_cannot_be_made(digest, tmp_path):
+    result = digest.run(RUNNER_TEMP=str(tmp_path / "missing"))
+
+    assert result.returncode == 2
+    assert "digest: creating a temporary directory failed" in result.stdout
+    assert digest.gh_calls == []
+    assert digest.notified is None
+
+
 def test_without_a_webhook_the_digest_is_not_posted_and_passes(digest):
     digest.use_the_real_notify()
 

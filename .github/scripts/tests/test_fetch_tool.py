@@ -264,11 +264,20 @@ def test_a_failed_download_installs_nothing(fetch):
 
     result = fetch.run("fake", curl_fails=True)
 
+    url = URL.format(version="1.2.3", os="linux", arch="x86_64")
     assert result.returncode == 2
-    assert (
-        f"downloading {URL.format(version='1.2.3', os='linux', arch='x86_64')} failed"
-        in (result.stderr)
-    )
+    assert f"downloading {url} failed" in result.stderr
+    assert not fetch.installed.parent.exists()
+
+
+def test_a_temporary_directory_that_cannot_be_made(fetch, tmp_path):
+    fetch.lock(entry())
+
+    result = fetch.run("fake", env={"RUNNER_TEMP": str(tmp_path / "missing")})
+
+    assert result.returncode == 2
+    assert "creating a temporary directory failed" in result.stderr
+    assert fetch.urls == []
     assert not fetch.installed.parent.exists()
 
 

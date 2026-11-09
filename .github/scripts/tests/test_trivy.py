@@ -458,6 +458,14 @@ def test_a_findings_file_that_cannot_be_written(trivy, tmp_path):
     assert f"writing the findings to {findings} failed" in result.stdout
 
 
+def test_a_temporary_directory_that_cannot_be_made(trivy, tmp_path):
+    result = trivy.scan(env={"RUNNER_TEMP": str(tmp_path / "missing")})
+
+    assert result.returncode == 2
+    assert "creating a temporary directory failed" in result.stdout
+    assert not (trivy.out / "args").exists()
+
+
 @pytest.mark.parametrize(
     "args",
     [

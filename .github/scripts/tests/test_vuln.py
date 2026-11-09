@@ -214,6 +214,15 @@ def test_a_tree_that_cannot_be_resolved(vuln, tmp_path, tree, prepare):
     assert vuln.logged("trivy") == []
 
 
+def test_a_temporary_directory_that_cannot_be_made(vuln, tmp_path):
+    result = vuln.run(RUNNER_TEMP=str(tmp_path / "missing"))
+
+    assert result.returncode == 2
+    assert "vuln: creating a temporary directory failed" in result.stdout
+    assert verdict(result.stdout) == "vuln: DID NOT RUN"
+    assert vuln.logged("uv") == []
+
+
 @pytest.mark.parametrize(
     ("args", "env"),
     [
