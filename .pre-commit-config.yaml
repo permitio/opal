@@ -29,7 +29,7 @@ repos:
     hooks:
       - id: isort
   - repo: https://github.com/codespell-project/codespell
-    rev: ec0f41b9573937aebab66e3ca5b00d00a7b339fa  # frozen: v2.2.4
+    rev: 57b21406f092110c18776e39b0bda50d37c945c8  # frozen: v2.4.3
     hooks:
       - id: codespell
         args: [--skip, "*.json,*.lock,*pnpm-lock.yaml"]
