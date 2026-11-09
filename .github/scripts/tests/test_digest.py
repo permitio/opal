@@ -195,7 +195,7 @@ class Digest:
             The exit code and the output.
         """
         path = changes.pop("PATH", None)
-        env = {
+        env: dict[str, str | None] = {
             "GITHUB_REPOSITORY": REPO,
             "DIGEST_NOW": str(int(NOW.timestamp())),
             "GH_TOKEN": GH_TOKEN,
@@ -368,9 +368,10 @@ def test_takes_the_newest_finished_security_scan_job_of_scheduled_and_manual_run
         f"• <https://github.com/{REPO}/actions/runs/11/job/110|success> on 2026-11-08"
     ]
     looked_up = [
-        re.search(r"/runs/([0-9]+)/jobs", call[3]).group(1)
+        run_id.group(1)
         for call in digest.gh_calls
         if "/jobs?" in call[3]
+        and (run_id := re.search(r"/runs/([0-9]+)/jobs", call[3]))
     ]
     assert looked_up == ["10", "12", "11"]
     assert digest.notified[1] == "nothing needs attention"
