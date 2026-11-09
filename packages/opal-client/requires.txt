@@ -1,4 +1,4 @@
-aiofiles>=0.8.0,<1
+aiofiles>=0.8.0,<26
 aiohttp>=3.9.2,<4
 psutil>=5.9.1
 tenacity>=8.0.1,<9
