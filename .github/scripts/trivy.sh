@@ -12,8 +12,9 @@
 #                  registry for linux/amd64. The scan counts only when Trivy lists a package.
 #
 # With a findings file, it also writes each vulnerability there as a JSON line: its ID, package,
-# installed and fixed versions, severity in lowercase (empty for UNKNOWN) and Trivy's https link
-# for it, each value cut to fit the report of security-scan.sh. The file is written only when the
+# installed and fixed versions, severity in lowercase (empty for UNKNOWN), title, CVSS base score
+# (null when Trivy has none), the GHSA and CVE IDs its vendors give it, and Trivy's https link for
+# it, each value cut to fit the report of security-scan.sh. The file is written only when the
 # scan counts. Trivy runs in an empty directory with every setting on its command line, so no
 # trivy.yaml, .trivyignore or TRIVY_ environment variable can change the scan. The work files stay
 # in a temporary directory under RUNNER_TEMP (or TMPDIR), which the runner or the system clears.
@@ -113,9 +114,16 @@ if [[ -n $findings ]]; then
       else .[0:$n] | until(utf8bytelength <= $n - 3; .[0:-1]) + "..." end;
     def link: if test("^https://[^\\s<>|()\\[\\]\"]+$") and utf8bytelength <= 300 then .
       else "" end;'
+  # score is the CVSS v3 (or v4) base score of the source Trivy took the severity from, else of
+  # NVD, GHSA or any other source.
   jq -c "$fit$vulns"' | .[] | {id: (.VulnerabilityID | clip(80)), package: (.PkgName | clip(200)),
     version: (.InstalledVersion // "" | clip(200)), fix: (.FixedVersion | clip(200)),
     severity: (.Severity // "" | ascii_downcase | if . == "unknown" then "" else . end),
+    title: (.Title // "" | clip(200)),
+    score: ((.CVSS // {}) as $cvss | [.SeveritySource, "nvd", "ghsa", ($cvss | keys[])]
+      | map(select(type == "string") | $cvss[.] // empty | objects | .V3Score // .V40Score
+        | select(type == "number" and . > 0)) | .[0]),
+    aliases: [.VendorIDs // [] | .[] | strings | select(test("^(GHSA|CVE)-")) | clip(80)],
     url: (.PrimaryURL // "" | link)}' \
     "$work/report.json" >"$findings" || fail "writing the findings to $findings failed"
 fi

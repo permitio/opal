@@ -2,8 +2,12 @@
 # notify.sh <check> <result> [<body file>] posts a notice to the security Slack channel through
 # its incoming webhook, SECURITY_SLACK_WEBHOOK_URL: the line
 # "<repo> <check>: <result>. <run URL>", and under it the body, a file of Slack text that the
-# caller wrote with every outside value escaped. security-scan.sh and digest.sh run it. It reads
+# caller wrote with every outside value escaped. digest.sh runs it this way. It reads
 # GITHUB_REPOSITORY, and GITHUB_SERVER_URL and GITHUB_RUN_ID for the run's URL, which CI sets.
+#
+# notify.sh --message <file> posts the file as the whole notice, as it is: a complete Slack message
+# whose every outside value the caller escaped, with its own headline and run link.
+# security-scan.sh runs it this way, with the message format_security_report.py renders.
 #
 # When SECURITY_SLACK_WEBHOOK_URL is empty or not set, it prints a ::warning:: that says the
 # notice was not posted, writes the same line to the job summary, and exits 0. It never prints
@@ -20,10 +24,18 @@ fail() {
   exit 2
 }
 
-[[ $# -eq 2 || $# -eq 3 ]] || fail "usage: notify.sh <check> <result> [<body file>]"
-check=$1
-result=$2
-body_file=${3:-}
+usage="usage: notify.sh <check> <result> [<body file>] | notify.sh --message <file>"
+message_file=''
+if [[ $# -eq 2 && $1 == --message ]]; then
+  message_file=$2
+  [[ -n $message_file ]] || fail "$usage"
+elif [[ $# -eq 2 || $# -eq 3 ]]; then
+  check=$1
+  result=$2
+  body_file=${3:-}
+else
+  fail "$usage"
+fi
 for tool in jq curl; do
   command -v "$tool" >/dev/null 2>&1 || fail "$tool is not installed"
 done
@@ -42,9 +54,20 @@ esc() {
   value=${value//>/&gt;}
   printf '%s' "${value//$'\n'/ }"
 }
-line="$(esc "$repo") $(esc "$check"): $(esc "$result")."
-if [[ -n $run_url ]]; then
-  line+=" <$run_url|Run>"
+if [[ -n $message_file ]]; then
+  [[ -r $message_file ]] || fail "the message file $message_file cannot be read"
+  # The message's first line is its headline, which the log and the warning show.
+  line=$(head -n 1 -- "$message_file") || fail "reading the message file $message_file failed"
+  check=security-scan
+  result=$line
+  body_file=$(mktemp "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/notify.XXXXXX") ||
+    fail "creating a temporary file failed"
+  tail -n +2 -- "$message_file" >"$body_file" || fail "reading the message file failed"
+else
+  line="$(esc "$repo") $(esc "$check"): $(esc "$result")."
+  if [[ -n $run_url ]]; then
+    line+=" <$run_url|Run>"
+  fi
 fi
 
 text=$line
