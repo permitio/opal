@@ -48,10 +48,11 @@ if [[ -n ${GITHUB_SERVER_URL:-} && -n $repo && -n ${GITHUB_RUN_ID:-} ]]; then
 fi
 
 # esc escapes the characters that Slack's text format gives a meaning; line is one line of text.
+# Each replacement is quoted: from bash 5.2 an unquoted & in it stands for the matched text.
 esc() {
-  local value=${1//&/&amp;}
-  value=${value//</&lt;}
-  value=${value//>/&gt;}
+  local value=${1//&/"&amp;"}
+  value=${value//</"&lt;"}
+  value=${value//>/"&gt;"}
   printf '%s' "${value//$'\n'/ }"
 }
 if [[ -n $message_file ]]; then
