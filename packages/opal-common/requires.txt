@@ -5,7 +5,7 @@ gitpython>=3.2.1,<4 # 3.2.0 and earlier: GHSA-83vg-56qc-22m7; 3.1.62 and earlier
 loguru>=0.6.0
 pyjwt[crypto]>=2.15.1,<3 # 2.14.0 and earlier: GHSA-42vr-xj54-vc7v, GHSA-x33g-cr3x-6449 (and 12 more before 2.14.0); 2.15.1 decodes '='-padded segments again
 python-decouple>=3.6,<4
-tenacity>=8.0.1,<9
+tenacity>=8.0.1,<10
 datadog>=0.44.0, <1
 ddtrace>=4.8.2,<5 # 4.8.1 and earlier: GHSA-mw54-j2v2-42hr (CVE-2026-50271)
 certifi>=2026.10.19 # not directly required; drops emSign ECC Root CA - G3, the root of the compromised eMudhra intermediates (CVE-2026-111943)
