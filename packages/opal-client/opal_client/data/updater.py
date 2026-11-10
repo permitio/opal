@@ -1,7 +1,9 @@
 import asyncio
 import hashlib
 import json
+import time
 import uuid
+from dataclasses import dataclass
 from functools import partial
 from typing import Any, Dict, List, Optional
 
@@ -26,6 +28,7 @@ from opal_client.policy_store.policy_store_client_factory import (
 )
 from opal_common.async_utils import TasksPool, repeated_call
 from opal_common.config import opal_common_config
+from opal_common.fetcher.conditional import CacheValidators, NotModified, ValidatedData
 from opal_common.http_utils import is_http_error_response, redact_url
 from opal_common.logging_utils.errors import describe_error
 from opal_common.schemas.data import (
@@ -40,6 +43,19 @@ from opal_common.security.sslcontext import get_custom_ssl_context
 from opal_common.synchronization.hierarchical_lock import HierarchicalLock
 from opal_common.utils import get_authorization_header
 from pydantic_core import to_jsonable_python
+
+
+@dataclass
+class _ConditionalFetchState:
+    """What the updater keeps between conditional fetches of a data entry."""
+
+    validators: CacheValidators
+    # Hash of the data the validators belong to - reported on "not modified"
+    data_hash: str
+    # Policy store path to check before trusting a "not modified"
+    store_path: str
+    # time.monotonic() of the last full fetch, for the max age
+    fetched_at: float
 
 
 class DataUpdater:
@@ -163,6 +179,10 @@ class DataUpdater:
         # References to repeated polling tasks (periodic data fetch)
         self._polling_update_tasks = []
 
+        # Validators for conditional fetches, keyed by _conditional_fetch_key().
+        # Kept here since a fetch provider is created per fetch.
+        self._conditional_fetch_states: Dict[str, _ConditionalFetchState] = {}
+
         # Optional user-defined hooks for connection lifecycle
         self._on_connect_callbacks = on_connect or []
         self._on_disconnect_callbacks = on_disconnect or []
@@ -267,6 +287,10 @@ class DataUpdater:
         logger.info(
             "Performing data configuration, reason: {reason}", reason=data_fetch_reason
         )
+
+        # The policy store may have been reset (initial load, reconnect, inline
+        # engine rehydration, manual trigger) - fetch everything in full
+        self._conditional_fetch_states.clear()
 
         # If we're reconnecting, stop any old periodic tasks before fetching anew
         await self._stop_polling_update_tasks()
@@ -552,8 +576,29 @@ class DataUpdater:
             DataEntryReport: Includes information about whether data was fetched,
                 saved, and the computed hash for the data if successfully saved.
         """
+        key = self._conditional_fetch_key(entry)
+        state = self._get_conditional_fetch_state(key)
         try:
-            result = await self._fetch_data(entry)
+            result = await self._fetch_data(
+                entry, validators=state.validators if state else None
+            )
+            if isinstance(result, NotModified) and (
+                state is None or not await self._has_stored_data(state.store_path)
+            ):
+                # The source didn't change but the policy store no longer has the
+                # data (e.g. an external OPA restarted) - fetch it in full
+                logger.info(
+                    "Data for url {url} not modified, but missing from the policy store at '{path}', fetching it again",
+                    url=redact_url(entry.url),
+                    path=(state.store_path if state else "") or "/",
+                )
+                self._conditional_fetch_states.pop(key, None)
+                state = None
+                result = await self._fetch_data(entry)
+                if isinstance(result, NotModified):
+                    raise Exception(
+                        f"Got 'not modified' for an unconditional fetch of {redact_url(entry.url)}"
+                    )
         except Exception as e:
             # url is persisted into the transaction log and the OPA-failed error
             # log; redact it (and the exception text) - the functional fetch
@@ -564,6 +609,31 @@ class DataUpdater:
                 error=describe_error(e, entry.url),
             )
             return DataEntryReport(entry=entry, fetched=False, saved=False)
+
+        if isinstance(result, NotModified):
+            # Only reached with the validators of ``state`` sent and its data
+            # still in the store.
+            logger.info(
+                "Data for url {url} not modified, keeping the data in the policy store",
+                url=redact_url(entry.url),
+            )
+            state.validators = result.validators
+            store_transaction._update_remote_status(
+                url=redact_url(entry.url), status=True, error=""
+            )
+            return DataEntryReport(
+                entry=entry,
+                hash=state.data_hash,
+                fetched=True,
+                saved=True,
+                not_modified=True,
+            )
+
+        validators = None
+        if isinstance(result, ValidatedData):
+            validators, result = result.validators, result.data
+        # Drop the old validators until the new data is saved
+        self._conditional_fetch_states.pop(key, None)
 
         try:
             await self._store_fetched_data(entry, result, store_transaction)
@@ -584,25 +654,107 @@ class DataUpdater:
             store_transaction._update_remote_status(
                 url=redact_url(entry.url), status=True, error=""
             )
+            data_hash = self.calc_hash(result)
+            if validators is not None and not validators.is_empty():
+                self._conditional_fetch_states[key] = _ConditionalFetchState(
+                    validators=validators,
+                    data_hash=data_hash,
+                    store_path=self._stored_data_path(entry, result),
+                    fetched_at=time.monotonic(),
+                )
             return DataEntryReport(
-                entry=entry, hash=self.calc_hash(result), fetched=True, saved=True
+                entry=entry, hash=data_hash, fetched=True, saved=True
             )
 
-    async def _fetch_data(self, entry: DataSourceEntry) -> JsonableValue:
+    @staticmethod
+    def _conditional_fetch_key(entry: DataSourceEntry) -> str:
+        """Identifies an entry's validators: its url, destination and config.
+
+        The config can hold auth headers, so the key holds a hash of it.
+        """
+        config = json.dumps(entry.config, sort_keys=True, default=to_jsonable_python)
+        return "|".join(
+            [
+                entry.url or "",
+                entry.dst_path or "",
+                hashlib.sha256(config.encode("utf-8")).hexdigest(),
+            ]
+        )
+
+    def _get_conditional_fetch_state(
+        self, key: str
+    ) -> Optional[_ConditionalFetchState]:
+        """Returns the stored validators for a key, dropping them once they are
+        older than DATA_UPDATER_CONDITIONAL_FETCH_MAX_AGE."""
+        state = self._conditional_fetch_states.get(key)
+        max_age = opal_client_config.DATA_UPDATER_CONDITIONAL_FETCH_MAX_AGE
+        if (
+            state is not None
+            and max_age is not None
+            and time.monotonic() - state.fetched_at >= max_age
+        ):
+            del self._conditional_fetch_states[key]
+            return None
+        return state
+
+    async def _has_stored_data(self, path: str) -> bool:
+        """Whether the policy store still has data at path.
+
+        Only a positive answer lets a "not modified" skip the write, so
+        an empty document or a store that can't be queried at that path
+        counts as missing.
+        """
+        try:
+            return bool(await self._policy_store.get_data(path))
+        except Exception as e:
+            logger.warning(
+                "Could not read policy store data at '{path}': {err}",
+                path=path or "/",
+                err=describe_error(e),
+            )
+            return False
+
+    @staticmethod
+    def _stored_data_path(entry: DataSourceEntry, result: JsonableValue) -> str:
+        """A policy store path that holds data of this entry once saved (see
+        _store_fetched_data)."""
+        path = entry.dst_path or ""
+        if path and not path.startswith("/"):
+            path = f"/{path}"
+        if (
+            opal_client_config.SPLIT_ROOT_DATA
+            and path in ("/", "")
+            and isinstance(result, dict)
+            and result
+        ):
+            # the root also holds other entries' data - look at one of ours
+            return f"/{next(iter(result))}"
+        return path
+
+    async def _fetch_data(
+        self, entry: DataSourceEntry, validators: Optional[CacheValidators] = None
+    ) -> JsonableValue:
         """Fetches data from a data source using the configured data fetcher.
         Handles fetch errors, HTTP errors, and empty responses.
 
         Args:
             entry (DataSourceEntry): The configuration specifying how and where to fetch data.
+            validators (CacheValidators, optional): Validators from the previous fetch,
+                for a conditional fetch.
 
         Returns:
-            JsonableValue: The fetched data, as a JSON-serializable object.
+            JsonableValue: The fetched data, as a JSON-serializable object - or
+                ``ValidatedData`` / ``NotModified`` for a conditional fetch.
         """
+        # Only pass validators when there are some, so custom DataFetchers that
+        # predate them keep working
+        extra_kwargs = {"validators": validators} if validators is not None else {}
         try:
             result = await self._data_fetcher.handle_url(
                 url=entry.url,
                 config=entry.config,
                 data=entry.data,
+                **extra_kwargs,
             )
         except Exception as e:
             # logger.exception already records the active traceback; don't bind
