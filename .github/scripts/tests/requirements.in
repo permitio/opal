@@ -1,0 +1,6 @@
+# The tests of .github/scripts run with these, installed from requirements.txt with
+# --require-hashes. requirements.txt is generated from this file with:
+#   bin/uv pip compile --generate-hashes --python-version 3.12 --universal \
+#     .github/scripts/tests/requirements.in -o .github/scripts/tests/requirements.txt
+pytest==9.2.0
+pyyaml==6.0.3

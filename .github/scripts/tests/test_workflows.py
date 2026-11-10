@@ -1,0 +1,255 @@
+"""Facts about .github/workflows that the repository relies on: permissions,
+pinned actions, checkouts without stored credentials, the jobs the CI check
+needs, and the release's Python and PyPI environment.
+
+A change that breaks one of them fails here. A deliberate change, such
+as a new job or a new write permission, also edits the fact pinned here.
+"""
+
+import re
+from pathlib import Path
+
+import pytest
+import yaml
+
+WORKFLOWS = Path(__file__).resolve().parents[2] / "workflows"
+WORKFLOW_FILES = sorted(WORKFLOWS.glob("*.y*ml"))
+
+# The required checks of the branch ruleset: the job names, per workflow.
+REQUIRED_CHECKS = {"tests.yml": "CI", "pre-commit.yml": "pre-commit"}
+
+# The jobs that the CI job of tests.yml needs, and of them the ones that run on pull requests
+# only. Adding a job to tests.yml means adding it here and to the CI job's needs.
+CI_NEEDS = {
+    "build",
+    "e2e-tests",
+    "e2e-tests-alpine",
+    "binary-stages",
+    "secrets",
+    "dependency-review",
+}
+CI_PULL_REQUEST_JOBS = {"dependency-review"}
+
+# Every write permission a job has: (workflow, job, scope).
+WRITE_PERMISSIONS = {
+    ("tests.yml", "dependency-review", "pull-requests"),
+    ("on_release.yml", "publish_python_packages", "contents"),
+}
+
+SHA_PIN = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
+USES_LINE = re.compile(r"^\s*(?:-\s+)?uses:\s*(?P<ref>\S+)(?P<rest>.*)$")
+VERSION_COMMENT = re.compile(r"^\s+#\s+v\d+\.\d+\.\d+\s*$")
+
+
+def load(path: Path) -> dict:
+    return yaml.safe_load(path.read_text())
+
+
+def steps_of(job: dict) -> list[dict]:
+    return job.get("steps") or []
+
+
+def all_jobs():
+    """Each job of every workflow, as (workflow file name, job id, job)."""
+    for path in WORKFLOW_FILES:
+        for job_id, job in load(path)["jobs"].items():
+            yield path.name, job_id, job
+
+
+def all_uses(workflow: dict) -> list[str]:
+    """Every uses: value of a workflow, of its jobs and of their steps."""
+    found = []
+    for job in workflow["jobs"].values():
+        if "uses" in job:
+            found.append(job["uses"])
+        found.extend(step["uses"] for step in steps_of(job) if "uses" in step)
+    return found
+
+
+def setup_python_versions(job: dict) -> list:
+    return [
+        step.get("with", {}).get("python-version")
+        for step in steps_of(job)
+        if step.get("uses", "").startswith("actions/setup-python@")
+    ]
+
+
+def environment_name(job: dict) -> str | None:
+    environment = job.get("environment")
+    if isinstance(environment, dict):
+        return environment.get("name")
+    return environment
+
+
+def test_finds_the_workflows():
+    assert {path.name for path in WORKFLOW_FILES} >= {
+        "tests.yml",
+        "pre-commit.yml",
+        "security.yml",
+        "on_release.yml",
+        "docs-build.yml",
+    }
+
+
+@pytest.mark.parametrize("path", WORKFLOW_FILES, ids=lambda path: path.name)
+def test_every_workflow_sets_read_only_top_level_permissions(path):
+    workflow = load(path)
+
+    assert "permissions" in workflow, f"{path.name} has no top-level permissions"
+    permissions = workflow["permissions"]
+    assert isinstance(permissions, dict), f"{path.name}: permissions: {permissions!r}"
+    assert set(permissions.values()) <= {"read", "none"}, f"{path.name}: {permissions}"
+
+
+@pytest.mark.parametrize(
+    ("workflow", "job_id", "job"),
+    list(all_jobs()),
+    ids=[f"{name}:{job_id}" for name, job_id, _ in all_jobs()],
+)
+def test_every_job_sets_its_permissions(workflow, job_id, job):
+    assert "permissions" in job, f"{workflow}: job {job_id} has no permissions block"
+    assert isinstance(
+        job["permissions"], dict
+    ), f"{workflow}: {job_id}: {job['permissions']!r}"
+
+
+def test_only_the_known_jobs_can_write():
+    writes = {
+        (workflow, job_id, scope)
+        for workflow, job_id, job in all_jobs()
+        for scope, level in job["permissions"].items()
+        if level == "write"
+    }
+
+    assert writes == WRITE_PERMISSIONS
+
+
+@pytest.mark.parametrize("path", WORKFLOW_FILES, ids=lambda path: path.name)
+def test_every_remote_action_is_pinned_to_a_commit_with_its_version(path):
+    lines = path.read_text().splitlines()
+    uses_lines = [match for line in lines if (match := USES_LINE.match(line))]
+
+    assert sorted(match["ref"] for match in uses_lines) == sorted(
+        all_uses(load(path))
+    ), "a uses: in a form this test does not read"
+    for match in uses_lines:
+        ref = match["ref"]
+        if ref.startswith("./"):
+            continue
+        assert SHA_PIN.match(
+            ref
+        ), f"{path.name}: {ref} is not pinned to a full commit SHA"
+        assert VERSION_COMMENT.match(
+            match["rest"]
+        ), f"{path.name}: {ref} has no '# vX.Y.Z' comment on its line"
+
+
+def test_one_version_of_an_action_is_one_commit():
+    commits: dict[tuple[str, str], set[str]] = {}
+    for path in WORKFLOW_FILES:
+        for line in path.read_text().splitlines():
+            match = USES_LINE.match(line)
+            if not match or match["ref"].startswith("./"):
+                continue
+            action, sha = match["ref"].split("@")
+            version = match["rest"].strip().lstrip("#").strip()
+            commits.setdefault((action, version), set()).add(sha)
+
+    assert {key: shas for key, shas in commits.items() if len(shas) > 1} == {}
+
+
+@pytest.mark.parametrize("path", WORKFLOW_FILES, ids=lambda path: path.name)
+def test_every_checkout_keeps_no_credentials(path):
+    for job_id, job in load(path)["jobs"].items():
+        for step in steps_of(job):
+            if not step.get("uses", "").startswith("actions/checkout@"):
+                continue
+            assert (
+                step.get("with", {}).get("persist-credentials") is False
+            ), f"{path.name}: a checkout in {job_id} does not set persist-credentials: false"
+
+
+@pytest.mark.parametrize(("file_name", "check"), REQUIRED_CHECKS.items())
+def test_the_required_checks_keep_their_names(file_name, check):
+    jobs = load(WORKFLOWS / file_name)["jobs"]
+
+    assert check in {job.get("name", job_id) for job_id, job in jobs.items()}
+
+
+class TestCiJob:
+    """The CI job of tests.yml, the check that the ruleset requires.
+
+    It hands the results of the jobs it needs to ci-aggregate.sh.
+    """
+
+    @pytest.fixture
+    def jobs(self):
+        return load(WORKFLOWS / "tests.yml")["jobs"]
+
+    @pytest.fixture
+    def env(self, jobs):
+        steps = [
+            step
+            for step in steps_of(jobs["ci"])
+            if "ci-aggregate.sh" in step.get("run", "")
+        ]
+        assert len(steps) == 1, "the CI job runs .github/scripts/ci-aggregate.sh once"
+        return steps[0]["env"]
+
+    def test_needs_every_other_job(self, jobs):
+        assert set(jobs["ci"]["needs"]) == set(jobs) - {"ci"}
+
+    def test_needs_the_pinned_jobs(self, jobs):
+        assert set(jobs["ci"]["needs"]) == CI_NEEDS
+
+    def test_runs_whatever_the_needed_jobs_did(self, jobs):
+        assert jobs["ci"]["if"] == "always()"
+
+    def test_expects_as_many_results_as_it_needs(self, jobs, env):
+        assert int(env["EXPECTED_JOBS"]) == len(jobs["ci"]["needs"])
+
+    def test_passes_the_results_and_the_event(self, env):
+        assert env["NEEDS"] == "${{ toJSON(needs) }}"
+        assert env["EVENT"] == "${{ github.event_name }}"
+
+    def test_the_jobs_that_run_on_pull_requests_only(self, jobs, env):
+        pull_request_jobs = set(env["PULL_REQUEST_JOBS"].split())
+
+        assert pull_request_jobs == CI_PULL_REQUEST_JOBS
+        for job_id in pull_request_jobs:
+            assert jobs[job_id]["if"] == "github.event_name == 'pull_request'"
+
+    def test_every_other_needed_job_runs_on_every_event(self, jobs, env):
+        pull_request_jobs = set(env["PULL_REQUEST_JOBS"].split())
+        conditional = {job_id for job_id in jobs["ci"]["needs"] if "if" in jobs[job_id]}
+
+        assert (
+            conditional == pull_request_jobs
+        ), "ci-aggregate.sh fails a skipped job that is not in PULL_REQUEST_JOBS"
+
+
+class TestRelease:
+    """on_release.yml: the publish jobs' Python and the PyPI environment."""
+
+    @pytest.fixture
+    def jobs(self):
+        return load(WORKFLOWS / "on_release.yml")["jobs"]
+
+    @pytest.mark.parametrize(
+        "job_id", ["publish_docker_images", "publish_python_packages"]
+    )
+    def test_the_publish_jobs_set_up_python_3_11(self, jobs, job_id):
+        assert setup_python_versions(jobs[job_id]) == ["3.11"]
+
+    def test_the_pypi_publish_job_runs_in_the_pypi_environment(self, jobs):
+        publishers = {
+            job_id
+            for job_id, job in jobs.items()
+            if any(
+                step.get("uses", "").startswith("pypa/gh-action-pypi-publish@")
+                for step in steps_of(job)
+            )
+        }
+
+        assert publishers == {"publish_python_packages"}
+        assert environment_name(jobs["publish_python_packages"]) == "pypi"

@@ -2,7 +2,7 @@
 # security-scan.sh --trufflehog run|skip runs the scheduled security scan, writes its report to
 # the job summary and posts it to Slack. The security-scan job in .github/workflows/security.yml
 # runs it twice a week and on a manual run; it runs the same way on any clone with the full
-# history. It needs the network, jq, gh and curl, and reads these variables:
+# history. It needs the network, jq, gh, curl and python3, and reads these variables:
 #
 #   GITHUB_REPOSITORY               owner/name of the repository, which the report names and
 #                                   whose Dependabot alerts it reads; required
@@ -50,11 +50,10 @@
 # printed, or the source exits 2. A value that a scanner or GitHub reports is cut to fit the
 # report, so that no finding is lost.
 #
-# The report lists findings and passes; a source that did not complete fails, and so does a
-# secret that TruffleHog verified. It goes to the job summary, where private findings are counted
-# only, and in Slack's format to notify.sh, which posts it under the line
-# "<repo> security-scan: <verdict>. <run URL>". Everything until the report is printed with
-# workflow commands stopped. The work files stay in a temporary directory under RUNNER_TEMP (or
+# format_security_report.py renders the report from the sources' results: the job summary, where
+# private findings are counted only, and the Slack message, which notify.sh --message posts as it
+# is. A source that did not complete fails the scan, and so does a secret that TruffleHog
+# verified. Everything until the report is printed with workflow commands stopped. The work files stay in a temporary directory under RUNNER_TEMP (or
 # TMPDIR), which the runner or the system clears.
 #
 # security-scan.sh --history-digests <file> runs only the history scan, on a local clone, and
@@ -65,7 +64,7 @@
 #
 # Exit codes: 0 when every source completed or was skipped and no secret was verified; 1 when
 # TruffleHog verified a secret, or the report could not be posted; 2 when a source did not
-# complete, the arguments are wrong, jq, gh or curl is missing, GITHUB_REPOSITORY is not
+# complete, the arguments are wrong, jq, gh, curl or python3 is missing, GITHUB_REPOSITORY is not
 # owner/name, the report cannot be written, or notify.sh did not run because
 # SECURITY_SLACK_WEBHOOK_URL is not an https URL.
 # shellcheck disable=SC2329 # run_source runs each source's function by name.
@@ -102,7 +101,7 @@ elif [[ $# -eq 2 && $1 == --history-digests && -n $2 ]]; then
 else
   fail "$usage"
 fi
-for tool in jq gh curl; do
+for tool in jq gh curl python3; do
   command -v "$tool" >/dev/null 2>&1 || fail "$tool is not installed"
 done
 root=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -267,12 +266,17 @@ scan_alerts() {
     echo "security-scan: gh api returned something other than lists of alerts"
     return 2
   fi
-  jq -sc "$fit"'add | .[] | {id: .security_advisory.ghsa_id, package:
-    (.security_vulnerability.package.name | clip(200)), version:
-    (.security_vulnerability.vulnerable_version_range // "" | clip(200)),
-    severity: (.security_advisory.severity // ""),
+  jq -sc "$fit"'add | .[] | .security_advisory as $advisory | {id: $advisory.ghsa_id,
+    package: (.security_vulnerability.package.name | clip(200)),
+    ecosystem: (.security_vulnerability.package.ecosystem // "" | clip(40)),
+    version: (.security_vulnerability.vulnerable_version_range // "" | clip(200)),
+    severity: ($advisory.severity // ""),
+    title: ($advisory.summary // "" | clip(200)),
+    score: ([$advisory.cvss_severities.cvss_v4.score, $advisory.cvss_severities.cvss_v3.score,
+      $advisory.cvss.score] | map(select(type == "number" and . > 0)) | .[0]),
+    aliases: [$advisory.cve_id // empty | strings | clip(80)],
     fix: (.security_vulnerability.first_patched_version.identifier // "" | clip(200)),
-    url: ("https://github.com/advisories/" + .security_advisory.ghsa_id | link)}' \
+    url: ("https://github.com/advisories/" + $advisory.ghsa_id | link)}' \
     "$work/alerts.json" >"$results/$name.findings" ||
     {
       echo "security-scan: the alerts do not have the fields of a Dependabot alert"
@@ -301,8 +305,8 @@ mirror() {
   [[ ! -d $work/mirror.git ]] || return 0
   shallow=$(git rev-parse --is-shallow-repository) || return 1
   if [[ $shallow != false ]]; then
-    echo "security-scan: the repository is a shallow clone, which lacks part of the history;" \
-      "clone the full history (fetch-depth: 0)"
+    echo "security-scan: the repository is a shallow clone, which lacks part of the history." \
+      "Clone the full history (fetch-depth: 0)"
     return 1
   fi
   GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git clone --quiet --mirror --no-local \
@@ -376,7 +380,7 @@ check_history() {
     return 2
   fi
   if [[ ! -s $work/accepted ]]; then
-    note="; GITLEAKS_HISTORY_ACCEPT_SHA256 is not set, so every finding is new"
+    note=" (GITLEAKS_HISTORY_ACCEPT_SHA256 is not set, so every finding is new)"
   fi
   : >"$work/matched"
   while IFS= read -r digest; do
@@ -412,21 +416,36 @@ check_history() {
   [[ $total -eq $accepted ]] || return 1
 }
 
+# trufflehog_error prints the error TruffleHog logged when its scan could not run, or says that it
+# logged none. The log can hold the secrets it found, so only that one error is printed, with the
+# work directory shown as <work>, every URL as <url> and every run of 16 or more characters that
+# could be part of a secret as <redacted>.
+trufflehog_error() {
+  local error
+  # shellcheck disable=SC2016 # jq variables
+  error=$(jq -nrR --arg work "$work" "$fit"'[inputs | fromjson? | objects
+    | select(.msg == "error running scan") | .error | strings] | first // empty
+    | split($work) | join("<work>") | gsub("[A-Za-z][A-Za-z0-9+.-]*://[^ ]*"; "<url>")
+    | gsub("[A-Za-z0-9_+=/-]{16,}"; "<redacted>") | clip(300)' "$work/trufflehog.log" \
+    2>/dev/null) || error=''
+  echo "${error:-it logged no scan error; its log may hold secrets, so run it on your own clone}"
+}
+
 # check_verified runs TruffleHog over the mirror with --results=verified, and returns the
 # source's exit code. Its output and its log may hold the secrets it found, so neither is
 # printed. The log ends with the count of what it scanned, which must show that it read
-# something and verified as many secrets as it printed.
+# something and verified as many secrets as it printed. The mirror is a bare repository, which
+# TruffleHog reads only with --bare.
 check_verified() {
   local name=verified-secrets code=0 verified scanned
   install_tool trufflehog --version 'trufflehog ' || return 2
   mirror || return 2
   (cd -- "$work/empty" && GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
-    "$root/bin/trufflehog" git "file://$work/mirror.git" --results=verified --json \
+    "$root/bin/trufflehog" git "file://$work/mirror.git" --bare --results=verified --json \
     --no-update --no-ignore-tag --fail-on-scan-errors) >"$work/trufflehog.json" \
     2>"$work/trufflehog.log" || code=$?
   if [[ $code -ne 0 ]]; then
-    echo "security-scan: trufflehog exited $code; its log may hold secrets, so run it on your" \
-      "own clone to see why"
+    echo "security-scan: trufflehog exited $code: $(trufflehog_error)"
     return 2
   fi
   verified=$(jq -se 'if all(.[]; type == "object") then map(select(.Verified == true)) | length
@@ -481,111 +500,40 @@ else
 fi
 run_source dependabot-alerts scan_alerts
 run_source history-secrets check_history
-names=(floor ceiling pypi-latest image-opal-server image-opal-client dependabot-alerts
+names=(image-opal-server image-opal-client pypi-latest floor ceiling dependabot-alerts
   history-secrets)
-private=(dependabot-alerts history-secrets)
 if [[ $trufflehog == run ]]; then
   run_source verified-secrets check_verified
   names+=(verified-secrets)
-  private+=(verified-secrets)
 fi
 
-# The report. Each source's line says its result; the findings follow, the most severe first and
-# those with a fix first within a severity, at most 20 per source. Private findings are counted
-# in the job summary and listed in Slack only.
-# shellcheck disable=SC2016 # jq variables
-order='def rank: {"critical": 0, "high": 1, "medium": 2, "low": 3}[.severity // ""] // 4;
-  def counts: group_by(.severity // "") | map("\(length) \(.[0].severity // "" |
-    if . == "" then "unknown" else . end)") | join(", ");
-  sort_by([rank, (if (.fix // "") == "" then 1 else 0 end), .id])'
-summary=$work/summary.md
-slack=$work/report.slack
-incomplete=0
-verified_fail=false
-with_findings=0
-{
-  echo "| Source | Result | Detail |"
-  echo "|---|---|---|"
-} >"$work/table.md"
-: >"$work/details.md"
-: >"$slack"
+# The exit code: 2 when a source did not complete, otherwise 1 when TruffleHog verified a secret.
+code=0
 for name in "${names[@]}"; do
-  code=$(cat -- "$results/$name.exit")
-  state=''
-  if [[ -f $results/$name.state ]]; then
-    state=$(head -n 1 "$results/$name.state")
+  source_code=$(cat -- "$results/$name.exit")
+  if [[ $source_code == 2 ]]; then
+    code=2
+  elif [[ $name == verified-secrets && $source_code == 1 && $code -eq 0 ]]; then
+    code=1
   fi
-  findings=$results/$name.findings
-  count=0
-  if [[ -f $findings ]]; then
-    count=$(wc -l <"$findings" | tr -d ' ')
-  fi
-  is_private=false
-  for each in "${private[@]}"; do
-    [[ $each != "$name" ]] || is_private=true
-  done
-  case $code in
-  0) result="clean" ;;
-  1)
-    result="$count findings"
-    with_findings=$((with_findings + 1))
-    [[ $name != verified-secrets ]] || verified_fail=true
-    ;;
-  3) result="skipped" ;;
-  *)
-    result="did not complete"
-    incomplete=$((incomplete + 1))
-    ;;
-  esac
-  detail=$state
-  # The severities of the findings that have one: the vulnerabilities and the alerts.
-  if [[ $count -gt 0 ]] && jq -se 'any(.[]; (.severity // "") != "")' "$findings" >/dev/null; then
-    detail+="${detail:+; }$(jq -rs "$order"' | counts' "$findings")"
-  fi
-  if [[ $code -eq 2 ]]; then
-    detail+="${detail:+; }see the job log"
-  fi
-  printf '| %s | %s | %s |\n' "$name" "$result" "$(sed 's/|/\\|/g; s/</\&lt;/g' <<<"$detail")" \
-    >>"$work/table.md"
-  printf '*%s*: %s%s\n' "$name" "$result" "$(sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g' \
-    <<<"${detail:+ ($detail)}")" >>"$slack"
-  [[ $count -gt 0 ]] || continue
-  jq -rs "$fit$order"' | def esc: gsub("&"; "&amp;") | gsub("<"; "&lt;") | gsub(">"; "&gt;");
-    (.[0:20][] | "• " + (if (.url // "") != "" then "<\(.url)|\(.id | esc)>" else (.id | esc) end)
-      + " \(.package | esc) \(.version // "" | esc)"
-      + (if (.severity // "") != "" then ": \(.severity)" else "" end)
-      + (if (.fix // "") != "" then ", \(.fix | esc | if test("^[0-9]") then "fixed in " + .
-         else . end)" else "" end)),
-    (if length > 20 then "• and \(length - 20) more" else empty end)' "$findings" >>"$slack" ||
-    fail "writing the Slack report failed"
-  [[ $is_private == false ]] || continue
-  {
-    printf '\n### %s\n\n' "$name"
-    jq -rs "$order"' | def md: gsub("[|`]"; "") | gsub("<"; "&lt;");
-      (.[0:20][] | "- `\(.id | md)` \(.package | md) \(.version // "" | md)"
-        + (if (.severity // "") != "" then ": \(.severity)" else "" end)
-        + (if (.fix // "") != "" then ", fixed in \(.fix | md)" else "" end)),
-      (if length > 20 then "- and \(length - 20) more" else empty end)' "$findings"
-  } >>"$work/details.md" || fail "writing the job summary failed"
 done
 
-if [[ $incomplete -gt 0 ]]; then
-  verdict="DID NOT RUN: $incomplete sources did not complete"
-  code=2
-elif [[ $verified_fail == true ]]; then
-  verdict="FAIL: TruffleHog verified a secret that works"
-  code=1
-else
-  verdict="PASS: every source completed or was skipped; $with_findings with findings"
-  code=0
+# The report: format_security_report.py renders the job summary and the Slack message from the
+# sources' results, in the order of names.
+summary=$work/summary.md
+slack=$work/report.slack
+headline=$work/headline.txt
+run_url=''
+if [[ -n ${GITHUB_SERVER_URL:-} && -n ${GITHUB_RUN_ID:-} ]]; then
+  run_url=$GITHUB_SERVER_URL/$repo/actions/runs/$GITHUB_RUN_ID
 fi
-{
-  printf '## Security scan\n\n%s\n\n' "$verdict"
-  cat -- "$work/table.md"
-  echo
-  echo "Private findings (Dependabot alerts, secrets) are counted here and listed in Slack only."
-  cat -- "$work/details.md"
-} >"$summary" || fail "writing the job summary failed"
+sources=()
+for name in "${names[@]}"; do
+  sources+=(--source "$name")
+done
+python3 .github/scripts/format_security_report.py --repo "$repo" --run-url "$run_url" \
+  --results "$results" "${sources[@]}" --slack-out "$slack" --summary-out "$summary" \
+  --headline-out "$headline" || fail "format_security_report.py could not write the report"
 
 resume
 cat -- "$summary"
@@ -593,7 +541,6 @@ if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then
   cat -- "$summary" >>"$GITHUB_STEP_SUMMARY" || fail "writing the job summary failed"
 fi
 posted=0
-SECURITY_SLACK_WEBHOOK_URL=$webhook .github/scripts/notify.sh security-scan "$verdict" "$slack" ||
-  posted=$?
-echo "security-scan: $verdict"
+SECURITY_SLACK_WEBHOOK_URL=$webhook .github/scripts/notify.sh --message "$slack" || posted=$?
+echo "security-scan: $(cat -- "$headline")"
 exit $((code > posted ? code : posted))

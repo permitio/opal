@@ -331,7 +331,8 @@ jobs:
         run: |
           pip install wheel==0.48.0
 
-          # Helper: rename sdist to use underscores in package name (PEP 625)
+          # Helper: rename sdist to use underscores in package name (PEP 625). Newer setuptools
+          # already writes that name, so a file whose name is unchanged is left alone.
           normalize_sdist() {
             for f in dist/*.tar.gz; do
               nf=$(echo "$f" | python3 -c "
@@ -341,7 +342,10 @@ jobs:
           nf = re.sub(r'^(dist/)([a-zA-Z][a-zA-Z0-9_-]*?)(-\d)', lambda m: m.group(1) + m.group(2).replace('-', '_') + m.group(3), f)
           print(nf)
           ")
-              [ "$f" != "$nf" ] && mv "$f" "$nf" && echo "Renamed $f -> $nf"
+              if [ "$f" != "$nf" ]; then
+                mv "$f" "$nf"
+                echo "Renamed $f -> $nf"
+              fi
             done
           }
 

@@ -55,3 +55,18 @@ jobs:
         run: |
           .github/scripts/tests/ci-aggregate.test.sh
           .github/scripts/tests/prek-count.test.sh
+      # The pytest tests of the scripts in .github/scripts and of the workflows' facts, with pytest
+      # and PyYAML installed from the hash-pinned .github/scripts/tests/requirements.txt.
+      # test_security_scan.py downloads gitleaks and TruffleHog with fetch-tool.sh.
+      - name: Test the workflow scripts
+        run: |
+          token=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
+          echo "::stop-commands::$token"
+          trap 'echo "::$token::"' EXIT
+          .github/scripts/fetch-tool.sh uv
+          venv=$RUNNER_TEMP/script-tests
+          bin/uv venv --quiet --python 3.12 "$venv"
+          bin/uv pip install --quiet --python "$venv/bin/python" --require-hashes \
+            -r .github/scripts/tests/requirements.txt
+          "$venv/bin/python" -m pytest -c .github/scripts/tests/pytest.ini -p no:cacheprovider \
+            .github/scripts/tests
