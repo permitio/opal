@@ -364,7 +364,7 @@ jobs:
 
       # Upload package distributions to the release - All assets in one step
       - name: Upload assets to release
-        uses: shogo82148/actions-upload-release-asset@8f032eff0255912cc9c8455797fd6d72f25c7ab7  # v1.7.5
+        uses: shogo82148/actions-upload-release-asset@73f83b114970a3485e1423ecc1fb93d887c9b096  # v1.10.7
         with:
           upload_url: ${{ github.event.release.upload_url }}
           asset_path: |
