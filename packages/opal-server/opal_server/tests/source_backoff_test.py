@@ -790,15 +790,15 @@ async def test_an_explicit_single_scope_sync_bypasses_the_pass_backoff(
 
 @pytest.mark.asyncio
 async def test_refresh_all_does_not_honour_the_backoff(monkeypatch):
-    """Mutation: have ``trigger(data=None)`` call ``_sync_all()`` with the
-    default. POST /scopes/refresh is an operator explicitly asking every scope
+    """Mutation: have ``trigger(data=None)`` request a pass that honours the
+    backoff. POST /scopes/refresh is an operator explicitly asking every scope
     to sync now; answering it with a silent skip for the sources they most
     likely just repaired makes the endpoint useless in the one situation it is
-    reached for. The boot call in ``start()`` honours it only when a periodic
-    pass will follow (see the dedicated test), which is what lets a forked
-    leader inherit the master's boot failures without stranding a source when
-    polling is disabled."""
-    from opal_server.scopes.task import ScopesPolicyWatcherTask
+    reached for. The boot pass honours it, and drops the inherited entries
+    when no periodic pass will follow (see the dedicated test), which is what
+    lets a forked leader inherit the master's boot failures without stranding
+    a source when polling is disabled."""
+    from opal_server.scopes.task import ScopesPolicyWatcherTask, _SyncPassQueue
 
     seen = []
 
@@ -808,12 +808,10 @@ async def test_refresh_all_does_not_honour_the_backoff(monkeypatch):
 
     task = ScopesPolicyWatcherTask.__new__(ScopesPolicyWatcherTask)
     task._service = _Recorder()
+    task._passes = _SyncPassQueue(task._run_pass)
 
     await task.trigger(topic=None, data=None)
     assert seen == [False]
-
-    await task._sync_all()  # the boot path
-    assert seen == [False, True]
 
 
 # ---------------------------------------------------------------------------
@@ -960,14 +958,14 @@ async def test_without_a_periodic_pass_the_boot_sync_drops_inherited_entries_but
     so a dead repo shared by 56 scopes costs 56 clone attempts at boot.
     """
     from opal_server.policy.watcher.task import BasePolicyWatcherTask
-    from opal_server.scopes.task import ScopesPolicyWatcherTask
+    from opal_server.scopes.task import ScopesPolicyWatcherTask, _SyncPassQueue
 
     seen = []
 
-    async def _record(self, honor_backoff=True):
+    async def _record(self, only_poll_updates, honor_backoff):
         seen.append((honor_backoff, dict(GitPolicyFetcher.source_backoff)))
 
-    monkeypatch.setattr(ScopesPolicyWatcherTask, "_sync_all", _record)
+    monkeypatch.setattr(ScopesPolicyWatcherTask, "_run_pass", _record)
 
     async def _base_start(self):
         return None
@@ -993,6 +991,7 @@ async def test_without_a_periodic_pass_the_boot_sync_drops_inherited_entries_but
         t._purger = type("P", (), {"handle": None})()
         t._tasks = []
         t._should_stop = None
+        t._passes = _SyncPassQueue(t._run_pass)
         return t
 
     inherited = SourceBackoff(

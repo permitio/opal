@@ -5,16 +5,20 @@ subscriber id. Unit-pins them so a refactor can't silently drop one."""
 import asyncio
 
 import pytest
-from opal_server.scopes.task import ScopesPolicyWatcherTask
+from opal_server.scopes.task import ScopesPolicyWatcherTask, _SyncPassQueue
 
 
 class _Recorder:
     def __init__(self, events, fail_sync=False):
         self._events = events
         self._fail_sync = fail_sync
+        self.pass_flags = []
 
     async def sync_scopes(self, *args, **kwargs):
         self._events.append("sync")
+        self.pass_flags.append(
+            (kwargs.get("only_poll_updates"), kwargs.get("honor_backoff"))
+        )
         if self._fail_sync:
             raise RuntimeError("store scan failed")
 
@@ -51,6 +55,11 @@ def _bare_task(events, fail_sync=False):
     rec = _Recorder(events, fail_sync=fail_sync)
     t._service = rec
     t._purger = rec
+    return _with_passes(t)
+
+
+def _with_passes(t):
+    t._passes = _SyncPassQueue(t._run_pass)
     return t
 
 
@@ -124,6 +133,7 @@ async def test_start_subscribes_leader_purge_handler(monkeypatch):
     t._service = FakeService()
     t._tasks = []
     t._purger_sub_id = None
+    _with_passes(t)
     await t.start()
     try:
         # Registered under its OWN subscriber id (not the endpoint's shared one),
@@ -237,6 +247,7 @@ async def test_stop_does_not_unsubscribe_the_every_worker_purge_handler(
     t._tasks = []
     t._webhook_tasks = []
     t._purger_sub_id = None
+    _with_passes(t)
 
     await t.start()
     await t.stop()
@@ -310,6 +321,7 @@ async def test_stop_cancels_lock_holders_before_draining_purges(
     t._tasks = [asyncio.create_task(_stuck_sync())]
     t._webhook_tasks = []
     t._purger_sub_id = None
+    _with_passes(t)
 
     await holding.wait()
     await purger.handle(None, _purge_cmd(sid, False))  # queues behind the lock
@@ -365,6 +377,7 @@ async def test_stop_is_idempotent(monkeypatch):
     t._tasks = []
     t._webhook_tasks = []
     t._purger_sub_id = None
+    _with_passes(t)
 
     await t.start()
     sub_id = t._purger_sub_id
@@ -414,6 +427,7 @@ async def test_periodic_polling_starts_when_enabled(monkeypatch):
     t._service = rec
     t._tasks = []
     t._purger_sub_id = None
+    _with_passes(t)
 
     await t.start()
     try:
@@ -426,28 +440,177 @@ async def test_periodic_polling_starts_when_enabled(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_sync_all_survives_a_raising_sync():
-    """_sync_all is launched fire-and-forget from start(), so an unhandled
-    raise dies silently: stop() gathers with return_exceptions=True and
-    discards it, so not even asyncio's "never retrieved" warning fires until
-    GC. The five-line comment above the try/except in task.py says exactly
-    this; this is what enforces it.
+async def test_boot_pass_survives_a_raising_sync():
+    """The boot pass is requested fire-and-forget from start(), so an
+    unhandled raise would die silently: stop() gathers with
+    return_exceptions=True and discards it. The pass queue logs it and
+    resolves the request.
 
-    Mutation: stripping the try/except around `await self._service.sync_scopes()`
-    must fail here.
+    Mutation: letting the pass's exception out of the queue must fail here.
     """
     events = []
-    await _bare_task(events, fail_sync=True)._sync_all()  # must not raise
+    t = _bare_task(events, fail_sync=True)
+    await t._passes.request(only_poll_updates=False, honor_backoff=True)
     assert events == ["sync"]
 
 
 @pytest.mark.asyncio
 async def test_refresh_all_trigger_syncs():
-    """Trigger() with no scope_id is the refresh-all path.
+    """Trigger() with no scope_id is the refresh-all path: a full pass that
+    does not honour the backoff.
 
-    Mutation: replacing `await self._sync_all()` in trigger's else-branch must
-    fail here.
+    Mutation: dropping the pass request from trigger's else-branch must fail
+    here.
     """
     events = []
-    await _bare_task(events).trigger(topic=None, data=None)
+    t = _bare_task(events)
+    await t.trigger(topic=None, data=None)
     assert events == ["sync"]
+    assert t._service.pass_flags == [(False, False)]
+
+
+class _BlockingService:
+    """sync_scopes records each pass's flags and blocks until released."""
+
+    def __init__(self):
+        self.flags = []
+        self.release = asyncio.Event()
+
+    async def sync_scopes(self, only_poll_updates=False, honor_backoff=True, **kw):
+        self.flags.append((only_poll_updates, honor_backoff))
+        await self.release.wait()
+
+
+async def _until(predicate):
+    for _ in range(10_000):
+        if predicate():
+            return
+        await asyncio.sleep(0)
+    raise AssertionError("condition never met")
+
+
+@pytest.mark.asyncio
+async def test_refresh_alls_during_a_pass_share_one_follow_up_pass():
+    """Two POST /scopes/refresh during a pass give two passes in all, not
+    three: one leader runs one pass at a time, and a refresh-all made while a
+    pass runs waits for the one that starts after it.
+
+    Mutation: requesting a pass of its own per trigger must fail here.
+    """
+    service = _BlockingService()
+    t = ScopesPolicyWatcherTask.__new__(ScopesPolicyWatcherTask)
+    t._service = service
+    _with_passes(t)
+    first = asyncio.create_task(t.trigger(topic=None, data=None))
+    await _until(lambda: len(service.flags) == 1)
+    more = [asyncio.create_task(t.trigger(topic=None, data=None)) for _ in range(2)]
+    for _ in range(50):
+        await asyncio.sleep(0)
+    assert len(service.flags) == 1, "a pass started beside the running one"
+
+    service.release.set()
+    await asyncio.wait_for(asyncio.gather(first, *more), timeout=5)
+    assert service.flags == [(False, False), (False, False)]
+
+
+@pytest.mark.asyncio
+async def test_boot_requests_a_full_pass_that_honours_the_backoff(monkeypatch):
+    from opal_server.config import opal_server_config
+    from opal_server.policy.watcher.task import BasePolicyWatcherTask
+
+    async def _noop_start(self):
+        return None
+
+    monkeypatch.setattr(BasePolicyWatcherTask, "start", _noop_start)
+    monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 0)
+    events = []
+    t = _bare_task(events)
+    t._pubsub_endpoint = _FakeEndpoint()
+    t._tasks = []
+    t._purger_sub_id = None
+    await t.start()
+    await asyncio.wait_for(asyncio.gather(*t._tasks), timeout=5)
+    assert t._service.pass_flags == [(False, True)]
+
+
+@pytest.mark.asyncio
+async def test_periodic_polling_requests_a_poll_pass_that_honours_the_backoff(
+    monkeypatch,
+):
+    from opal_server.config import opal_server_config
+
+    monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 0.001)
+    events = []
+    t = _bare_task(events)
+    task = asyncio.create_task(t._periodic_polling())
+    try:
+        await _until(lambda: len(events) >= 1)
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        await t._passes.stop()
+    assert t._service.pass_flags[0] == (True, True)
+
+
+@pytest.mark.asyncio
+async def test_stop_cancels_a_pass_holding_a_clone_lock_before_draining_purges(
+    tmp_path, monkeypatch, _clean_fetcher_caches
+):
+    """A pass runs in the pass queue's own task, which super().stop() does
+    not cancel: it cancels only the requests waiting for it. A pass holding a
+    clone's lock_source must be cancelled before the purge drain, which
+    first takes that lock.
+
+    Mutation: not stopping the queue, or stopping it after the purge drain,
+    must fail here (the drain blocks for _PURGE_DRAIN_TIMEOUT).
+    """
+    from opal_server.git_fetcher import GitPolicyFetcher
+    from opal_server.scopes.purge import LeaderScopePurger
+
+    class _EmptyStore:
+        async def all(self):
+            return []
+
+    class _RecordingPubSub:
+        def __init__(self):
+            self.published = []
+
+        async def publish(self, topics, data=None):
+            self.published.append(data)
+
+    dead_dir = GitPolicyFetcher.base_dir(tmp_path) / ("d" * 64 + "-0")
+    dead_dir.mkdir(parents=True)
+    sid = dead_dir.name
+    holding = asyncio.Event()
+
+    class _StuckService:
+        async def sync_scopes(self, **kwargs):
+            async with GitPolicyFetcher.lock_source(sid):
+                holding.set()
+                await asyncio.sleep(3600)  # a fetch against a black-holed remote
+
+    pubsub = _RecordingPubSub()
+    purger = LeaderScopePurger(
+        base_dir=tmp_path, scopes=_EmptyStore(), pubsub_endpoint=pubsub
+    )
+    t = ScopesPolicyWatcherTask.__new__(ScopesPolicyWatcherTask)
+    t._pubsub_endpoint = _FakeEndpoint()
+    t._purger = purger
+    t._service = _StuckService()
+    t._tasks = []
+    t._purger_sub_id = None
+    _with_passes(t)
+    t._webhook_tasks = [asyncio.create_task(t.trigger(topic=None, data=None))]
+
+    await holding.wait()
+    await purger.handle(None, _purge_cmd(sid, False))  # queues behind the lock
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert not pubsub.published, "purge should still be blocked on the held lock"
+
+    await asyncio.wait_for(t.stop(), timeout=2)
+
+    assert [
+        d for d in pubsub.published if d.get("confirmed")
+    ], "the drained purge never completed"

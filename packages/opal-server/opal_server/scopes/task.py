@@ -1,8 +1,10 @@
 import asyncio
 import datetime
 import logging
+import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Awaitable, Callable, Optional
 
 from fastapi_websocket_pubsub import Topic
 from opal_common.logger import configure_logs, logger, logs_configured
@@ -49,6 +51,106 @@ class _UnknownChildWarningFilter(logging.Filter):
 _PURGE_DRAIN_TIMEOUT = 5.0
 
 
+@dataclass
+class _QueuedPass:
+    """The pass that starts once the running one ends, and its requests."""
+
+    only_poll_updates: bool
+    honor_backoff: bool
+    done: asyncio.Future
+    requests: int = 0
+
+
+class _SyncPassQueue:
+    """Runs the leader's scope sync passes one at a time.
+
+    At most one pass runs and one is queued. A request made while a pass
+    is queued joins it, so every request is served by a pass that
+    started after it was made, and a burst of requests during a pass
+    costs one more pass. The queued pass polls only when every request
+    it serves asked for poll-only, and honours the source backoff only
+    when every one does: a refresh of every scope that joins a periodic
+    request still gets a full pass without the backoff. A pass ends with
+    its repacks, so the next one starts only once they are done.
+    """
+
+    def __init__(self, run_pass: Callable[[bool, bool], Awaitable[None]]) -> None:
+        self._run_pass = run_pass
+        self._queued: Optional[_QueuedPass] = None
+        self._drain_task: Optional[asyncio.Task] = None
+        self._stopped = False
+
+    async def request(self, *, only_poll_updates: bool, honor_backoff: bool) -> None:
+        """Wait for a sync pass that starts after this call.
+
+        Returns once that pass ended, whether it succeeded or failed (a
+        failure is logged where the pass runs). Returns at once after stop().
+        Cancelling the caller leaves the pass to the other requests it
+        serves.
+
+        Raises:
+            asyncio.CancelledError: stop() cancelled the pass this waits for.
+        """
+        if self._stopped:
+            return
+        queued = self._queued
+        if queued is None:
+            queued = _QueuedPass(
+                only_poll_updates=only_poll_updates,
+                honor_backoff=honor_backoff,
+                done=asyncio.get_running_loop().create_future(),
+            )
+            self._queued = queued
+        else:
+            queued.only_poll_updates = queued.only_poll_updates and only_poll_updates
+            queued.honor_backoff = queued.honor_backoff and honor_backoff
+        queued.requests += 1
+        if self._drain_task is None or self._drain_task.done():
+            self._drain_task = asyncio.create_task(self._drain())
+        await asyncio.shield(queued.done)
+
+    async def stop(self) -> None:
+        """Cancel the running pass and the queued one; idempotent.
+
+        Their waiters get CancelledError, and later requests return at
+        once.
+        """
+        self._stopped = True
+        task, self._drain_task = self._drain_task, None
+        if task is not None:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        self._cancel_queued()
+
+    def _cancel_queued(self) -> None:
+        queued, self._queued = self._queued, None
+        if queued is not None:
+            queued.done.cancel()
+
+    async def _drain(self) -> None:
+        # No await between the loop's last check and the return: a request
+        # made meanwhile would find this task still running and wait forever.
+        while self._queued is not None:
+            current, self._queued = self._queued, None
+            started = time.monotonic()
+            try:
+                await self._run_pass(current.only_poll_updates, current.honor_backoff)
+            except asyncio.CancelledError:
+                current.done.cancel()
+                self._cancel_queued()
+                raise
+            except Exception:
+                logger.exception("Scope sync pass failed")
+            finally:
+                if not current.done.done():
+                    current.done.set_result(None)
+            logger.info(
+                "Scope sync pass for {requests} request(s) ended after {seconds:.1f}s",
+                requests=current.requests,
+                seconds=time.monotonic() - started,
+            )
+
+
 class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -67,6 +169,7 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             scopes=self._scopes,
             pubsub_endpoint=self._pubsub_endpoint,
         )
+        self._passes = _SyncPassQueue(self._run_pass)
 
     async def start(self):
         await super().start()
@@ -102,7 +205,15 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         # recorded anything of its own before that (only leaders sync).
         if opal_server_config.POLICY_REFRESH_INTERVAL <= 0:
             GitPolicyFetcher.source_backoff.clear()
-        self._tasks.append(asyncio.create_task(self._sync_all()))
+        # Honours the backoff: this process may have been forked from a
+        # master whose preload already found which repos are unreachable,
+        # and attempting all of them again at boot is the storm the backoff
+        # exists to prevent.
+        self._tasks.append(
+            asyncio.create_task(
+                self._passes.request(only_poll_updates=False, honor_backoff=True)
+            )
+        )
 
         if opal_server_config.POLICY_REFRESH_INTERVAL > 0:
             self._tasks.append(asyncio.create_task(self._periodic_polling()))
@@ -125,12 +236,16 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                 logger.exception("Failed to unsubscribe scope purge handler on stop")
         self._purger.signal_stop()
 
-        # Cancel our tasks BEFORE draining the purges, not after: a queued purge
-        # first waits on GitPolicyFetcher.lock_source, which a sync task holds
-        # across a clone/fetch (up to SCOPES_GIT_FETCH_TIMEOUT, and unbounded
-        # when that is 0). Draining first would wait on a lock whose release
-        # requires the very cancellation the drain is blocking — an unrecoverable
-        # shutdown hang, taken while the leadership lock is still held.
+        # Cancel the passes and our tasks BEFORE draining the purges, not
+        # after: a queued purge first waits on GitPolicyFetcher.lock_source,
+        # which a sync holds across a clone/fetch (up to
+        # SCOPES_GIT_FETCH_TIMEOUT, and unbounded when that is 0). Draining
+        # first would wait on a lock whose release requires the very
+        # cancellation the drain is blocking — an unrecoverable shutdown hang,
+        # taken while the leadership lock is still held. The passes first:
+        # they run in the queue's own task, which super().stop() does not
+        # cancel, only the requests waiting for them.
+        await self._passes.stop()
         result = await super().stop()
 
         # Best-effort, bounded (see _PURGE_DRAIN_TIMEOUT).
@@ -152,22 +267,11 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             )
         return result
 
-    async def _sync_all(self, honor_backoff: bool = True):
-        # sync_scopes must be wrapped: this coroutine is launched fire-and-forget
-        # from start() (boot), so an unhandled raise here would die silently —
-        # the exception is never retrieved (stop() gathers with
-        # return_exceptions=True and discards it), not even asyncio's
-        # "never retrieved" warning until GC.
-        #
-        # honor_backoff defaults to True for the boot call in start(): this
-        # process may have been forked from a master whose preload already
-        # discovered which repos are unreachable, and re-attempting all of them
-        # at boot is the storm the backoff exists to prevent. trigger() passes
-        # False for the operator-driven refresh-all — see there.
-        try:
-            await self._service.sync_scopes(honor_backoff=honor_backoff)
-        except Exception:
-            logger.exception("Scope sync (sync_scopes) failed")
+    async def _run_pass(self, only_poll_updates: bool, honor_backoff: bool):
+        # Only through self._passes, which logs what this raises.
+        await self._service.sync_scopes(
+            only_poll_updates=only_poll_updates, honor_backoff=honor_backoff
+        )
 
     async def _periodic_polling(self):
         try:
@@ -179,12 +283,7 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                 # Ready and /healthcheck stays 200 throughout.
                 metrics.gauge("opal_server.scopes.leader", 1)
                 logger.info("Periodic sync")
-                try:
-                    await self._service.sync_scopes(only_poll_updates=True)
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    logger.exception("Periodic sync (sync_scopes) failed")
+                await self._passes.request(only_poll_updates=True, honor_backoff=True)
 
         except asyncio.CancelledError:
             logger.info("Periodic sync cancelled")
@@ -228,7 +327,8 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             # sources an operator hits this endpoint for are precisely the ones
             # they have just repaired, and answering them with a silent skip
             # makes the endpoint useless in the only situation it is used.
-            await self._sync_all(honor_backoff=False)
+            # Made while a pass runs, it waits for the next one.
+            await self._passes.request(only_poll_updates=False, honor_backoff=False)
 
     @staticmethod
     def preload_scopes():

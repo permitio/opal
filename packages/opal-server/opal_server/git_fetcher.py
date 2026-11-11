@@ -2565,13 +2565,13 @@ _repack_failed_at: Dict[str, float] = {}
 _repack_git_missing = False
 
 # Sync passes running in this process right now (phases 1 and 2; a pass leaves
-# the count before it repacks). A repack does not start while one runs: the
-# pass's syncs of a clone being repacked would wait for the repack under that
-# clone's lock_source, and phase 2 starts only once phase 1 has synced every
-# clone, so a repack during phase 1 would hold up the whole pass, every other
-# clone's scopes included, until it ended. The mark stays, and the pass that
-# ends last repacks it. Mutated only on the event loop; a forked child starts
-# from 0.
+# the count before it repacks). The leader runs one at a time (the watcher's
+# pass queue). A repack does not start while one runs: the pass's syncs of a
+# clone being repacked would wait for the repack under that clone's
+# lock_source, and phase 2 starts only once phase 1 has synced every clone, so
+# a repack during phase 1 would hold up the whole pass, every other clone's
+# scopes included, until it ended. The mark stays, and the pass repacks it at
+# its end. Mutated only on the event loop; a forked child starts from 0.
 _sync_passes_in_flight = 0
 
 
@@ -2602,9 +2602,8 @@ class _SyncPass:
 
 # Per task, not per process: asyncio copies the context into every task it
 # starts, so the syncs a pass runs see that pass, while a sync a bundle request
-# asked for, running beside the pass in a task of its own, sees none, and two
-# passes side by side (the boot sync next to the first periodic one) each see
-# their own.
+# or a refresh asked for, running beside the pass in a task of its own, sees
+# none.
 _current_sync_pass: ContextVar[Optional[_SyncPass]] = ContextVar(
     "_current_sync_pass", default=None
 )
@@ -2618,10 +2617,6 @@ def _running_sync_pass() -> Optional[_SyncPass]:
         return None
     return sync_pass
 
-
-# How long sync passes may keep deferring a due repack (see _pass_defers_repack)
-# before it runs beside one anyway.
-_PASS_DEFER_MAX_SECONDS = 1800.0
 
 # source_id -> time.monotonic() when _log_cooldown_once last logged it.
 _repack_cooldown_logged_at: Dict[str, float] = {}
@@ -2721,9 +2716,6 @@ class _DueRepack(NamedTuple):
     repo_path: str
     scope_id: str  # of the sync whose fetch marked it: the span's resource
     url: str  # redacted
-    # time.monotonic() of the first mark since the clone's last repack: a
-    # later fetch's mark keeps it. None: unknown, never counted as overdue.
-    marked_at: Optional[float] = None
 
 
 # source_id -> its clone, marked due by a fetch and repacked at the end of the
@@ -3260,11 +3252,10 @@ class GitPolicyFetcher(PolicyFetcher):
         async with GitPolicyFetcher.lock_source(self._source_id):
             # Re-checked under the lock: N syncs of one source that honour the
             # backoff and arrive together — phase 2 syncs a few of a clone's
-            # scopes at once, two passes can run side by side, and bundle
-            # requests ask for syncs — all pass the cheap pre-lock check
-            # before the first has failed and recorded, then serialise here;
-            # without this second look each would perform its own full clone
-            # attempt against the dead remote.
+            # scopes at once, and bundle requests ask for syncs — all pass the
+            # cheap pre-lock check before the first has failed and recorded,
+            # then serialise here; without this second look each would perform
+            # its own full clone attempt against the dead remote.
             if honor_backoff:
                 entry = self._backoff_entry()
                 if entry is not None:
@@ -3518,17 +3509,11 @@ class GitPolicyFetcher(PolicyFetcher):
         # all the same: the due repack reads the marker, names the clone once
         # per cooldown and tells a dead repack from one still running.
         if packs >= limit or await run_sync(_ref_steps_due, path):
-            previous = _repacks_due.get(self._source_id)
             _repacks_due[self._source_id] = _DueRepack(
                 source_id=self._source_id,
                 repo_path=path,
                 scope_id=self._scope_id,
                 url=redact_url(self._source.url),
-                marked_at=(
-                    previous.marked_at
-                    if previous is not None and previous.marked_at is not None
-                    else time.monotonic()
-                ),
             )
 
     @staticmethod
@@ -3589,12 +3574,11 @@ class GitPolicyFetcher(PolicyFetcher):
         repack delays no notification, only the next syncs of its own
         clone: each repack runs under that clone's lock_source, which
         keeps every other git op of this process off the clone while git
-        rewrites its packs. None starts while another pass runs (the boot
-        sync next to the first periodic pass, a refresh of every scope):
-        its marks stay, and whichever pass ends last repacks them (see
-        _sync_passes_in_flight). A pass that starts while a repack runs
-        still waits for that one. One at a time, because repacks are
-        single-flight: run side by side, all but one would be skipped.
+        rewrites its packs. None starts while a pass runs (see
+        _sync_passes_in_flight): a refresh that marks a clone during a pass
+        leaves the repack to the end of that pass. One at a time, because
+        repacks are single-flight: run side by side, all but one would be
+        skipped.
 
         A mark whose source no scope uses any more (``live_source_ids``:
         every scope's, read at the start of the pass) is dropped. The rest
@@ -3688,35 +3672,20 @@ class GitPolicyFetcher(PolicyFetcher):
 
     @staticmethod
     def _pass_defers_repack(source_id: str) -> bool:
-        """Whether a sync pass in flight keeps this repack from starting (see
-        _sync_passes_in_flight); the mark stays for the pass that ends last.
+        """Whether a sync pass in flight keeps this repack from starting.
 
-        Not once the mark is _PASS_DEFER_MAX_SECONDS old: passes that
-        overlap without end (POST /scopes/refresh called more often than a
-        pass takes) would otherwise leave the clone to grow forever. Every
-        deferral is counted as git_op_skipped with reason pass_in_flight.
+        The mark stays for the pass to repack at its end (see
+        _sync_passes_in_flight). Every deferral is counted as
+        git_op_skipped with reason pass_in_flight.
         """
         if not _sync_passes_in_flight:
-            return False
-        due = _repacks_due.get(source_id)
-        if (
-            due is not None
-            and due.marked_at is not None
-            and time.monotonic() - due.marked_at >= _PASS_DEFER_MAX_SECONDS
-        ):
-            logger.info(
-                "Repacking scope clone {source_id} while a sync pass runs: sync "
-                "passes have deferred its repack for {seconds:.0f}s",
-                source_id=source_id,
-                seconds=time.monotonic() - due.marked_at,
-            )
             return False
         metrics.increment(
             "opal_server.scopes.git_op_skipped", tags={"reason": "pass_in_flight"}
         )
         logger.debug(
             "Not repacking scope clone {source_id} while a sync pass runs: the "
-            "pass that ends last repacks it",
+            "pass repacks it at its end",
             source_id=source_id,
         )
         return True

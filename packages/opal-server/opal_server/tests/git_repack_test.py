@@ -3095,7 +3095,8 @@ async def test_no_repack_starts_while_a_sync_pass_runs(tmp_path, monkeypatch, em
     repack running beside it would fill every slot with waiters for that clone
     and stall the whole pass.
 
-    The mark stays; the pass that ends last repacks it.
+    The mark stays, and each deferral is counted; the pass repacks it at
+    its end.
     """
     spy = _RepackSpy()
     monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
@@ -3111,6 +3112,7 @@ async def test_no_repack_starts_while_a_sync_pass_runs(tmp_path, monkeypatch, em
     assert spy.calls == []
     assert scope.source_id in git_fetcher._repacks_due
     assert git_fetcher._sync_passes_in_flight == 0
+    assert _skips(emitted) == [{"reason": "pass_in_flight"}] * 2
 
     await GitPolicyFetcher.run_due_repacks({scope.source_id})
     assert spy.calls == [str(scope.clone_path)]
@@ -3242,40 +3244,6 @@ async def test_remove_clone_dir_exclusive_where_flock_fails(tmp_path, monkeypatc
         assert await git_fetcher.remove_clone_dir_exclusive(str(clone)) is True
         assert not clone.exists()
     assert git_fetcher._repack_lock_fds == set()
-
-
-@pytest.mark.asyncio
-async def test_passes_that_never_stop_defer_a_repack_for_half_an_hour_at_most(
-    tmp_path, monkeypatch, emitted
-):
-    """Each deferral is counted; once the mark is _PASS_DEFER_MAX_SECONDS old
-    the repack runs beside the pass instead of waiting for a gap that never
-    comes."""
-    spy = _RepackSpy()
-    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
-    scope = _ScopeRepo(tmp_path, "s1")
-    await scope.fetched(_LIMIT - 1)
-    scope.push()
-    await scope.sync()
-    due = git_fetcher._repacks_due[scope.source_id]
-    assert due.marked_at is not None
-
-    with GitPolicyFetcher.sync_pass():
-        await GitPolicyFetcher.run_due_repacks({scope.source_id})
-        assert spy.calls == []
-        assert _skips(emitted) == [{"reason": "pass_in_flight"}]
-
-        # A later fetch's mark keeps the first mark's time.
-        scope.push()
-        await scope.sync()
-        assert git_fetcher._repacks_due[scope.source_id].marked_at == due.marked_at
-
-        git_fetcher._repacks_due[scope.source_id] = git_fetcher._repacks_due[
-            scope.source_id
-        ]._replace(marked_at=due.marked_at - git_fetcher._PASS_DEFER_MAX_SECONDS)
-        await GitPolicyFetcher.run_due_repacks({scope.source_id})
-    assert spy.calls == [str(scope.clone_path)]
-    assert _count_pack_files(scope.clone_path) == 1
 
 
 @pytest.mark.asyncio
