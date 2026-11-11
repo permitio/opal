@@ -6,7 +6,7 @@
 
 When scaling the OPAL Server to **multiple workers** and/or **multiple containers**, we use a **broadcast channel** to sync between all the instances of OPAL Server. In other words, communication on the broadcast channel is **communication between OPAL servers**, and is not related to the OPAL client.
 
-Under the hood, our interface to the broadcast channel **backbone service** is implemented by [encode/broadcaster](https://github.com/encode/broadcaster).
+Under the hood, our interface to the broadcast channel **backbone service** is implemented by [encode/broadcaster](https://github.com/encode/broadcaster), except for Redis, where OPAL uses its own backend on [redis-py](https://github.com/redis/redis-py).
 
 At the moment, the supported broadcast channel backbones are:
 
@@ -62,7 +62,7 @@ This is how you define the number of workers (pay attention: this env var is not
 
 #### 4) Broadcaster reconnection (resilience)
 
-If the broadcast backbone (Postgres/Redis/Kafka) briefly drops — for example during a managed-database failover or restart — OPAL servers reconnect to it automatically with bounded exponential backoff, instead of dropping their connected clients. This is enabled by default; the following **server-side** env vars (all prefixed with `OPAL_`) tune it:
+If the broadcast backbone (Postgres/Redis/Kafka) briefly drops — for example during a managed-database failover or restart — OPAL servers reconnect to it automatically with bounded exponential backoff, instead of dropping their connected clients. On Redis, OPAL makes every reconnect itself, so a Redis restart is handled like a Postgres one. This is enabled by default; the following **server-side** env vars (all prefixed with `OPAL_`) tune it:
 
 | Env Var Name                                 | Default | Function                                                                                                                                          |
 | :------------------------------------------- | :------ | :----------------------------------------------------------------------------------------------------------------------------------------------- |

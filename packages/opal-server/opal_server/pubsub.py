@@ -31,6 +31,12 @@ from opal_common.confi.confi import load_conf_if_none
 from opal_common.config import opal_common_config
 from opal_common.http_utils import SENSITIVE_QUERY_PARAMS
 from opal_common.logger import logger
+from opal_server.broadcast_redis import (
+    EndOnLossBroadcast,
+    ResubscribingBroadcast,
+    check_redis_url,
+    is_redis_url,
+)
 from opal_server.config import opal_server_config
 from opal_server.pubsub_resilience import (
     FreezablePubSubEndpoint,
@@ -167,6 +173,8 @@ class PubSub:
 
         self.broadcaster = None
         if broadcaster_uri is not None:
+            if is_redis_url(broadcaster_uri):
+                check_redis_url(broadcaster_uri)
             if opal_server_config.BROADCAST_RECONNECT_ENABLED:
                 logger.info(
                     "Initializing reconnecting broadcaster for server<->server communication"
@@ -175,6 +183,7 @@ class PubSub:
                     broadcaster_uri,
                     notifier=self.notifier,
                     channel=opal_server_config.BROADCAST_CHANNEL_NAME,
+                    broadcast_type=EndOnLossBroadcast,
                     reconnect_max_retries=opal_server_config.BROADCAST_RECONNECT_MAX_RETRIES,
                     reconnect_backoff_min=opal_server_config.BROADCAST_RECONNECT_BACKOFF_MIN_SECONDS,
                     reconnect_backoff_max=opal_server_config.BROADCAST_RECONNECT_BACKOFF_MAX_SECONDS,
@@ -185,10 +194,18 @@ class PubSub:
                 logger.info(
                     "Initializing broadcaster for server<->server communication"
                 )
+                if is_redis_url(broadcaster_uri):
+                    logger.warning(
+                        "BROADCAST_RECONNECT_ENABLED is off: the Redis broadcaster "
+                        "reconnects and subscribes again by itself, with no resync "
+                        "after a lost Redis connection, so clients can miss the "
+                        "updates published meanwhile"
+                    )
                 self.broadcaster = EventBroadcaster(
                     broadcaster_uri,
                     notifier=self.notifier,
                     channel=opal_server_config.BROADCAST_CHANNEL_NAME,
+                    broadcast_type=ResubscribingBroadcast,
                 )
         else:
             logger.info("Pub/Sub broadcaster is off")
