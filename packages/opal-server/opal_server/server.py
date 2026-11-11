@@ -3,13 +3,14 @@ import logging
 import os
 import signal
 import sys
+import time
 import traceback
 from pathlib import Path
 from typing import List, Optional
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.openapi.docs import get_redoc_html
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 from fastapi_websocket_pubsub.event_broadcaster import EventBroadcasterContextManager
 from opal_common.authentication.deps import JWTAuthenticator, StaticBearerAuthenticator
 from opal_common.authentication.signer import JWTSigner
@@ -30,6 +31,11 @@ from opal_server.data.api import init_data_updates_router
 from opal_server.data.data_update_publisher import DataUpdatePublisher
 from opal_server.debug_stats import register_internal_stats_route
 from opal_server.git_cli import remove_dead_key_dirs, validate_git_cli_settings
+from opal_server.health import (
+    WorkerHealth,
+    register_health_routes,
+    running_leader_heartbeat,
+)
 from opal_server.loadlimiting import init_loadlimit_router
 from opal_server.metrics_setup import configure_server_metrics
 from opal_server.policy.bundles.api import router as bundles_router
@@ -44,7 +50,7 @@ from opal_server.scopes.api import init_scope_router
 from opal_server.scopes.loader import load_scopes
 from opal_server.scopes.missing_scope import validate_missing_scope_settings
 from opal_server.scopes.purge import subscribe_worker_purge_handler
-from opal_server.scopes.readiness import required_clones, validate_required_repos
+from opal_server.scopes.readiness import validate_required_repos
 from opal_server.scopes.scope_repository import ScopeRepository
 from opal_server.scopes.service import ScopesService
 from opal_server.security.api import init_security_router
@@ -230,6 +236,7 @@ class OpalServer:
         self.broadcast_listening_context: Optional[
             EventBroadcasterContextManager
         ] = None
+        wants_reader_for_scopes = False
         if self.broadcaster_uri is not None:
             # Legacy EventBroadcaster (BROADCAST_RECONNECT_ENABLED=false): its
             # reader connects EAGERLY in __aenter__ and re-raises, so a backbone
@@ -295,6 +302,15 @@ class OpalServer:
         # Set BEFORE _init_fast_api_app(): _configure_api_routes assigns it,
         # and it must exist even when SCOPES is off (shutdown reads it).
         self._scopes_service: Optional[ScopesService] = None
+
+        # What the health routes read; the background task fills in the rest.
+        self.health = WorkerHealth(
+            expects_scopes_leader=bool(opal_server_config.SCOPES)
+            and bool(self._init_policy_watcher)
+            and self.publisher is not None,
+            expects_backbone_subscription=wants_reader_for_scopes
+            and self.publisher is not None,
+        )
 
         # init fastapi app
         self.app: FastAPI = self._init_fast_api_app()
@@ -414,51 +430,7 @@ class OpalServer:
             # Liveness / process-up: trivially ok as long as the process serves.
             return {"status": "ok"}
 
-        @app.get("/healthcheck", include_in_schema=False)
-        def healthcheck():
-            # Readiness: also reflect broadcaster-reader health so a wedged reader
-            # (reader task absent/dead while clients depend on it) fails the probe
-            # and k8s can route away from / restart this worker. Stays ok through a
-            # normal transient reconnect (see ReconnectingBroadcaster.is_reader_healthy).
-            broadcaster = self.pubsub.broadcaster
-            if opal_server_config.BROADCAST_HEALTHCHECK_ENABLED and isinstance(
-                broadcaster, ReconnectingBroadcaster
-            ):
-                healthy = broadcaster.is_reader_healthy()
-                # Publish what the probe already decided. A wedged reader is
-                # otherwise invisible outside this handler: where no liveness
-                # probe runs, nothing acts on the 503 below.
-                metrics.gauge(
-                    "opal_server.broadcaster_reader_healthy",
-                    1 if healthy else 0,
-                    tags={"pid": str(os.getpid())},
-                )
-                if not healthy:
-                    return JSONResponse(
-                        status_code=503,
-                        content={"status": "error", "broadcaster": "unhealthy"},
-                    )
-            if (
-                opal_server_config.SCOPES
-                and opal_server_config.SCOPES_READY_REQUIRED_REPOS
-            ):
-                missing = required_clones.missing(Path(opal_server_config.BASE_DIR))
-                metrics.gauge(
-                    "opal_server.scopes.ready_clones_missing",
-                    len(missing),
-                    tags={"pid": str(os.getpid())},
-                )
-                if missing:
-                    # Source ids, never a URL: a URL can carry a credential.
-                    return JSONResponse(
-                        status_code=503,
-                        content={
-                            "status": "error",
-                            "scopes": "clones missing",
-                            "missing": missing,
-                        },
-                    )
-            return {"status": "ok"}
+        register_health_routes(app, self)
 
         register_internal_stats_route(
             app,
@@ -520,6 +492,7 @@ class OpalServer:
                     )
                     try:
                         await self.broadcast_listening_context.__aenter__()
+                        self.health.backbone_subscribed = True
                     except (
                         Exception
                     ) as exc:  # noqa: BLE001 — everything below must still run
@@ -554,6 +527,7 @@ class OpalServer:
                                 "after a failed enter"
                             )
                         self.broadcast_listening_context = None
+                        self.health.backbone_subscribed = False
                     if (
                         self.broadcast_listening_context is not None
                         and self.opal_statistics is not None
@@ -596,13 +570,20 @@ class OpalServer:
                     # lock on purpose: non-leaders block on that lock forever.
                     await subscribe_worker_purge_handler(self.pubsub.endpoint)
 
+                # Started: what follows waits for the leadership lock.
+                self.health.started_at = time.time()
+
                 # We want only one worker to run repo watchers
                 # (otherwise for each new commit, we will publish multiple updates via pub/sub).
                 # leadership is determined by the first worker to obtain a lock
                 self.leadership_lock = NamedLock(
                     opal_server_config.LEADER_LOCK_FILE_PATH
                 )
-                async with self.leadership_lock:
+                # The heartbeat starts with the lock, before load_scopes reads
+                # Redis: liveness never waits on Redis or git.
+                async with self.leadership_lock, running_leader_heartbeat(
+                    self.health.expects_scopes_leader
+                ):
                     # only one worker gets here, the others block. in case the leader worker
                     # is terminated, another one will obtain the lock and become leader.
                     logger.info(
@@ -639,6 +620,9 @@ class OpalServer:
                     logger.info(
                         "stopped listening on the broadcast channel on this worker"
                     )
+        else:
+            # Nothing else starts on a worker with no publisher.
+            self.health.started_at = time.time()
 
     async def stop_server_background_tasks(self):
         logger.info("stopping background tasks...")

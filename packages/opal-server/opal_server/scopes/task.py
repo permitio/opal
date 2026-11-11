@@ -8,7 +8,7 @@ from typing import Any, Awaitable, Callable, Optional
 
 from fastapi_websocket_pubsub import Topic
 from opal_common.logger import configure_logs, logger, logs_configured
-from opal_common.monitoring import metrics
+from opal_server import health
 from opal_server.config import opal_server_config
 from opal_server.git_cli import (
     close_leftover_lock_fds,
@@ -316,19 +316,19 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
 
     async def _run_pass(self, only_poll_updates: bool, honor_backoff: bool):
         # Only through self._passes, which logs what this raises.
-        await self._service.sync_scopes(
-            only_poll_updates=only_poll_updates, honor_backoff=honor_backoff
-        )
+        try:
+            await self._service.sync_scopes(
+                only_poll_updates=only_poll_updates, honor_backoff=honor_backoff
+            )
+        except Exception:
+            health.leader_heartbeat.note_attempt(False)
+            raise
+        health.leader_heartbeat.note_attempt(True)
 
     async def _periodic_polling(self):
         try:
             while True:
                 await asyncio.sleep(opal_server_config.POLICY_REFRESH_INTERVAL)
-                # Leader heartbeat. This loop runs only inside the leadership
-                # lock, so `sum by env` reaching 0 means no worker holds it
-                # anywhere and scope syncing has silently stopped — pods stay
-                # Ready and /healthcheck stays 200 throughout.
-                metrics.gauge("opal_server.scopes.leader", 1)
                 logger.info("Periodic sync")
                 await self._passes.request(only_poll_updates=True, honor_backoff=True)
 
@@ -357,6 +357,10 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                     "Got invalid keyword args for single scope refresh: %s", data
                 )
                 return
+            except Exception:
+                health.leader_heartbeat.note_attempt(False)
+                raise
+            health.leader_heartbeat.note_attempt(True)
             if source_id is not None:
                 # Outside a pass nothing else repacks the clone this sync may
                 # have left at SCOPES_GIT_REPACK_PACK_LIMIT, and with

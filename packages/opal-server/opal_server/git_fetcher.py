@@ -1364,6 +1364,33 @@ def git_cli_enabled() -> bool:
     return bool(opal_server_config.SCOPES_GIT_FETCH_WITH_CLI)
 
 
+# How far past the point where a git command-line op should have stopped git
+# (its timeout, SCOPES_GIT_CLI_KILL_GRACE and git_cli.KILL_WAIT_SECONDS) the
+# op may still be awaited before cli_ops_past_bound counts it: its clean-up.
+_CLI_OP_BOUND_SLACK_SECONDS = 30.0
+# Each git command-line op this process awaits that has a timeout -> the
+# monotonic time past which it counts as stuck (see cli_ops_past_bound).
+_cli_ops_awaited: Dict[int, float] = {}
+_cli_op_tokens = itertools.count()
+
+
+def cli_ops_past_bound(now: Optional[float] = None) -> int:
+    """How many git command-line ops this process still awaits past their
+    bound: their timeout, plus SCOPES_GIT_CLI_KILL_GRACE, git_cli's wait
+    for the group after SIGKILL and 30 seconds of clean-up.
+
+    An op stops git itself well within that, so one past it is stuck in this
+    process (the scopes leader's heartbeat stops for it). An op with no
+    timeout has no bound.
+
+    Args:
+        now: The monotonic time to compare with; the current one when None.
+    """
+    if now is None:
+        now = time.monotonic()
+    return sum(1 for deadline in _cli_ops_awaited.values() if deadline < now)
+
+
 def clone_shards() -> int:
     """How many clones one repository has: 1 with the git command-line fetch,
     which ignores SCOPES_REPO_CLONES_SHARDS, else that setting."""
@@ -1398,7 +1425,8 @@ async def run_git_cli_op(
     marker in ``marker_dir``. An op the end of the event loop cut short
     (on_gone told None: SIGKILLed, its clean-up left to the next op on the
     clone) leaves flight but keeps its marker, as a libgit2 op still
-    running when its process ended does.
+    running when its process ended does. Awaited past its bound, it counts
+    in cli_ops_past_bound.
 
     Raises what the op raises, and GitConcurrencyLimitExceeded at the cap.
     """
@@ -1433,7 +1461,19 @@ async def run_git_cli_op(
             if how is not None:
                 hung.returned(how)
 
-        await op(on_gone=_gone)
+        token = next(_cli_op_tokens)
+        if timeout and math.isfinite(timeout) and timeout > 0:
+            _cli_ops_awaited[token] = (
+                time.monotonic()
+                + timeout
+                + max(0.0, opal_server_config.SCOPES_GIT_CLI_KILL_GRACE)
+                + git_cli.KILL_WAIT_SECONDS
+                + _CLI_OP_BOUND_SLACK_SECONDS
+            )
+        try:
+            await op(on_gone=_gone)
+        finally:
+            _cli_ops_awaited.pop(token, None)
     finally:
         if slot_timer is not None:
             slot_timer.cancel()
@@ -3334,6 +3374,10 @@ class GitPolicyFetcher(PolicyFetcher):
     # With the git command line: source id -> branch -> (start, succeeded) of
     # the last fetch that asked for that branch (see _fetched_after).
     branch_attempts: Dict[str, Dict[str, Tuple[datetime.datetime, bool]]] = {}
+    # source id -> the clones and fetches of it that failed in a row, for the
+    # leader's opal_server.scopes.repo_fetch_failures; counted whatever the
+    # backoff, and dropped by its next success.
+    fetch_failures: Dict[str, int] = {}
 
     def __init__(
         self,
@@ -3406,6 +3450,9 @@ class GitPolicyFetcher(PolicyFetcher):
         healthy ones included, so recording it would put the whole fleet into
         backoff because of one bad repo.
         """
+        GitPolicyFetcher.fetch_failures[self._source_id] = (
+            GitPolicyFetcher.fetch_failures.get(self._source_id, 0) + 1
+        )
         if _backoff_base_seconds() <= 0:
             return  # kill switch: record nothing, so nothing is ever skipped
         previous = GitPolicyFetcher.source_backoff.get(self._source_id)
@@ -3543,6 +3590,7 @@ class GitPolicyFetcher(PolicyFetcher):
     def _clear_source_backoff(self) -> None:
         """A git op against this source succeeded — drop its failure
         history."""
+        GitPolicyFetcher.fetch_failures.pop(self._source_id, None)
         previous = GitPolicyFetcher.source_backoff.pop(self._source_id, None)
         if previous is None:
             return
@@ -3562,6 +3610,7 @@ class GitPolicyFetcher(PolicyFetcher):
         invalid-repo recovery branch, where the source is very much still ours
         and its failure history must survive.
         """
+        GitPolicyFetcher.fetch_failures.pop(source_id, None)
         if GitPolicyFetcher.source_backoff.pop(source_id, None) is not None:
             _emit_sources_in_backoff()
 

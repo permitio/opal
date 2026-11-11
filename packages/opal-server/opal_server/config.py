@@ -103,10 +103,12 @@ class OpalServerConfig(Confi):
     BROADCAST_HEALTHCHECK_ENABLED = confi.bool(
         "BROADCAST_HEALTHCHECK_ENABLED",
         True,
-        description="Make /healthcheck reflect the broadcaster reader's health so a "
-        "k8s readiness/liveness probe can route away from or restart a worker whose "
-        "reader is wedged while clients depend on it. Set to False to revert "
-        "/healthcheck to always returning ok.",
+        description="Make /healthcheck (readiness) and /healthz/live (liveness) "
+        "reflect the broadcaster reader's health, so a k8s probe can route away "
+        "from or restart a worker whose reader is wedged or gave up while clients "
+        "depend on it; in scopes mode /healthcheck also waits for the worker's own "
+        "backbone subscription. Set to False to drop these broadcaster checks "
+        "from both routes.",
     )
     BROADCAST_FREEZE_ON_DISCONNECT = confi.bool(
         "BROADCAST_FREEZE_ON_DISCONNECT",
@@ -247,7 +249,13 @@ class OpalServerConfig(Confi):
         "to that op's own timeout for it to end (this one for a fetch, "
         "SCOPES_GIT_CLONE_TIMEOUT for a git command-line clone), then syncs once "
         "more (with 0, it does not wait); a pass's sync skips that clone, and the "
-        "next pass syncs it.",
+        "next pass syncs it. "
+        "No git op, and no sync waiting for one, delays the scopes leader's heartbeat "
+        "(/healthz/live), which runs on a task of its own: with "
+        "SCOPES_GIT_FETCH_WITH_CLI on, an op holds it only while it is still awaited "
+        "40 seconds past its own timeout (this one, or SCOPES_GIT_CLONE_TIMEOUT for a "
+        "clone) plus SCOPES_GIT_CLI_KILL_GRACE, by when git has been stopped, and an "
+        "op with no timeout never holds it.",
     )
     SCOPES_GIT_CLONE_TIMEOUT = confi.float(
         "SCOPES_GIT_CLONE_TIMEOUT",
@@ -265,6 +273,8 @@ class OpalServerConfig(Confi):
         "not start when it is below "
         "SCOPES_GIT_FETCH_TIMEOUT (no limit counting as the highest). With "
         "SCOPES_GIT_FETCH_WITH_CLI off, a libgit2 clone has "
+        "SCOPES_GIT_FETCH_TIMEOUT. "
+        "A clone that runs up to this timeout never fails /healthz/live: see "
         "SCOPES_GIT_FETCH_TIMEOUT.",
     )
     SCOPES_GIT_FETCH_WITH_CLI = confi.bool(
@@ -1267,7 +1277,8 @@ class OpalServerConfig(Confi):
         "every clone of each has finished its first clone, /healthcheck "
         "answers 503 with the missing clones' directory names in BASE_DIR's "
         "git_sources directory (never a URL), and "
-        "opal_server.scopes.ready_clones_missing reports how many. A directory "
+        "opal_server.scopes.ready_clones_missing reports how many; "
+        "/healthz/started waits for the same clones. A directory "
         "a clone is still writing does not count. Once a worker has seen a "
         "clone landed it does not look again: a later failed fetch, a remote "
         "that is down, or the clone deleted and cloned again does not fail "
@@ -1306,7 +1317,9 @@ class OpalServerConfig(Confi):
         "share it, with SCOPES_GIT_FETCH_WITH_CLI on or off: at each start the "
         "pre-fork scope preload removes the lock files and partial packs it "
         "finds in every clone there, and the clones half made beside them, "
-        "whichever server's git op they belong to.",
+        "whichever server's git op they belong to. In scopes mode the leader "
+        "worker writes its heartbeat there too (scopes-leader.heartbeat), which "
+        "/healthz/live and /healthz/started read.",
     )
 
     POLICY_REFRESH_INTERVAL = confi.int(

@@ -290,11 +290,16 @@ clones it has seen landed, so a later failed fetch, a remote that is down, or
 a clone deleted and cloned again does not take a Ready server out of service.
 There is no grace period: allow for the first clones in the deployment's
 rollout deadline (`progressDeadlineSeconds` on Kubernetes). Readiness never
-restarts the server.
+restarts the server. `/healthz/started`, for a startup probe, waits for the
+same clones, and for a heartbeat of the scopes leader; it answers `200`
+from then on (see [health checks](/tutorials/monitoring_opal#health-checks)).
 
-To move a readiness check off a script that reads the clones' `FETCH_HEAD`
-files, point the probe at `/healthcheck` and set this setting: it needs no
-clone directory names, and it fails while a clone is missing. With
+To move probes off scripts that read the clones' `FETCH_HEAD` files, point
+the readiness probe at `/healthcheck` with this setting, the startup probe at
+`/healthz/started` and the liveness probe at `/healthz/live`. They need no
+clone directory names; readiness and startup wait while a required clone is
+missing, and none of them fails when a fetch fails. A clone's fetch age moves from the liveness probe to the
+`opal_server.scopes.repo_fetch_age_seconds` metric. With
 [`OPAL_SCOPES_GIT_RECLONE_HUNG_ON_START`](/getting-started/configuration#opal_scopes_git_reclone_hung_on_start)
 on, a start keeps a landed clone of a required repository that a hung git op
 marked, where it deletes any other marked clone, so a restart does not wait
