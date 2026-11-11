@@ -15,7 +15,7 @@ defects, and a distributed reclaim policy wants its own change) — see the
 follow-up, **PER-15612**. PR3 delivers the offline-repo resilience and the
 fleet-wide purge; the sweep gates flip when PER-15612 lands.
 
-Of the 23 rows below: **19 pass outright**; the three orphan-sweep gates are red
+Of the 24 rows below: **20 pass outright**; the three orphan-sweep gates are red
 by design (`test_orphan_clone_dir_is_reclaimed` and
 `test_redis_wiped_boot_reclaims_clones` fail outright,
 `test_shard_reconfig_still_serves_but_orphans_old_clones` passes its green half
@@ -60,6 +60,19 @@ env `BOOT_TARGET_SECONDS=120` (tighten the boot gate), env
 `REPACK_GATE_SERVER_LIMIT=0` (run the repack gate with repacking off; it must
 fail).
 
+The fetch backend is the server's default unless an override file sets it.
+CI runs a leg on each, with the override in `COMPOSE_FILE`:
+```bash
+# the git command-line backend
+COMPOSE_FILE=docker-compose.yml:docker-compose.cli.yml python -m pytest -v --boot-scopes=10
+# libgit2, with 3 clone shards (OPAL_TEST_SHARDS sets another count)
+COMPOSE_FILE=docker-compose.yml:docker-compose.libgit2.yml python -m pytest -v --boot-scopes=10
+```
+`test_backend.py` fails when the server runs another backend than the one the
+compose files ask for: a git command-line clone holds only `.git`, a libgit2
+clone a checkout too. The source ids the tests and invariants compute use the
+shard count the compose files set.
+
 ## Expected behavior
 
 Gate-coverage matrix (what each flagship test actually does):
@@ -89,6 +102,7 @@ Gate-coverage matrix (what each flagship test actually does):
 | `test_force_push_rewrite_recovers` | **characterization** | PASSES — a force-pushed (rewritten) head is picked up on refresh, pinning today's behavior (pygit2's forced default fetch refspec plus `set_target` moving the local ref) |
 | `test_deleted_branch_keeps_serving_last_head` | **characterization** | PASSES — deleting the tracked branch upstream doesn't crash anything; fetch doesn't prune, so OPAL silently keeps serving the last known head (documented, not necessarily desirable, behavior) |
 | `test_pushes_keep_pack_count_bounded` | **gate (scope clone repack)** | PASSES since the scope clone repack — 10 pushes to one repo, each followed by a refresh, keep the clone's `pack-*.pack` count at or below `SCOPES_GIT_REPACK_PACK_LIMIT` (5, set for this test's container only via `OPAL_TEST_REPACK_PACK_LIMIT`) while the scope serves the last push, and the count must build up to the limit and drop back, with at least one repack of that clone in the server log ending at one pack (so a clone it cannot see, or fetches that stop writing packs, fail it instead of passing it); measured `[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3]`, two repacks of 5 packs into 1. Fails without it, where libgit2 writes one pack per fetch and never merges them, so the count reaches the push count plus the clone's own pack: `REPACK_GATE_SERVER_LIMIT=0` runs it with repacking off, which for this gate is `origin/master`'s behaviour, and measured `[1, 2, …, 11]`, no repack logged, FAIL. Prints each repack's duration and pack-dir bytes before/after from the server log |
+| `test_a_scope_clone_is_the_backends_clone` | **guard (backend legs)** | PASSES on each leg — fails when the server runs another fetch backend than the compose files ask for (a git command-line clone holds only `.git`, a libgit2 clone a checkout too), or clones outside the shard the compose files' shard count puts it in |
 
 ## Invariants
 `invariants.py` defines quiescence invariants I1-I6, checked at every `opal`-fixture
@@ -127,7 +141,8 @@ Notes on the guards:
   direction).
 
 ## Requires
-Docker + docker compose v2, plus host Python with `pytest pytest-timeout requests GitPython`.
+Docker + docker compose v2, plus host Python 3.14 with this directory's
+requirements: `python -m pip install --require-hashes -r requirements.txt`.
 
 ## Notes
 - Auth is disabled in the stack: `OPAL_AUTH_PUBLIC_KEY` is left unset so the JWT

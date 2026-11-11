@@ -14,7 +14,7 @@ import time
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, cast
+from typing import Any, Dict, List, NoReturn, Optional, Tuple, cast
 
 import opal_server.scopes.task as task_module
 import pygit2
@@ -566,6 +566,14 @@ def process_table():
     return all_processes
 
 
+def _without_sshd(reason: str) -> NoReturn:
+    """Skip a test that needs sshd; fail it instead with TESTS_REQUIRE_SSHD=1
+    in the environment, where a skip would let it pass without running."""
+    if os.environ.get("TESTS_REQUIRE_SSHD") == "1":
+        pytest.fail(f"TESTS_REQUIRE_SSHD=1 and {reason}")
+    pytest.skip(reason)
+
+
 class Sshd:
     """An OpenSSH server on localhost, run as this user, that serves git
     through git-shell to a client with a key.
@@ -579,7 +587,7 @@ class Sshd:
     ) -> None:
         sshd = shutil.which("sshd") or "/usr/sbin/sshd"
         if not os.path.exists(sshd):
-            pytest.skip("no sshd on this machine")
+            _without_sshd("no sshd on this machine")
         git = _git()
         exec_path = subprocess.run(
             [git, "--exec-path"], capture_output=True, text=True, check=True
@@ -631,14 +639,14 @@ class Sshd:
             if self._proc.poll() is not None:
                 assert self._proc.stderr is not None
                 err = self._proc.stderr.read().decode(errors="replace")
-                pytest.skip(f"sshd did not start: {err.strip()[-300:]}")
+                _without_sshd(f"sshd did not start: {err.strip()[-300:]}")
             try:
                 socket.create_connection(("127.0.0.1", self.port), timeout=0.5).close()
                 break
             except OSError:
                 if time.monotonic() > deadline:
                     self.close()
-                    pytest.skip("sshd did not start listening")
+                    _without_sshd("sshd did not start listening")
                 time.sleep(0.05)
 
     def url(self, repo: Path) -> str:

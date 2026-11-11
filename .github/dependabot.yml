@@ -21,8 +21,10 @@ updates:
   # The published packages' requirements. Each setup.py reads its install_requires from
   # packages/requires.txt and packages/<pkg>/requires.txt. Dependabot's pip fetcher reads every
   # *.txt in a configured directory and its immediate subdirectories whose lines parse as
-  # requirements, so "/" covers requirements.txt (dev and test tools) and packages/requires.txt,
-  # and each package directory covers its own requires.txt.
+  # requirements, so "/" covers requirements.txt (dev and test tools), packages/requires.txt,
+  # app-tests/requirements.txt and docker/server-test-requirements.txt, and each package
+  # directory covers its own requires.txt. /app-tests/git-leak is two levels down, so it is
+  # listed for the scope bed's requirements.
   #
   # These are library ranges, which every downstream install resolves, so a floor must not rise
   # just because a newer release exists: increase-if-necessary leaves a requirement alone while
@@ -34,6 +36,7 @@ updates:
       - /packages/opal-common
       - /packages/opal-client
       - /packages/opal-server
+      - /app-tests/git-leak
     versioning-strategy: increase-if-necessary
     schedule:
       interval: weekly

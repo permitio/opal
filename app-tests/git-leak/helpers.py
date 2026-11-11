@@ -1,8 +1,9 @@
 """HTTP + infra helpers for the git-leak test bed."""
+import json
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import requests
 
@@ -398,6 +399,41 @@ def compose(*args: str, timeout: int = 1200) -> subprocess.CompletedProcess:
             f"--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}"
         )
     return proc
+
+
+def server_environment(service: str = "opal_server") -> Dict[str, Optional[str]]:
+    """The service's environment as the compose files set it, with the override
+    files in COMPOSE_FILE and the variables of this process applied (``docker
+    compose config``)."""
+    config = json.loads(compose("config", "--format", "json").stdout)
+    return config["services"][service].get("environment") or {}
+
+
+def clone_shards() -> int:
+    """The server's SCOPES_REPO_CLONES_SHARDS, as the compose files set it."""
+    return int(server_environment().get("OPAL_SCOPES_REPO_CLONES_SHARDS") or 1)
+
+
+def fetch_backend() -> str:
+    """The scope fetch backend the bed asks for, "cli" or "libgit2".
+
+    It is OPAL_SCOPES_GIT_FETCH_WITH_CLI as the compose files set it, or
+    the server's default where they leave it unset. It is what the
+    server should run, so a server that runs the other backend fails the
+    bed's backend test.
+    """
+    value = server_environment().get("OPAL_SCOPES_GIT_FETCH_WITH_CLI")
+    if value is None:
+        value = compose(
+            "exec",
+            "-T",
+            "opal_server",
+            "python",
+            "-c",
+            "from opal_server.config import opal_server_config as c; "
+            "print(c.SCOPES_GIT_FETCH_WITH_CLI)",
+        ).stdout.split()[-1]
+    return "cli" if value.lower() in ("true", "1") else "libgit2"
 
 
 def worker_pids(service: str = "opal_server") -> set:

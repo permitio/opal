@@ -30,6 +30,8 @@ REQUIRED_CHECKS = {"tests.yml": "CI", "pre-commit.yml": "pre-commit"}
 CI_NEEDS = {
     "build",
     "e2e-tests",
+    "git-cli-in-image",
+    "e2e-scopes",
     "binary-stages",
     "secrets",
     "dependency-review",
@@ -410,6 +412,111 @@ class TestE2eGithub:
             ("deploy-key", "check"),
             ("e2e-github-ssh", "E2E tests, policy repo on GitHub over SSH"),
         ]
+
+
+class TestGitCliInImage:
+    """tests.yml: the git command-line tests run in the server image, under its
+    sh, git and ssh."""
+
+    TESTS = PACKAGES / "opal-server" / "opal_server" / "tests"
+    DOCKERFILE = WORKFLOWS.parents[1] / "docker" / "Dockerfile"
+
+    @pytest.fixture
+    def job(self):
+        return load(WORKFLOWS / "tests.yml")["jobs"]["git-cli-in-image"]
+
+    @pytest.fixture
+    def command(self, job):
+        (run,) = [
+            step["run"] for step in steps_of(job) if "docker run" in step.get("run", "")
+        ]
+        return run.split()
+
+    def test_builds_the_server_test_target(self, job):
+        (build,) = [
+            step["with"]
+            for step in steps_of(job)
+            if step.get("uses", "").startswith("docker/build-push-action@")
+        ]
+
+        assert build["target"] == "server-test"
+        assert build["push"] is False
+        assert build["load"] is True
+
+    def test_runs_the_tests_from_the_checkout_offline_with_sshd_required(self, command):
+        assert command[:4] == ["docker", "run", "--rm", "--init"]
+        # As the image's user, not root, for whom the permission tests skip themselves.
+        assert "--user 1000:1000" in " ".join(command)
+        assert "--network none" in " ".join(command)
+        assert "TESTS_REQUIRE_SSHD=1" in command
+        assert '"$PWD:/src:ro"' in command
+
+    def test_a_build_with_no_target_is_still_the_server_image(self):
+        """Docker builds the last stage when it gets no --target, and server-
+        test comes after the server stage it builds on."""
+        lines = [line.strip() for line in self.DOCKERFILE.read_text().splitlines()]
+        last = max(i for i, line in enumerate(lines) if line.startswith("FROM "))
+
+        assert lines[last] == "FROM server"
+        assert all(not line or line.startswith("#") for line in lines[last + 1 :])
+
+    def test_installs_pytest_from_hashed_requirements(self):
+        assert (
+            "pip install --no-cache-dir --require-hashes -r /tmp/server-test-requirements.txt"
+            in self.DOCKERFILE.read_text()
+        )
+
+    def test_runs_every_git_cli_test_file(self, command):
+        files = {Path(arg).name for arg in command if arg.endswith("_test.py")}
+        git_cli = {path.name for path in self.TESTS.glob("git_cli*_test.py")}
+
+        assert git_cli, "no git_cli*_test.py under opal_server/tests"
+        assert git_cli <= files
+        assert {"git_config_isolation_test.py", "git_repack_test.py"} <= files
+        for name in files:
+            assert (self.TESTS / name).is_file(), name
+
+
+class TestE2eScopes:
+    """tests.yml: the scope bed runs on each fetch backend, set explicitly by
+    an override file."""
+
+    BED = WORKFLOWS.parents[1] / "app-tests" / "git-leak"
+
+    @pytest.fixture
+    def job(self):
+        return load(WORKFLOWS / "tests.yml")["jobs"]["e2e-scopes"]
+
+    @pytest.fixture
+    def run(self, job):
+        (step,) = [
+            step
+            for step in steps_of(job)
+            if step.get("run", "").startswith("python -m pytest")
+        ]
+        return step
+
+    def test_runs_a_leg_per_backend(self, job):
+        assert job["strategy"]["matrix"] == {"backend": ["libgit2", "cli"]}
+        assert job["strategy"]["fail-fast"] is False
+
+    def test_each_leg_sets_its_backend_with_its_override_file(self, run):
+        assert run["working-directory"] == "app-tests/git-leak"
+        assert run["env"]["COMPOSE_FILE"] == (
+            "docker-compose.yml:docker-compose.${{ matrix.backend }}.yml"
+        )
+        for backend in ("libgit2", "cli"):
+            assert (self.BED / f"docker-compose.{backend}.yml").is_file()
+
+    def test_runs_the_backend_check(self, run):
+        assert "test_backend.py" in run["run"].split()
+
+    def test_installs_the_bed_from_its_hashed_requirements(self, job):
+        assert any(
+            "pip install --require-hashes -r app-tests/git-leak/requirements.txt"
+            in step.get("run", "")
+            for step in steps_of(job)
+        )
 
 
 class TestRelease:

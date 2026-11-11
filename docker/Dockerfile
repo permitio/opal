@@ -321,3 +321,22 @@ ENV OPAL_POLICY_REPO_REUSE_CLONE_PATH=true
 # expose opal server port
 EXPOSE 7002
 USER opal
+
+# SERVER TEST IMAGE ---------------------------------
+# For CI only, never published: the server image plus what the git command-line tests need to
+# run in it, under its busybox sh, git and ssh. git-daemon serves git:// and brings git-shell,
+# which the tests' sshd runs; openssl makes their TLS certificates. The tests and their
+# conftest.py come from a checkout mounted at run time.
+# ---------------------------------------------------
+FROM server AS server-test
+USER root
+COPY docker/server-test-requirements.txt /tmp/server-test-requirements.txt
+RUN apk add --no-cache git-daemon openssh-server openssh-keygen openssl && \
+  python check_trust_store.py && \
+  pip install --no-cache-dir --require-hashes -r /tmp/server-test-requirements.txt
+USER opal
+
+# DEFAULT IMAGE -------------------------------------
+# A build with no --target builds the last stage: the server image, not server-test.
+# ---------------------------------------------------
+FROM server

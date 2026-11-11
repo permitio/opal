@@ -241,6 +241,87 @@ jobs:
           OPAL_IMAGE_TAG: test
         run: python -m pytest
 
+  # The git command-line tests in the server image, so they run under the image's busybox sh,
+  # git and ssh, the ones the server runs git with. server-test is the server image plus what
+  # the tests need (sshd, git-daemon, openssl, pytest); it is never published.
+  git-cli-in-image:
+    name: Git CLI tests in the server image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
+
+      - name: Build the server test image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: server-test
+          push: false
+          load: true
+          tags: opal-server-test:ci
+
+      # As uid 1000, the image's user (as root, the permission tests skip themselves), with no
+      # network. The checkout's packages come first on PYTHONPATH, since the tests import each
+      # other as opal_server.tests modules, which the installed package leaves out. --init
+      # reaps the processes the tests orphan, as a pod's init does. TESTS_REQUIRE_SSHD=1 fails
+      # a test that needs sshd where none starts, instead of skipping it.
+      - name: Run the git CLI tests in the server image
+        run: >-
+          docker run --rm --init --user 1000:1000 --network none -e TESTS_REQUIRE_SSHD=1
+          -e PYTHONPATH=/src/packages/opal-common:/src/packages/opal-server
+          -v "$PWD:/src:ro" -w /src opal-server-test:ci
+          python -m pytest -p no:cacheprovider -q -ra
+          packages/opal-server/opal_server/tests/git_cli_test.py
+          packages/opal-server/opal_server/tests/git_cli_fetch_test.py
+          packages/opal-server/opal_server/tests/git_cli_isolation_test.py
+          packages/opal-server/opal_server/tests/git_cli_lifecycle_test.py
+          packages/opal-server/opal_server/tests/git_cli_pass_test.py
+          packages/opal-server/opal_server/tests/git_config_isolation_test.py
+          packages/opal-server/opal_server/tests/git_repack_test.py
+
+  # The scope bed (app-tests/git-leak) on each fetch backend. Each leg sets its backend in an
+  # override file, so it keeps its meaning whatever the server's default is.
+  e2e-scopes:
+    name: Scope E2E (${{ matrix.backend }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [libgit2, cli]
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.14"
+
+      - name: Install the scope bed's requirements
+        run: python -m pip install --require-hashes -r app-tests/git-leak/requirements.txt
+
+      - name: Run the scope bed
+        working-directory: app-tests/git-leak
+        env:
+          COMPOSE_FILE: docker-compose.yml:docker-compose.${{ matrix.backend }}.yml
+        run: >-
+          python -m pytest -v --boot-scopes=10 test_backend.py test_leak.py
+          test_transitions.py test_remote_transitions.py test_repack.py test_boot.py
+
   binary-stages:
     # The OPA and EOPA extraction stages, for both release architectures. The jobs above
     # build amd64 only, and arm64 builds run only in on_release.yml, so a wrong opa_digest
@@ -352,7 +433,7 @@ jobs:
     # fail, when a needed job fails or is cancelled.
     name: CI
     if: always()
-    needs: [build, e2e-tests, binary-stages, secrets, dependency-review, vuln]
+    needs: [build, e2e-tests, git-cli-in-image, e2e-scopes, binary-stages, secrets, dependency-review, vuln]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -386,7 +467,7 @@ jobs:
         env:
           NEEDS: ${{ toJSON(needs) }}
           EVENT: ${{ github.event_name }}
-          EXPECTED_JOBS: 6
+          EXPECTED_JOBS: 8
           PULL_REQUEST_JOBS: dependency-review vuln
         run: .github/scripts/ci-aggregate.sh
 

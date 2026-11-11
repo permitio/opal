@@ -230,9 +230,10 @@ def test_shard_reconfig_still_serves_but_orphans_old_clones(opal, tmp_path):
     assert wait_until(
         lambda: opal.get_scope_policy("shard-0").status_code == 200, timeout=300
     )
-    # preserve the shards=1 clones across the recreate (recreate wipes the fs)
+    # preserve the current shards' clones across the recreate (recreate wipes the fs)
     compose("cp", "opal_server:/opal/git_sources", str(tmp_path / "saved"))
 
+    shards_before = os.environ.get("OPAL_TEST_SHARDS")
     os.environ["OPAL_TEST_SHARDS"] = "4"
     try:
         compose("up", "-d", "--no-deps", "--force-recreate", "opal_server")
@@ -251,6 +252,9 @@ def test_shard_reconfig_still_serves_but_orphans_old_clones(opal, tmp_path):
             f"sweep gate): {sorted(clone_dirs())[:5]}"
         )
     finally:
-        os.environ["OPAL_TEST_SHARDS"] = "1"
+        if shards_before is None:
+            del os.environ["OPAL_TEST_SHARDS"]
+        else:
+            os.environ["OPAL_TEST_SHARDS"] = shards_before
         compose("up", "-d", "--no-deps", "--force-recreate", "opal_server")
         opal.wait_healthy()

@@ -1,0 +1,8 @@
+# The scope bed runs with these, installed from requirements.txt with --require-hashes.
+# requirements.txt is generated from this file with:
+#   uv pip compile --generate-hashes --python-version 3.14 --universal \
+#     app-tests/git-leak/requirements.in -o app-tests/git-leak/requirements.txt
+GitPython==3.2.1
+pytest==9.2.0
+pytest-timeout==2.4.0
+requests==2.34.2
