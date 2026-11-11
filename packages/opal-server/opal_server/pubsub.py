@@ -38,6 +38,7 @@ from opal_server.broadcast_redis import (
     is_redis_url,
 )
 from opal_server.config import opal_server_config
+from opal_server.publisher import warn_on_unescaped_percent_in_uri
 from opal_server.pubsub_resilience import (
     FreezablePubSubEndpoint,
     ReconnectingBroadcaster,
@@ -161,6 +162,8 @@ class PubSub:
         broadcaster_uri = load_conf_if_none(
             broadcaster_uri, opal_server_config.BROADCAST_URI
         )
+        if broadcaster_uri is not None:
+            warn_on_unescaped_percent_in_uri(broadcaster_uri)
         self.pubsub_router = APIRouter()
         self.api_router = APIRouter()
         # Pub/Sub Internals
