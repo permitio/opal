@@ -49,7 +49,7 @@ RELEASE_IMAGES = {
 # Every write permission a job has: (workflow, job, scope).
 WRITE_PERMISSIONS = {
     ("tests.yml", "dependency-review", "pull-requests"),
-    ("on_release.yml", "publish_python_packages", "contents"),
+    ("on_release.yml", "publish-packages", "contents"),
 }
 
 SHA_PIN = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
@@ -308,42 +308,118 @@ class TestTests:
 
 
 class TestRelease:
-    """on_release.yml: the publish jobs' Python and the PyPI environment."""
+    """on_release.yml: built once, gated and tested, then the same bytes
+    published from protected environments; a dry run on pull requests."""
+
+    PUBLISH_JOBS = {"publish-images": "docker-hub", "publish-packages": "pypi"}
 
     @pytest.fixture
-    def jobs(self):
-        return load(WORKFLOWS / "on_release.yml")["jobs"]
+    def workflow(self):
+        return load(WORKFLOWS / "on_release.yml")
 
-    @pytest.mark.parametrize(
-        "job_id", ["publish_docker_images", "publish_python_packages"]
-    )
-    def test_the_publish_jobs_set_up_python_3_14(self, jobs, job_id):
+    @pytest.fixture
+    def jobs(self, workflow):
+        return workflow["jobs"]
+
+    @pytest.mark.parametrize("job_id", ["version", "build-packages", "test-packages"])
+    def test_the_packages_are_built_and_tested_on_their_python(self, jobs, job_id):
         assert setup_python_versions(jobs[job_id]) == [PACKAGES_PYTHON]
 
-    def test_publishes_the_wolfi_images_only(self, jobs):
-        legs = jobs["publish_docker_images"]["strategy"]["matrix"]["include"]
+    def test_builds_the_wolfi_images_only(self, jobs):
+        legs = jobs["build-images"]["strategy"]["matrix"]["include"]
 
         assert {(leg["repository"], leg["target"]) for leg in legs} == RELEASE_IMAGES
         assert len(legs) == len(RELEASE_IMAGES)
 
-    def test_the_images_pass_the_gate_before_any_is_published(self, jobs):
-        (gate,) = image_gate_runs(jobs["build_and_test"])
+    def test_publishes_every_image_it_builds(self, jobs):
+        legs = jobs["publish-images"]["strategy"]["matrix"]["include"]
 
-        assert "permitio/opal-client:test" in gate
-        assert "permitio/opal-server:test" in gate
-        assert "build_and_test" in jobs["publish_docker_images"]["needs"]
+        assert {leg["repository"] for leg in legs} == {
+            repository for repository, _ in RELEASE_IMAGES
+        }
+
+    def test_every_image_of_both_platforms_passes_the_gate_before_any_is_published(
+        self, jobs
+    ):
+        (gate,) = image_gate_runs(jobs["test-images"])
+        names = gate.split()
+
+        for repository, _ in RELEASE_IMAGES:
+            assert f"{repository}:test" in names
+            assert f"{repository}:test-arm64" in names
+        report_only = [
+            names[i + 1] for i, word in enumerate(names) if word == "--report-only"
+        ]
+        assert report_only == [
+            "permitio/opal-client-eopa:test",
+            "permitio/opal-client-eopa:test-arm64",
+        ]
+
+    def test_a_dry_run_reads_no_secret_variable_or_environment(self, jobs):
+        """The jobs a pull request runs, from a fork too, use nothing
+        stored."""
+        for job_id, job in jobs.items():
+            if job.get("if") == "github.event_name == 'release'":
+                continue
+            text = yaml.safe_dump(job)
+            assert "secrets." not in text, job_id
+            assert "vars." not in text, job_id
+            assert "environment" not in job, job_id
+
+    def test_a_dry_run_attaches_no_provenance(self, jobs):
+        (build,) = [
+            step
+            for step in steps_of(jobs["build-images"])
+            if step.get("uses", "").startswith("docker/build-push-action@")
+        ]
+
+        assert build["with"]["provenance"].endswith("|| 'false' }}")
+        assert "github.event_name == 'release'" in build["with"]["provenance"]
+
+    @pytest.mark.parametrize("job_id", sorted(PUBLISH_JOBS))
+    def test_publishes_on_a_release_only_after_every_test(self, jobs, job_id):
+        job = jobs[job_id]
+
+        assert job["if"] == "github.event_name == 'release'"
+        assert {"test-images", "test-packages"} <= set(job["needs"])
+        assert environment_name(job) == self.PUBLISH_JOBS[job_id]
+
+    def test_publishes_the_archive_it_tested_without_rebuilding(self, jobs):
+        steps = steps_of(jobs["publish-images"])
+        runs = "\n".join(step.get("run", "") for step in steps)
+
+        assert 'skopeo copy --all --preserve-digests "oci-archive:$ARCHIVE"' in runs
+        assert not any(
+            step.get("uses", "").startswith("docker/build-push-action@")
+            for step in steps
+        )
+
+    def test_runs_as_a_dry_run_on_pull_requests(self, workflow):
+        # PyYAML reads the key on: as True.
+        triggers = workflow[True]
+
+        assert set(triggers) == {"release", "pull_request"}
+        # What decides the release's build, its gate and its scanners' versions.
+        assert {
+            ".github/workflows/on_release.yml",
+            ".github/scripts/image_gate.py",
+            ".github/image-waivers.toml",
+            ".github/binaries.lock",
+            ".github/grype/**",
+            "docker/**",
+        } <= set(triggers["pull_request"]["paths"])
 
     def test_the_package_build_installs_a_pinned_setuptools(self, jobs):
         """Python 3.14 ships no setuptools, which each setup.py imports."""
         (build,) = [
             step["run"]
-            for step in steps_of(jobs["publish_python_packages"])
+            for step in steps_of(jobs["build-packages"])
             if "setup.py sdist" in step.get("run", "")
         ]
 
         assert re.search(r"^\s*pip install .*\bsetuptools==\d", build, re.MULTILINE)
 
-    def test_the_pypi_publish_job_runs_in_the_pypi_environment(self, jobs):
+    def test_only_the_pypi_environment_publishes_to_pypi(self, jobs):
         publishers = {
             job_id
             for job_id, job in jobs.items()
@@ -353,5 +429,4 @@ class TestRelease:
             )
         }
 
-        assert publishers == {"publish_python_packages"}
-        assert environment_name(jobs["publish_python_packages"]) == "pypi"
+        assert publishers == {"publish-packages"}

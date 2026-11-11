@@ -313,6 +313,34 @@ def test_a_waiver_in_force_waives_the_finding(gate, waived, finding):
     assert "covers no finding" not in result.stdout
 
 
+def test_a_report_only_image_is_reported_and_never_fails_the_gate(gate):
+    eopa = "permitio/opal-client-eopa:test"
+    gate.trivy(eopa, trivy("CVE-2026-8"))
+
+    result = gate.run("--report-only", eopa, SERVER)
+
+    assert result.returncode == 0, result.output
+    assert "reported: CVE-2026-8" in result.stdout
+    verdict = commands(result.stdout)
+    assert verdict[0] == (
+        f"::warning title=Image gate::{eopa}: 1 fixable HIGH or CRITICAL "
+        "vulnerabilities (reported, not gated)"
+    )
+    assert verdict[-1] == "image-gate: PASS"
+    assert len(gate.logged("trivy")) == 2
+
+
+def test_a_report_only_image_that_cannot_be_scanned_did_not_run(gate):
+    eopa = "permitio/opal-client-eopa:test"
+
+    result = gate.run("--report-only", eopa, SERVER, FAKE_DOCKER_MISSING=eopa)
+
+    assert result.returncode == 2
+    assert commands(result.stdout)[0].startswith(
+        f"::error title=Image gate::{eopa}: the gate did not run"
+    )
+
+
 def test_a_waiver_that_expires_today_still_applies(gate):
     gate.waivers(waiver(expires=TODAY))
     gate.trivy(SERVER, trivy("CVE-2026-1"))
@@ -584,3 +612,36 @@ def test_a_grype_scan_that_found_no_os_did_not_run(gate, distro):
 
     assert result.returncode == 2
     assert "Grype found no OS in the image" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        pytest.param(("--report-only", SERVER, SERVER), id="gated and reported only"),
+        pytest.param(
+            ("--report-only", CLIENT, "--report-only", CLIENT, SERVER), id="twice"
+        ),
+        pytest.param((SERVER, SERVER), id="gated twice"),
+    ],
+)
+def test_an_image_named_twice_stops_the_gate(gate, args):
+    gate.trivy(SERVER, trivy("CVE-2026-1"))
+
+    result = gate.run(*args)
+
+    assert result.returncode == 2
+    assert "is named more than once" in result.stdout
+    assert gate.logged("docker") == []
+
+
+def test_report_only_findings_are_labelled_reported(gate, tmp_path):
+    eopa = "permitio/opal-client-eopa:test"
+    gate.trivy(eopa, trivy("CVE-2026-8"))
+    summary = tmp_path / "summary.md"
+
+    result = gate.run("--summary", str(summary), "--report-only", eopa, SERVER)
+
+    assert result.returncode == 0, result.output
+    assert "image-gate:   reported: CVE-2026-8 high pkg 1.0" in result.stdout
+    assert "blocks: CVE-2026-8" not in result.stdout
+    assert "| reported | CVE-2026-8 |" in summary.read_text()

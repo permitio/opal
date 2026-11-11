@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Gate container images on Trivy and Grype before they are published.
 
-``image_gate.py [--waivers FILE] [--summary FILE] <image>...`` saves each image, which must be in
-the local Docker daemon, with ``docker image save`` and scans that one archive twice:
+``image_gate.py [--waivers FILE] [--summary FILE] [--report-only IMAGE]... <image>...`` saves each
+image, which must be in the local Docker daemon, with ``docker image save`` and scans that one
+archive twice:
 
 * with Trivy, through ``.github/scripts/trivy.sh report archive:<file> <findings file>`` and the
   Trivy release ``.github/binaries.lock`` pins, which ``fetch-tool.sh trivy`` installs;
@@ -28,7 +29,10 @@ tables:
     reason    why the finding is accepted until then
 
 An expired waiver no longer applies: its findings block again, and the report says it expired.
-A waiver that covers no finding of any image scanned is reported, so it can be deleted.
+A waiver that covers no finding of any image scanned is reported, so it can be deleted. An
+image given with ``--report-only`` is scanned and reported the same way, but its findings never
+fail the gate: for an image whose findings no release can fix. Each image is named once, gated
+or reported only; an image named twice stops the gate.
 
 Everything it prints until the verdict is inside a stop-commands block, so that no scanner output
 can issue a workflow command; the verdict lines are workflow commands. Neither scanner gets
@@ -145,6 +149,7 @@ class ImageResult:
         waived: The findings a waiver in force covers, with that waiver.
         expired: The blocking findings whose only waiver expired, with that waiver.
         error: Why the gate did not run for it; empty when it did.
+        report_only: Its findings are reported and never fail the gate.
     """
 
     image: str
@@ -153,12 +158,13 @@ class ImageResult:
     waived: list[tuple[Finding, list[str], Waiver]] = field(default_factory=list)
     expired: list[tuple[Finding, Waiver]] = field(default_factory=list)
     error: str = ""
+    report_only: bool = False
 
     @property
     def code(self) -> int:
         if self.error:
             return 2
-        return 1 if self.blocking else 0
+        return 1 if self.blocking and not self.report_only else 0
 
 
 def normalise_name(name: str) -> str:
@@ -499,13 +505,16 @@ def render_summary(results: list[ImageResult]) -> str:
     for result in results:
         if result.error:
             verdict = f"did not run: {markdown(result.error)}"
+        elif result.blocking and result.report_only:
+            verdict = f"reported, not gated: {len(result.blocking)} findings"
         elif result.blocking:
             verdict = f"**{len(result.blocking)} findings block it**"
         else:
             verdict = "passes"
         lines.append(f"### `{markdown(result.image)}`: {verdict}")
         lines.append("")
-        rows = [("blocks", finding, scanners) for finding, scanners in result.blocking]
+        status = "reported" if result.report_only else "blocks"
+        rows = [(status, finding, scanners) for finding, scanners in result.blocking]
         rows += [
             (f"waived until {waiver.expires}", finding, scanners)
             for finding, scanners, waiver in result.waived
@@ -537,11 +546,25 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("images", nargs="+", help="images in the local Docker daemon")
     parser.add_argument("--waivers", type=Path, default=WAIVERS, help="the waiver file")
     parser.add_argument("--summary", type=Path, help="a file to append the report to")
+    parser.add_argument(
+        "--report-only",
+        action="append",
+        default=[],
+        metavar="IMAGE",
+        help="an image to scan and report whose findings never fail the gate",
+    )
     return parser.parse_args(argv)
 
 
 def gate(args: argparse.Namespace, today: datetime.date) -> list[ImageResult]:
     """Scan and judge every image; the waiver file is read first."""
+    named = args.images + args.report_only
+    twice = sorted({image for image in named if named.count(image) > 1})
+    if twice:
+        raise GateError(
+            f"{', '.join(twice)} is named more than once: name each image once, gated or "
+            "with --report-only"
+        )
     waivers = load_waivers(args.waivers, today)
     grype = grype_image(GRYPE_DOCKERFILE)
     env = {
@@ -560,7 +583,8 @@ def gate(args: argparse.Namespace, today: datetime.date) -> list[ImageResult]:
         raise GateError(f"creating a temporary directory failed: {e}") from e
     results = []
     used: set[Waiver] = set()
-    for number, image in enumerate(args.images):
+    report_only = set(args.report_only)
+    for number, image in enumerate(args.images + args.report_only):
         print(f"image-gate: {image}")
         try:
             findings = scan(image, number, work, env, grype)
@@ -568,14 +592,16 @@ def gate(args: argparse.Namespace, today: datetime.date) -> list[ImageResult]:
             results.append(ImageResult(image=image, error=str(e)))
             continue
         result = judge(image, findings, waivers, today, used)
+        result.report_only = image in report_only
         results.append(result)
         counts = ", ".join(f"{name} {count}" for name, count in result.counts.items())
         print(
             f"image-gate: {image}: findings by scanner: {counts or 'none'}; "
             f"{len(result.blocking)} block, {len(result.waived)} waived"
         )
+        status = "reported" if result.report_only else "blocks"
         for finding, scanners in result.blocking:
-            print(f"image-gate:   blocks: {finding_line(finding, scanners)}")
+            print(f"image-gate:   {status}: {finding_line(finding, scanners)}")
         for finding, waiver in result.expired:
             print(
                 f"image-gate:   the waiver of {waiver.label()} expired on {waiver.expires}"
@@ -631,6 +657,11 @@ def main(argv: list[str] | None = None) -> int:
                 print(
                     f"::error title=Image gate::{result.image}: the gate did not run: "
                     f"{clip(result.error, 300)}"
+                )
+            elif result.blocking and result.report_only:
+                print(
+                    f"::warning title=Image gate::{result.image}: {len(result.blocking)} "
+                    "fixable HIGH or CRITICAL vulnerabilities (reported, not gated)"
                 )
             elif result.blocking:
                 print(
