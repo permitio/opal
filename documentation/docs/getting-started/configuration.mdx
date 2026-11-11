@@ -697,6 +697,12 @@ Default: `True`
 
 While the broadcaster's backbone is disconnected, freeze client-facing publishes on every worker instead of applying them on the worker that received them, so that an update that cannot reach the whole fleet is never served by just one worker. The reconnect resync (`OPAL_BROADCAST_RESYNC_ON_RECONNECT`) is the recovery: clients re-fetch their configured data sources and policy, so the updates those cover are reconciled, while one-off updates outside them (inline data payloads, ad-hoc fetch URLs) published during the gap are dropped, not deferred. Internal coordination topics (statistics, keepalive, the git webhook trigger) are not frozen, and keep being delivered locally and buffered for replay. It takes effect only with `OPAL_BROADCAST_RECONNECT_ENABLED` on (without the reconnecting broadcaster there is no gap to detect), and only with `OPAL_BROADCAST_RESYNC_ON_RECONNECT` on: with the resync off, the server does not freeze and logs a warning. Set to `False` for the earlier behavior, where the receiving worker's own clients get an update at once and the other workers' only after the reconnect.
 
+#### OPAL_BROADCAST_REDIS_RESILIENT_BACKEND_ENABLED
+
+Default: `True`
+
+With a Redis broadcast backbone, use OPAL's redis-py based backend, which reports a lost Redis connection to the broadcaster so it reconnects, authenticates and subscribes again. The stock backend reconnects on its own without reporting it, and with a Redis password it never subscribes again. Engages only with `OPAL_BROADCAST_RECONNECT_ENABLED`. Set to `False` to revert to the stock backend.
+
 #### OPAL_BROADCAST_HEALTHCHECK_ENABLED
 
 Default: `True`
