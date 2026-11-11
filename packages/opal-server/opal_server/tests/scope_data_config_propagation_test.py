@@ -55,6 +55,8 @@ from opal_server.config import opal_server_config
 from opal_server.scopes.api import init_scope_router
 from opal_server.scopes.scope_repository import ScopeNotFoundError
 
+pytestmark = pytest.mark.fetch_backend("cli")
+
 # --- The scope the operator configured via POST /scopes (issue #779 repro) ---
 SCOPE_ID = "documents"
 SCOPE_DATA_TOPIC = "data"  # agent subscribes to "<scope_id>:data:<topic>"
@@ -305,7 +307,7 @@ class SpyPubSubEndpoint:
     async def wait_for_publish_count(self, count: int, timeout: float = 5.0):
         """Wait until at least `count` publishes were recorded (publishes via
         ServerSideTopicPublisher run as fire-and-forget background tasks)."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
         while len(self.publishes) < count:
             self._published.clear()

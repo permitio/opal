@@ -109,6 +109,36 @@ changed. A scope whose branch is not on the remote gets no policy
 `Did not find target branch on remote: <branch> (<url>)` at ERROR; a sync pass
 logs it once for each branch of each clone.
 
+### A scope's data sources
+
+A client of a scope fetches the scope's `data.entries` from
+`GET /scopes/<scope_id>/data` when it connects. Each entry is served with its
+topics as `<scope_id>:data:<topic>`, the topics the client subscribes to (its
+`OPAL_DATA_TOPICS`, each prefixed with its scope id); a topic already written
+that way is served as it is, and the stored scope keeps its topics as they
+were written.
+
+A `PUT /scopes` that creates a scope with data entries, or changes a scope's
+`data`, also publishes those entries, with the same topics, as a data update
+to the scope's connected clients, as soon as it has stored the scope. So a
+client that connected before its scope existed gets the scope's data without
+reconnecting. The client fetches a pushed entry once: an entry's
+`periodic_update_interval` polling starts at the client's next connect. A
+`PUT` that leaves `data` as it was publishes no data update. Each entry goes
+out whole, as `GET /scopes/<scope_id>/data` serves it.
+
+A `PUT` that fails before the data update was published (for example, the
+scope store answered an error) logs a WARNING. When the store kept the record
+anyway, a retry of the `PUT` finds the data stored and publishes nothing: the
+scope's connected clients get the new entries when they next connect.
+
+`POST /scopes/<scope_id>/data/update` gives its entries the same topics.
+
+For a scope that is not stored, `GET /scopes/<scope_id>/data` answers an
+empty configuration, or redirects to the `external_source_url` of
+[`OPAL_DATA_CONFIG_SOURCES`](/getting-started/configuration#opal_data_config_sources)
+when that is set.
+
 ### Launch OPAL Client with a scope
 
 ```bash
@@ -278,6 +308,19 @@ for a fresh clone.
   libgit2 too, where 0.9 logged an ERROR and ignored it.
 - libgit2's SSH sources need `ssh-keyscan` on `PATH`, unless
   `OPAL_SCOPES_GIT_SSH_KNOWN_HOSTS` is set.
+- A scope's data entries are served and published with their topics as
+  `<scope_id>:data:<topic>` (see [A scope's data sources](#a-scopes-data-sources)).
+  An entry whose topics were written otherwise, such as the default
+  `policy_data`, was dropped by the scope's clients and now loads. A
+  `PUT /scopes` that creates a scope or changes its `data` now makes the
+  scope's connected clients fetch its entries.
+- `GET /scopes/<scope_id>/data` for a scope that is not stored answers an empty
+  configuration, where 0.9 served `OPAL_DATA_CONFIG_SOURCES`'s entries (the
+  redirect to its `external_source_url` is unchanged).
+- `POST /scopes/<scope_id>/data/update` writes its entries' topics as
+  `<scope_id>:data:<topic>`, which the scope's clients take, where 0.9 wrote
+  `data:<topic>`, which they dropped; a topic already starting with
+  `<scope_id>:data:` is kept as it is.
 
 ### OpenShift and other arbitrary user ids
 

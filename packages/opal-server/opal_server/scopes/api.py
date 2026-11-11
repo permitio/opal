@@ -1133,6 +1133,18 @@ def verify_branch_or_throw(scope_in: Scope):
         )
 
 
+def _scoped_data_topics(scope_id: str, topics: List[str]) -> List[str]:
+    """Each topic as a client of the scope subscribes to it.
+
+    That is ``{scope_id}:data:{topic}``; a topic already in that form is
+    kept as it is.
+    """
+    prefix = f"{scope_id}:data:"
+    return [
+        topic if topic.startswith(prefix) else f"{prefix}{topic}" for topic in topics
+    ]
+
+
 def normalize_data_topics_for_scope(
     scope_id: str, config: DataSourceConfig
 ) -> DataSourceConfig:
@@ -1145,13 +1157,9 @@ def normalize_data_topics_for_scope(
     The input config is not modified (the persisted scope keeps the
     operator-authored topic form).
     """
-    prefix = f"{scope_id}:data:"
-    normalized = config.copy(deep=True)
+    normalized = config.model_copy(deep=True)
     for entry in normalized.entries:
-        entry.topics = [
-            topic if topic.startswith(prefix) else f"{prefix}{topic}"
-            for topic in entry.topics
-        ]
+        entry.topics = _scoped_data_topics(scope_id, entry.topics)
     return normalized
 
 
@@ -1234,6 +1242,10 @@ def init_scope_router(
             and old_branch is not None
             and old_branch != scope_in.policy.branch
         )
+        publish_data = bool(
+            data_config_changed and scope_in.data and scope_in.data.entries
+        )
+        data_published = False
         try:
             try:
                 await scopes.put(scope_in)
@@ -1256,6 +1268,30 @@ def init_scope_router(
                             reason="repoint",
                         ).model_dump(),
                     )
+
+            # Notify already-connected scoped clients about the scope's data
+            # source configuration. Clients only fetch /scopes/{scope_id}/data on
+            # (re)connect, so without this publish, a client that connected
+            # before the scope was created (or before its data config changed)
+            # never receives the scope's data sources (issue #779). Entry topics
+            # are namespaced to the `{scope_id}:data:{topic}` form the scoped
+            # client filters by. Published only when the data config is new or
+            # actually changed — mirroring the policy path, which notifies only on
+            # new commits — and as soon as the record is stored: a retry of a
+            # request that fails after this point finds the data stored and
+            # would not publish it.
+            if publish_data:
+                await DataUpdatePublisher(
+                    ServerSideTopicPublisher(pubsub_endpoint)
+                ).publish_data_updates(
+                    DataUpdate(
+                        entries=normalize_data_topics_for_scope(
+                            scope_in.scope_id, scope_in.data
+                        ).entries,
+                        reason=f"Scope '{scope_in.scope_id}' data source configuration updated",
+                    )
+                )
+                data_published = True
 
             force_fetch_str = " (force fetch)" if force_fetch else ""
             logger.info(f"Sync scope: {scope_in.scope_id}{force_fetch_str}")
@@ -1297,27 +1333,15 @@ def init_scope_router(
                     "the notify: clients whose head did not move are not told",
                     scope_id=scope_in.scope_id,
                 )
-            raise
-
-        # Notify already-connected scoped clients about the scope's data source
-        # configuration. Clients only fetch /scopes/{scope_id}/data on (re)connect,
-        # so without this publish, a client that connected before the scope was
-        # created (or before its data config changed) never receives the scope's
-        # data sources (issue #779). Entry topics are namespaced to the
-        # `{scope_id}:data:{topic}` form the scoped client filters by. Published
-        # only when the data config is new or actually changed — mirroring the
-        # policy path, which notifies only on new commits.
-        if data_config_changed and scope_in.data and scope_in.data.entries:
-            await DataUpdatePublisher(
-                ServerSideTopicPublisher(pubsub_endpoint)
-            ).publish_data_updates(
-                DataUpdate(
-                    entries=normalize_data_topics_for_scope(
-                        scope_in.scope_id, scope_in.data
-                    ).entries,
-                    reason=f"Scope '{scope_in.scope_id}' data source configuration updated",
+            if publish_data and not data_published:
+                logger.warning(
+                    "The data update of scope {scope_id} was not published: the "
+                    "request failed before it. If the record was stored, a retry "
+                    "will not publish it either: the scope's connected clients get "
+                    "its new data entries when they next connect",
+                    scope_id=scope_in.scope_id,
                 )
-            )
+            raise
 
         return Response(status_code=status.HTTP_201_CREATED)
 
@@ -1861,7 +1885,7 @@ def init_scope_router(
             restrict_optional_topics_to_publish(authenticator, claims, update)
 
             for entry in update.entries:
-                entry.topics = [f"{scope_id}:data:{topic}" for topic in entry.topics]
+                entry.topics = _scoped_data_topics(scope_id, entry.topics)
 
             await DataUpdatePublisher(
                 ServerSideTopicPublisher(pubsub_endpoint)
