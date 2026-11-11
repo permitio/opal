@@ -971,3 +971,65 @@ def test_the_overlay_keeps_the_release_and_labels_it():
     ) in dockerfile
     assert 'LABEL ac.opal.rebuilt-from="${RELEASE_IMAGE}"' in dockerfile
     assert dockerfile.rstrip().endswith("USER opal")
+
+
+class TestMutation:
+    """mutation.yml: the capped gate on a pull request's lines, and the weekly
+    full run."""
+
+    @pytest.fixture
+    def workflow(self):
+        return load(WORKFLOWS / "mutation.yml")
+
+    def test_runs_on_pull_requests_that_change_package_code_and_weekly(self, workflow):
+        triggers = workflow[True]
+
+        assert set(triggers) == {"pull_request", "schedule", "workflow_dispatch"}
+        assert triggers["pull_request"]["paths"] == ["packages/**/*.py"]
+
+    def test_a_pull_request_runs_the_gate_on_its_lines_and_the_rest_runs_in_full(
+        self, workflow
+    ):
+        runs = {
+            step["if"]: step["run"]
+            for step in steps_of(workflow["jobs"]["mutation"])
+            if "mutation_gate.py" in step.get("run", "")
+        }
+
+        assert runs == {
+            "github.event_name == 'pull_request'": (
+                '.github/scripts/mutation_gate.py --base "$BASE" --summary '
+                '"$GITHUB_STEP_SUMMARY"'
+            ),
+            "github.event_name != 'pull_request'": (
+                '.github/scripts/mutation_gate.py --full --summary "$GITHUB_STEP_SUMMARY"'
+            ),
+        }
+
+    def test_installs_the_coverage_tools_the_script_tests_pin(self, workflow):
+        pinned = (
+            WORKFLOWS.parent / "scripts" / "tests" / "requirements.in"
+        ).read_text()
+        (install,) = [
+            step["run"]
+            for step in steps_of(workflow["jobs"]["mutation"])
+            if "pytest-cov==" in step.get("run", "")
+        ]
+
+        for tool in re.findall(r"(?:pytest-cov|coverage)==[\d.]+", install):
+            assert tool in pinned
+
+    def test_installs_the_opa_the_unit_tests_use(self, workflow):
+        """Without it the inline-OPA tests skip, and their lines look
+        uncovered."""
+        tests = load(WORKFLOWS / "tests.yml")["jobs"]["build"]
+        mutation = workflow["jobs"]["mutation"]
+
+        def opa(job):
+            (step,) = [
+                s for s in steps_of(job) if s.get("name", "").startswith("Install OPA")
+            ]
+            return step
+
+        assert opa(mutation)["run"] == opa(tests)["run"]
+        assert opa(mutation)["env"] == opa(tests)["env"]

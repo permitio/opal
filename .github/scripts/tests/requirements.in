@@ -4,3 +4,5 @@
 #     .github/scripts/tests/requirements.in -o .github/scripts/tests/requirements.txt
 pytest==9.2.0
 pyyaml==6.0.3
+coverage==7.17.0
+pytest-cov==7.1.0
