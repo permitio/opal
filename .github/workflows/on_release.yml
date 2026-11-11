@@ -438,17 +438,12 @@ jobs:
           done
 
   # On a release only, once every image and package passed: the tested sdists and wheels go to
-  # the release's assets and to PyPI.
-  publish-packages:
+  # the release's assets (release-assets) and to PyPI (publish-packages).
+  release-assets:
     if: github.event_name == 'release'
     needs: [version, test-images, test-packages]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    # PYPI_TOKEN is still a repository secret that any workflow can read; moved into this
-    # environment, it would be readable by this job only.
-    environment:
-      name: pypi
-      url: https://pypi.org/p/opal-common/
     permissions:
       contents: write  # upload the dists to the release
     steps:
@@ -468,15 +463,34 @@ jobs:
             packages/opal-client/dist/*
             packages/opal-server/dist/*
 
-      # Publish package distributions to PyPI
-      # skip-existing allows re-runs to succeed if some files were already uploaded
-      # verbose enables detailed error messages from PyPI for debugging upload failures
-      # The PyPI token stays until trusted publishing is set up for the three projects; that
-      # is its own change.
+  # Trusted publishing: PyPI accepts an OIDC token of this workflow in the pypi environment,
+  # which each of the three projects lists as its trusted publisher. No PyPI token is stored.
+  # Every step of a job that may mint that token could publish, so this job holds nothing else
+  # and runs only the artifact download and the publish action; the release assets are
+  # release-assets' job, with no OIDC token.
+  publish-packages:
+    if: github.event_name == 'release'
+    needs: [version, test-images, test-packages]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment:
+      name: pypi
+      url: https://pypi.org/p/opal-common/
+    permissions:
+      id-token: write  # the OIDC token PyPI exchanges for a short-lived upload token
+    steps:
+      - name: Fetch the packages
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: packages
+          path: packages
+
+      # Publish package distributions to PyPI, each with the attestation the action makes with
+      # trusted publishing. skip-existing allows re-runs to succeed if some files were already
+      # uploaded; verbose enables detailed error messages from PyPI for debugging upload failures.
       - name: Publish package distributions to PyPI - Opal-Common
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
         with:
-          password: ${{ secrets.PYPI_TOKEN }}  # zizmor: ignore[use-trusted-publishing] see above
           packages-dir: packages/opal-common/dist/
           skip-existing: true
           verbose: true
@@ -484,7 +498,6 @@ jobs:
       - name: Publish package distributions to PyPI - Opal-Client
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
         with:
-          password: ${{ secrets.PYPI_TOKEN }}  # zizmor: ignore[use-trusted-publishing] see above
           packages-dir: packages/opal-client/dist/
           skip-existing: true
           verbose: true
@@ -492,7 +505,6 @@ jobs:
       - name: Publish package distributions to PyPI - Opal-Server
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
         with:
-          password: ${{ secrets.PYPI_TOKEN }}  # zizmor: ignore[use-trusted-publishing] see above
           packages-dir: packages/opal-server/dist/
           skip-existing: true
           verbose: true

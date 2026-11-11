@@ -49,7 +49,8 @@ RELEASE_IMAGES = {
 # Every write permission a job has: (workflow, job, scope).
 WRITE_PERMISSIONS = {
     ("tests.yml", "dependency-review", "pull-requests"),
-    ("on_release.yml", "publish-packages", "contents"),
+    ("on_release.yml", "release-assets", "contents"),
+    ("on_release.yml", "publish-packages", "id-token"),
 }
 
 SHA_PIN = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
@@ -430,3 +431,41 @@ class TestRelease:
         }
 
         assert publishers == {"publish-packages"}
+
+    def test_publishes_to_pypi_with_trusted_publishing(self, jobs):
+        """An OIDC token of the pypi environment, never a stored PyPI token."""
+        job = jobs["publish-packages"]
+        publish_steps = [
+            step
+            for step in steps_of(job)
+            if step.get("uses", "").startswith("pypa/gh-action-pypi-publish@")
+        ]
+
+        assert job["permissions"]["id-token"] == "write"
+        assert publish_steps
+        for step in publish_steps:
+            assert "password" not in step.get("with", {})
+        text = (WORKFLOWS / "on_release.yml").read_text()
+        assert "PYPI_TOKEN" not in text
+        assert "use-trusted-publishing" not in text
+
+    def test_the_pypi_token_job_runs_nothing_but_the_publish_action(self, jobs):
+        """Every step of a job with id-token: write can mint the token PyPI accepts."""
+        job = jobs["publish-packages"]
+
+        assert job["permissions"] == {"id-token": "write"}
+        for step in steps_of(job):
+            assert "run" not in step, step
+            assert step["uses"].startswith(
+                ("actions/download-artifact@", "pypa/gh-action-pypi-publish@")
+            ), step
+
+    def test_the_release_assets_job_writes_the_release_without_an_oidc_token(
+        self, jobs
+    ):
+        job = jobs["release-assets"]
+
+        assert job["if"] == "github.event_name == 'release'"
+        assert {"test-images", "test-packages"} <= set(job["needs"])
+        assert job["permissions"] == {"contents": "write"}
+        assert "environment" not in job
