@@ -477,6 +477,7 @@ class TestGitCliInImage:
             "git_config_isolation_test.py",
             "git_repack_test.py",
             "default_fetch_backend_test.py",
+            "git_host_keys_test.py",
         } <= files
         for name in files:
             assert (self.TESTS / name).is_file(), name

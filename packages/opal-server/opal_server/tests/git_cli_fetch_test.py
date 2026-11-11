@@ -838,28 +838,33 @@ async def test_a_source_with_nothing_to_give_a_server_that_asks_is_counted_and_b
 # server.py's own startup handlers use FastAPI's deprecated on_event; not what
 # this test is about.
 @pytest.mark.filterwarnings("ignore:\\s*on_event is deprecated:DeprecationWarning")
-def test_the_server_starts_with_known_hosts_and_the_cli_off_and_logs_an_error(
-    tmp_path, monkeypatch
+@pytest.mark.parametrize("readable", [True, False], ids=["readable", "missing"])
+def test_with_known_hosts_and_the_cli_off_a_server_starts_only_if_it_can_read_it(
+    readable, tmp_path, monkeypatch
 ):
-    """Turning the CLI fetch off must not stop a server that also has
-    SCOPES_GIT_SSH_KNOWN_HOSTS set (it would crash-loop every pod)."""
+    """Turning the CLI fetch off keeps a server with a readable
+    SCOPES_GIT_SSH_KNOWN_HOSTS starting (libgit2 checks host keys against it
+    too); one it cannot read stops the server, as with the CLI fetch on."""
     import opal_server.server as server_module
 
-    # The capture sink would go with every other handler.
     monkeypatch.setattr(server_module, "configure_logs", lambda: None)
-    path = tmp_path / "missing_known_hosts"
+    path = tmp_path / "known_hosts"
+    if readable:
+        path.write_text("")
     monkeypatch.setattr(opal_server_config, "SCOPES", True)
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", False)
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_SSH_KNOWN_HOSTS", str(path))
-    records = []
-    sink = logger.add(lambda m: records.append(m.record), level="ERROR")
-    try:
+
+    def _start():
         server_module.OpalServer(
             init_policy_watcher=False, broadcaster_uri=None, enable_jwks_endpoint=False
         )
-    finally:
-        logger.remove(sink)
-    assert any("SCOPES_GIT_SSH_KNOWN_HOSTS" in r["message"] for r in records)
+
+    if readable:
+        _start()
+        return
+    with pytest.raises(ValueError, match="no readable file"):
+        _start()
 
 
 def test_the_scope_preload_fails_before_any_sync_on_an_unreadable_known_hosts(

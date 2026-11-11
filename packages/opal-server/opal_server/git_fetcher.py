@@ -43,7 +43,7 @@ from ddtrace import tracer
 from git import Repo
 from opal_common.async_utils import run_sync
 from opal_common.git_utils.bundle_maker import BundleMaker
-from opal_common.http_utils import redact_url
+from opal_common.http_utils import redact_sensitive_text, redact_url
 from opal_common.logger import logger
 from opal_common.monitoring import metrics
 from opal_common.schemas.policy import PolicyBundle
@@ -57,11 +57,15 @@ from opal_server.config import opal_server_config
 from opal_server.git_cli import (
     GitCliBusyError,
     GitCliError,
+    GitCliHostKeyError,
     GitCliLocalError,
     GitCliRefusedSourceError,
     cli_clone,
     cli_fetch,
     clone_timeout,
+    host_key_record,
+    known_hosts_file,
+    known_hosts_problem,
 )
 from pygit2 import (
     KeypairFromMemory,
@@ -97,6 +101,15 @@ class CredentialsNotGivenError(pygit2.GitError):
 
     Raised from the callback, kept by pygit2 and raised again from the
     clone or fetch, where it counts as a git error.
+    """
+
+
+class HostKeyRefusedError(pygit2.GitError):
+    """The git host's SSH key, refused by libgit2: not the one recorded for the
+    host, or, with SCOPES_GIT_SSH_KNOWN_HOSTS set, not in that file.
+
+    Raised from GitCallback.certificate_check, kept by pygit2 and raised
+    again from the clone or fetch.
     """
 
 
@@ -3320,6 +3333,9 @@ class GitPolicyFetcher(PolicyFetcher):
                                 self._skip_busy(exc)
                             except GitCliLocalError as exc:
                                 self._count_local_failure("fetch", exc)
+                            except (GitCliHostKeyError, HostKeyRefusedError) as exc:
+                                self._count_host_key_refusal("fetch", exc)
+                                return
                             except TimeoutError as exc:
                                 # Expected when a repo is unreachable: log cleanly
                                 # (no traceback) and skip, matching the clone path.
@@ -3998,26 +4014,28 @@ class GitPolicyFetcher(PolicyFetcher):
         """
         timeout = opal_server_config.SCOPES_GIT_FETCH_TIMEOUT
         if git_cli_enabled():
-            await run_git_cli_op(
-                partial(
-                    cli_fetch,
-                    self._repo_path,
-                    self._remote,
-                    self._source,
-                    prune=bool(opal_server_config.SCOPES_GIT_FETCH_PRUNE),
+            async with self._noting_a_recorded_host_key():
+                await run_git_cli_op(
+                    partial(
+                        cli_fetch,
+                        self._repo_path,
+                        self._remote,
+                        self._source,
+                        prune=bool(opal_server_config.SCOPES_GIT_FETCH_PRUNE),
+                        timeout=timeout,
+                    ),
                     timeout=timeout,
-                ),
-                timeout=timeout,
-                busy_key=self._source_id,
-                marker_dir=hung_marker_dir(self._repo_path),
-                mark_when_hung=reclone_hung_enabled(),
-            )
+                    busy_key=self._source_id,
+                    marker_dir=hung_marker_dir(self._repo_path),
+                    mark_when_hung=reclone_hung_enabled(),
+                )
             return
         # What a git op whose process died left in the clone (a repack's
         # pack-refs killed with its container, say), as a git command-line
         # fetch removes it first: a stale packed-refs.lock or ref lock fails
         # every libgit2 fetch that has to update or prune that ref.
         await run_sync(git_cli.clean_up_unfinished_op, self._repo_path)
+        await self._prepare_libgit2_ssh()
         await run_in_git_executor(
             repo.remotes[self._remote].fetch,
             callbacks=self._auth_callbacks,
@@ -4038,30 +4056,32 @@ class GitPolicyFetcher(PolicyFetcher):
         (within SCOPES_GIT_FETCH_TIMEOUT); a handle on the clone."""
         if git_cli_enabled():
             timeout = clone_timeout()
-            await run_git_cli_op(
-                partial(
-                    cli_clone,
-                    self._source.url,
-                    self._repo_path,
-                    self._source,
-                    remote=self._remote,
+            async with self._noting_a_recorded_host_key():
+                await run_git_cli_op(
+                    partial(
+                        cli_clone,
+                        self._source.url,
+                        self._repo_path,
+                        self._source,
+                        remote=self._remote,
+                        timeout=timeout,
+                    ),
                     timeout=timeout,
-                ),
-                timeout=timeout,
-                busy_key=self._source_id,
-                marker_dir=hung_marker_dir(self._repo_path),
-                mark_when_hung=reclone_hung_enabled(),
-                # No longer than a fetch's: clones of remotes that never
-                # answer would hold every slot for the clone timeout, and
-                # every other git op of this process would wait behind them.
-                slot_timeout=opal_server_config.SCOPES_GIT_FETCH_TIMEOUT,
-            )
+                    busy_key=self._source_id,
+                    marker_dir=hung_marker_dir(self._repo_path),
+                    mark_when_hung=reclone_hung_enabled(),
+                    # No longer than a fetch's: clones of remotes that never
+                    # answer would hold every slot for the clone timeout, and
+                    # every other git op of this process would wait behind them.
+                    slot_timeout=opal_server_config.SCOPES_GIT_FETCH_TIMEOUT,
+                )
             try:
                 return await run_sync(Repository, str(self._repo_path))
             except pygit2.GitError as e:
                 raise GitCliLocalError(
                     128, f"fatal: cannot open the new clone: {e}"
                 ) from None
+        await self._prepare_libgit2_ssh()
         return await run_in_git_executor(
             clone_repository,
             self._source.url,
@@ -4072,6 +4092,89 @@ class GitPolicyFetcher(PolicyFetcher):
             busy_key=self._source_id,
             marker_dir=hung_marker_dir(self._repo_path),
             mark_when_hung=reclone_hung_enabled(),
+        )
+
+    def _host_key_file(self) -> Path:
+        """Where the host keys this source's SSH ops check are."""
+        strict = known_hosts_file()
+        if strict is not None:
+            return Path(strict)
+        if git_cli_enabled():
+            return host_key_record(self._repo_path)
+        return libgit2_known_hosts(self._repo_path.parent)
+
+    def _log_recorded_host_key(self, name: str) -> None:
+        logger.info(
+            "Recorded the SSH host key of {host} for {source_id} in {path}",
+            host=name,
+            source_id=self._source_id,
+            path=self._host_key_file(),
+        )
+
+    @asynccontextmanager
+    async def _noting_a_recorded_host_key(self):
+        """Around a git command-line op: log a host key ssh recorded for the
+        clone (trust on first use) during it, whatever its outcome."""
+        host_port = ssh_host_port(self._source.url)
+        if host_port is None or known_hosts_file() is not None:
+            yield
+            return
+        record = host_key_record(self._repo_path)
+
+        def _recorded() -> bool:
+            try:
+                return record.stat().st_size > 0
+            except FileNotFoundError:
+                return False
+
+        before = await run_sync(_recorded)
+        try:
+            yield
+        finally:
+            if not before and await run_sync(_recorded):
+                self._log_recorded_host_key(_known_hosts_name(*host_port))
+
+    async def _prepare_libgit2_ssh(self) -> None:
+        """Before a libgit2 op: its SSH host keys (see prepare_libgit2_ssh)."""
+        recorded = await run_sync(
+            prepare_libgit2_ssh, self._repo_path.parent, self._source.url
+        )
+        if recorded is not None:
+            self._log_recorded_host_key(recorded)
+
+    def _count_host_key_refusal(self, op: str, err: Exception) -> None:
+        """The git host's SSH key was refused: counted, backed off (only a
+        change on the host's side, or a reset of its record, fixes it), and
+        logged with the file to reset."""
+        metrics.increment(
+            "opal_server.scopes.git_op_failures", tags={"op": op, "reason": "host_key"}
+        )
+        self._record_source_failure(err)
+        path = self._host_key_file()
+        refresh = (
+            f"then refresh scope {self._scope_id} (POST "
+            f"/scopes/{self._scope_id}/refresh), whose fetch records the new key"
+        )
+        if known_hosts_file() is not None:
+            how = f"it is not in SCOPES_GIT_SSH_KNOWN_HOSTS ({path})"
+        elif git_cli_enabled():
+            how = (
+                f"it is not the one recorded in {path}; if the host's key did "
+                f"change, delete that file on each server, {refresh}"
+            )
+        else:
+            how = (
+                f"it is not one recorded in {path}; if the host's key did change, "
+                f"delete the host's lines there on each server, {refresh}"
+            )
+        logger.error(
+            "Could not {op} {url} for scope {scope}: the git host's SSH key was "
+            "refused, as {how}: {err}",
+            op=op,
+            url=redact_url(self._source.url),
+            scope=self._scope_id,
+            how=how,
+            err=repr(err),
         )
 
     def _skip_locked_delete(self) -> None:
@@ -4118,6 +4221,8 @@ class GitPolicyFetcher(PolicyFetcher):
             self._skip_busy(exc)
         except GitCliLocalError as exc:
             self._count_local_failure("clone", exc)
+        except (GitCliHostKeyError, HostKeyRefusedError) as exc:
+            self._count_host_key_refusal("clone", exc)
         except (pygit2.GitError, GitCliError, TimeoutError) as exc:
             metrics.increment(
                 "opal_server.scopes.git_op_failures",
@@ -4577,6 +4682,234 @@ class GitPolicyFetcher(PolicyFetcher):
         GitPolicyFetcher.repo_locks.clear()
 
 
+# --- SSH host keys of the libgit2 fetch ----------------------------------------
+#
+# libgit2 checks an SSH host's key against <its home>/.ssh/known_hosts, its home
+# being one for the whole process. With SCOPES_GIT_SSH_KNOWN_HOSTS unset (trust
+# on first use) the home is this directory of the clones' directory, whose
+# known_hosts holds, per host and port, every key ssh-keyscan read from the
+# host the first time; with it set, the "strict" directory in it, whose
+# known_hosts is a link to the configured file.
+LIBGIT2_HOME = ".libgit2-home"
+_LIBGIT2_STRICT_HOME = "strict"
+_KEYSCAN_TYPES = "ed25519,ecdsa,rsa"
+_KEYSCAN_CONNECT_SECONDS = 10
+_KEYSCAN_TIMEOUT_SECONDS = 60
+_SSH_URL_SCHEMES = ("ssh", "git+ssh", "ssh+git")
+_KEYSCAN_STDERR_TAIL_CHARS = 300
+# libgit2's home is one for the whole process: set by one thread at a time.
+_libgit2_home_lock = threading.Lock()
+# One ssh-keyscan at a time per host and port in this process; the file lock
+# beside the known_hosts orders the writes of processes.
+_keyscan_locks: Dict[Tuple[str, int], threading.Lock] = {}
+_keyscan_locks_lock = threading.Lock()
+
+
+def libgit2_known_hosts(clones_dir: Path) -> Path:
+    """The known_hosts file libgit2 checks SSH host keys against for the clones
+    in ``clones_dir``; absolute, as libgit2's home must be."""
+    home = Path(os.path.abspath(clones_dir)) / LIBGIT2_HOME
+    if known_hosts_file() is not None:
+        home = home / _LIBGIT2_STRICT_HOME
+    return home / ".ssh" / "known_hosts"
+
+
+def ssh_host_port(url: str) -> Optional[Tuple[str, int]]:
+    """The host, as the URL writes it (libgit2 looks it up that way), and the
+    port an SSH source's URL names (ssh://, git+ssh://, ssh+git:// or git's
+    scp-like ``[user@]host:path``); None for another URL, or one with no
+    host."""
+    scheme, sep, _ = url.partition("://")
+    if sep:
+        if scheme.lower() not in _SSH_URL_SCHEMES:
+            return None
+        try:
+            parts = urlsplit(url)
+            port = parts.port or 22
+        except ValueError:
+            return None
+        written = parts.netloc.rpartition("@")[2]
+        if written.startswith("["):
+            host = written[1 : written.find("]")]
+        else:
+            host = written.split(":", 1)[0]
+        return (host, port) if host else None
+    colon, slash, bracket = url.find(":"), url.find("/"), url.find("[")
+    if bracket != -1 and bracket < colon:
+        # [user@][IPv6 address]:path
+        end = url.find("]", bracket)
+        if end == -1 or url[end + 1 : end + 2] != ":":
+            return None
+        return (url[bracket + 1 : end], 22)
+    if colon <= 0 or (slash != -1 and slash < colon):
+        return None
+    host = url[:colon].rpartition("@")[2]
+    return (host, 22) if host else None
+
+
+def _known_hosts_name(host: str, port: int) -> str:
+    """How known_hosts (and ssh-keyscan) names ``host`` on ``port``."""
+    return host if port == 22 else f"[{host}]:{port}"
+
+
+def _names_host(known_hosts: Path, name: str) -> bool:
+    try:
+        lines = known_hosts.read_text().splitlines()
+    except FileNotFoundError:
+        return False
+    return any(
+        name in line.split(maxsplit=1)[0].split(",")
+        for line in lines
+        if line.strip() and not line.startswith("#")
+    )
+
+
+def _point_libgit2_home_at(known_hosts: Path) -> None:
+    """Make ``known_hosts``'s directory (0700) and its home libgit2's."""
+    known_hosts.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    home = str(known_hosts.parent.parent)
+    if pygit2.settings.homedir != home:
+        pygit2.settings.homedir = home
+
+
+def _link_strict_known_hosts(link: Path, target: str) -> None:
+    """``link`` a link to ``target``, replaced in one step when it points
+    elsewhere, so libgit2 reads the configured file as it is on each op."""
+    if os.path.islink(link) and os.readlink(link) == target:
+        return
+    new = link.with_name(f"{link.name}.{secrets.token_hex(4)}")
+    os.symlink(target, new)
+    os.replace(new, link)
+
+
+def _keyscan_lock(host: str, port: int) -> threading.Lock:
+    with _keyscan_locks_lock:
+        return _keyscan_locks.setdefault((host.lower(), port), threading.Lock())
+
+
+def _keyscan(host: str, port: int) -> List[str]:
+    """The host's key lines, as ssh-keyscan reads them, named as libgit2 looks
+    the host up: as the URL writes it (ssh-keyscan writes it in lower case).
+
+    Raises:
+        GitCliLocalError: there is no ssh-keyscan, or it cannot run.
+        TimeoutError: it ran past _KEYSCAN_TIMEOUT_SECONDS.
+        pygit2.GitError: it read no key from the host.
+    """
+    keyscan = shutil.which("ssh-keyscan")
+    if keyscan is None:
+        raise GitCliLocalError(
+            127,
+            "fatal: there is no ssh-keyscan on PATH, which records an SSH host's "
+            "key for libgit2 the first time",
+        )
+    name = _known_hosts_name(host, port)
+    argv = [
+        keyscan,
+        "-T",
+        str(_KEYSCAN_CONNECT_SECONDS),
+        "-p",
+        str(port),
+        "-t",
+        _KEYSCAN_TYPES,
+        "--",
+        host,
+    ]
+    try:
+        done = subprocess.run(
+            argv,
+            capture_output=True,
+            text=True,
+            timeout=_KEYSCAN_TIMEOUT_SECONDS,
+            env={"PATH": os.environ.get("PATH", "")},
+        )
+    except subprocess.TimeoutExpired:
+        raise TimeoutError(
+            f"ssh-keyscan of {name} ran past {_KEYSCAN_TIMEOUT_SECONDS} seconds"
+        ) from None
+    except (OSError, subprocess.SubprocessError) as e:
+        raise GitCliLocalError(127, f"fatal: ssh-keyscan failed: {e}") from None
+    scanned = _known_hosts_name(host.lower(), port)
+    keys = []
+    for line in done.stdout.splitlines():
+        fields = line.split(maxsplit=1)
+        if len(fields) == 2 and fields[0].lower() == scanned:
+            keys.append(f"{name} {fields[1]}")
+    if not keys:
+        said = redact_sensitive_text(done.stderr.strip())[-_KEYSCAN_STDERR_TAIL_CHARS:]
+        raise pygit2.GitError(
+            f"ssh-keyscan read no SSH host key from {name}"
+            + (f": {said}" if said else "")
+        )
+    return keys
+
+
+def _append_unless_named(known_hosts: Path, name: str, keys: List[str]) -> bool:
+    """Append ``keys`` to ``known_hosts`` unless it names ``name`` by now (an
+    op of another process recorded it), under the file lock beside it, each on
+    a line of its own; whether it did."""
+    lock_path = known_hosts.with_name(f"{known_hosts.name}.lock")
+    with open(lock_path, "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if _names_host(known_hosts, name):
+            return False
+        with open(known_hosts, "a+") as f:
+            end = f.seek(0, os.SEEK_END)
+            newline = ""
+            if end > 0:
+                f.seek(end - 1)
+                newline = "" if f.read(1) == "\n" else "\n"
+            f.write(newline + "".join(f"{key}\n" for key in keys))
+    return True
+
+
+def prepare_libgit2_ssh(clones_dir: Path, url: str) -> Optional[str]:
+    """Before a libgit2 op on ``url``, an SSH source's: point libgit2's home at
+    the known_hosts of ``clones_dir`` and, with host keys trusted on first use,
+    record the host's keys there if they are not yet. Nothing for another
+    source.
+
+    Only one ssh-keyscan of a host and port runs at a time in the process;
+    an op on another host, or on one recorded already, does not wait for it.
+
+    Returns:
+        The host's known_hosts name, when its keys were recorded now.
+
+    Raises:
+        GitCliLocalError: SCOPES_GIT_SSH_KNOWN_HOSTS cannot be read, the
+            home cannot be set up, or there is no ssh-keyscan.
+        TimeoutError: ssh-keyscan ran past its bound.
+        pygit2.GitError: ssh-keyscan read no key from the host.
+    """
+    host_port = ssh_host_port(url)
+    if host_port is None:
+        return None
+    known_hosts = libgit2_known_hosts(clones_dir)
+    strict = known_hosts_file()
+    name = _known_hosts_name(*host_port)
+    try:
+        with _libgit2_home_lock:
+            _point_libgit2_home_at(known_hosts)
+            if strict is not None:
+                problem = known_hosts_problem()
+                if problem is not None:
+                    raise GitCliLocalError(128, f"fatal: {problem}")
+                _link_strict_known_hosts(known_hosts, strict)
+        if strict is not None or _names_host(known_hosts, name):
+            return None
+        with _keyscan_lock(*host_port):
+            if _names_host(known_hosts, name):
+                return None
+            keys = _keyscan(*host_port)
+            return name if _append_unless_named(known_hosts, name, keys) else None
+    except TimeoutError:
+        raise
+    except OSError as e:
+        raise GitCliLocalError(
+            128, f"fatal: cannot set up libgit2's SSH host keys: {e}"
+        ) from None
+
+
 _DEFAULT_PORTS = {"http": 80, "https": 443}
 
 
@@ -4659,6 +4992,26 @@ class GitCallback(RemoteCallbacks):
     def __init__(self, source: GitPolicyScopeSource):
         super().__init__()
         self._source = source
+
+    def certificate_check(self, certificate: None, valid: bool, host: bytes) -> bool:
+        """The verdict of libgit2: for an SSH source, on the host's key against the
+        known_hosts prepare_libgit2_ssh points it at; for another source, on
+        its TLS certificate (or on an SSH key no record names).
+
+        Raises:
+            HostKeyRefusedError: the host's SSH key is not in that file.
+        """
+        if ssh_host_port(self._source.url) is None:
+            # libgit2's verdict: for TLS what pygit2 does without this
+            # callback; for an SSH connection of a URL that names no host
+            # here, a refusal (nothing recorded it).
+            return bool(valid)
+        if not valid:
+            raise HostKeyRefusedError(
+                f"the SSH host key of {host.decode(errors='replace')} is not the "
+                "one known for it"
+            )
+        return True
 
     def credentials(
         self,

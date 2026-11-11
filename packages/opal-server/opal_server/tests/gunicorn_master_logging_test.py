@@ -29,6 +29,7 @@ from opal_common.confi.confi import describe_settings_source
 from opal_common.config import opal_common_config
 from opal_common.http_utils import redact_url
 from opal_common.logger import configure_logs
+from opal_server import git_cli
 from opal_server.config import opal_server_config
 from uvicorn.config import LOGGING_CONFIG
 
@@ -404,23 +405,23 @@ def test_preload_scopes_configures_logging_when_nothing_did(
     assert opal_logger.logs_configured()
 
 
-def _ignored_known_hosts(monkeypatch, tmp_path) -> None:
-    """Settings on which the git settings check logs an ERROR (an ignored
-    SCOPES_GIT_SSH_KNOWN_HOSTS, in scopes mode) and starts the server all the
-    same."""
+def _logged_git_settings(monkeypatch, tmp_path) -> None:
+    """Settings on which the git settings check logs an ERROR (in scopes mode,
+    a uid with no entry in the user database, which ssh needs) and starts the
+    server all the same."""
+
+    def no_entry(uid):
+        raise KeyError(f"getpwuid(): uid not found: {uid}")
+
     monkeypatch.setattr(opal_server_config, "SCOPES", True)
-    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", False)
-    monkeypatch.setattr(
-        opal_server_config, "SCOPES_GIT_SSH_KNOWN_HOSTS", str(tmp_path / "known")
-    )
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", True)
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_SSH_KNOWN_HOSTS", None)
+    monkeypatch.setattr(opal_server_config, "BASE_DIR", str(tmp_path / "base"))
+    monkeypatch.setattr(git_cli.pwd, "getpwuid", no_entry)
 
 
-def _known_hosts_errors(records) -> list:
-    return [
-        m
-        for level, m in records
-        if level == "ERROR" and "SCOPES_GIT_SSH_KNOWN_HOSTS" in m
-    ]
+def _git_settings_errors(records) -> list:
+    return [m for level, m in records if level == "ERROR" and "user database" in m]
 
 
 def test_preload_scopes_checks_the_git_settings_once_logging_is_configured(
@@ -433,13 +434,13 @@ def test_preload_scopes_checks_the_git_settings_once_logging_is_configured(
     Mutation: checking before configuring sends the check's ERROR there.
     """
     monkeypatch.setattr(opal_server_config, "SCOPES", True)
-    _ignored_known_hosts(monkeypatch, tmp_path)
+    _logged_git_settings(monkeypatch, tmp_path)
 
     with master_logs.streams():
         task_module.ScopesPolicyWatcherTask.preload_scopes()
 
-    assert _known_hosts_errors(master_logs.default_records) == []
-    assert len(_known_hosts_errors(master_logs.configured())) == 1
+    assert _git_settings_errors(master_logs.default_records) == []
+    assert len(_git_settings_errors(master_logs.configured())) == 1
 
 
 # server.py's own startup handlers use FastAPI's deprecated on_event; not what
@@ -456,15 +457,15 @@ def test_a_server_checks_the_git_settings_once_logging_is_configured(
     """
     import opal_server.server as server_module
 
-    _ignored_known_hosts(monkeypatch, tmp_path)
+    _logged_git_settings(monkeypatch, tmp_path)
 
     with master_logs.streams():
         server_module.OpalServer(
             init_policy_watcher=False, broadcaster_uri=None, enable_jwks_endpoint=False
         )
 
-    assert _known_hosts_errors(master_logs.default_records) == []
-    assert len(_known_hosts_errors(master_logs.configured())) == 1
+    assert _git_settings_errors(master_logs.default_records) == []
+    assert len(_git_settings_errors(master_logs.configured())) == 1
 
 
 def test_preload_scopes_keeps_logging_already_configured(

@@ -141,6 +141,32 @@ selects it, and with it `OPAL_SCOPES_REPO_CLONES_SHARDS` clones per
 repository. The reference entry of that setting lists what the two backends
 do differently.
 
+### SSH host keys
+
+An SSH source's host key is trusted on first use: the first fetch or clone
+records it, and a later op refuses a different key. The fetch fails with
+reason `host_key` in `opal_server.scopes.git_op_failures`, the source is
+backed off, and the server logs an ERROR that names the record:
+
+- the git command line keeps one record per clone, beside it in
+  `OPAL_BASE_DIR`'s `git_sources` directory (`.<clone>.known_hosts`), with
+  the key of the type ssh negotiated;
+- libgit2 keeps one for all clones, `git_sources/.libgit2-home/.ssh/known_hosts`,
+  with each key `ssh-keyscan` reads from the host the first time (it needs
+  `ssh-keyscan` on `PATH`), under the host's name as the source's URL writes
+  it.
+
+A clone made again keeps its record. When a host does change its key, delete
+its record (with libgit2, the host's lines in it) on each server, then refresh
+the scope (`POST /scopes/<scope_id>/refresh`, or a `PUT` of the scope): the
+source stays backed off until then, and that fetch records the new key. On
+Kubernetes with the clones on an `emptyDir`, a new pod starts with no record,
+so a rollout records every host again.
+
+[`OPAL_SCOPES_GIT_SSH_KNOWN_HOSTS`](/getting-started/configuration#opal_scopes_git_ssh_known_hosts)
+replaces trust on first use, with either backend: only the hosts and keys in
+that file are accepted, and nothing is recorded.
+
 ### Upgrading from 0.9
 
 0.9 fetched with libgit2 unless `OPAL_SCOPES_GIT_FETCH_WITH_CLI` was on. From
@@ -170,6 +196,17 @@ do differently.
 - git reads neither the system's nor the user's git config (a `url.insteadOf`
   there no longer applies), and OpenSSH refuses a git server that offers only
   an `ssh-rsa` host key, which libgit2 accepted.
+- SSH host keys are trusted on first use with both backends (see above),
+  where 0.9 accepted any key unless `OPAL_SCOPES_GIT_SSH_KNOWN_HOSTS` was set
+  with the git command line. A host behind a load balancer whose nodes have
+  different keys fails on the nodes whose key was not recorded.
+- A server in scopes mode does not start when `OPAL_BASE_DIR`'s `git_sources`
+  path holds whitespace, `%`, `$`, a quote or a backslash (the git command
+  line, without `OPAL_SCOPES_GIT_SSH_KNOWN_HOSTS`), or `:` or `$` (libgit2).
+- An `OPAL_SCOPES_GIT_SSH_KNOWN_HOSTS` that cannot be read stops a server on
+  libgit2 too, where 0.9 logged an ERROR and ignored it.
+- libgit2's SSH sources need `ssh-keyscan` on `PATH`, unless
+  `OPAL_SCOPES_GIT_SSH_KNOWN_HOSTS` is set.
 
 ### OpenShift and other arbitrary user ids
 

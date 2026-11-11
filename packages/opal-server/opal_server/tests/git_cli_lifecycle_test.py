@@ -1441,7 +1441,9 @@ def test_the_sweep_leaves_the_key_dir_of_an_op_under_way(tmp_path, monkeypatch):
         auth=SSHAuthData(username="git", private_key="key"),
     )
 
-    with git_cli._git_env(source, git_cli._remote_for_git(url, source)) as (env, _):
+    with git_cli._git_env(
+        source, git_cli._remote_for_git(url, source), tmp_path / "clone"
+    ) as (env, _):
         ssh = shlex.split(env["GIT_SSH_COMMAND"])
         key = Path(ssh[ssh.index("-i") + 1])
         git_cli.remove_dead_key_dirs()
@@ -1476,7 +1478,9 @@ def test_a_sweep_between_an_op_s_mkdtemp_and_its_lock_leaves_the_key_dir(
 
     monkeypatch.setattr(git_cli, "_lock_key_dir", _swept_first)
 
-    with git_cli._git_env(source, git_cli._remote_for_git(url, source)) as (env, _):
+    with git_cli._git_env(
+        source, git_cli._remote_for_git(url, source), tmp_path / "clone"
+    ) as (env, _):
         ssh = shlex.split(env["GIT_SSH_COMMAND"])
         key = Path(ssh[ssh.index("-i") + 1])
         assert key.read_text() == "key\n"

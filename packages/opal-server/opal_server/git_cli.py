@@ -87,6 +87,11 @@ class GitCliError(RuntimeError):
         self.stderr_tail = stderr_tail
 
 
+class GitCliHostKeyError(GitCliError):
+    """The git host's key, refused by ssh: not the one recorded for the clone,
+    or, with SCOPES_GIT_SSH_KNOWN_HOSTS set, not in that file."""
+
+
 class GitCliLocalError(GitCliError):
     """An op failed on this machine, before or around git, saying nothing
     about the remote: no git on PATH (127), git could not be started (127),
@@ -289,21 +294,26 @@ _SSH_OPTIONS = (
     "-o",
     "ServerAliveCountMax=4",
 )
-# Host keys without SCOPES_GIT_SSH_KNOWN_HOSTS: measured (see git_cli_test's
-# host-key test), libgit2 through pygit2 accepts the host key of every server,
-# known, unknown or changed, and records none, so ssh does the same.
-_SSH_HOST_KEYS_AS_LIBGIT2 = (
+# Host keys without SCOPES_GIT_SSH_KNOWN_HOSTS: trust on first use. The first
+# ssh of a clone records the host's key in the clone's record (host_key_record,
+# its UserKnownHostsFile), and a later one refuses another key. ssh records
+# only the key of the type it negotiated, and adds no other (UpdateHostKeys=no),
+# nor the host's address beside its name (CheckHostIP=no).
+_SSH_HOST_KEYS_ON_FIRST_USE = (
     "-o",
-    "StrictHostKeyChecking=no",
-    "-o",
-    "UserKnownHostsFile=/dev/null",
+    "StrictHostKeyChecking=accept-new",
     "-o",
     "GlobalKnownHostsFile=/dev/null",
+    "-o",
+    "UpdateHostKeys=no",
+    "-o",
+    "CheckHostIP=no",
 )
-# What ssh says, at INFO, of each host key it takes with the options above:
-# that it added the key to known_hosts, which is /dev/null. It says so on every
-# op that reaches the server, so it is left out of the op's error. ssh ends its
-# lines with CRLF.
+# What ssh writes when it refuses a host key, whatever the reason.
+_HOST_KEY_REFUSED = "Host key verification failed"
+# What ssh says, at INFO, of a host key it records: that it added the key to
+# the known hosts. It is no part of an error, so it is left out of the op's.
+# ssh ends its lines with CRLF.
 _SSH_HOST_KEY_ADDED = re.compile(
     r"^Warning: Permanently added .* to the list of known hosts\.\r?\n?",
     re.MULTILINE,
@@ -401,12 +411,30 @@ def kill_grace_seconds() -> float:
 
 def known_hosts_file() -> Optional[str]:
     """SCOPES_GIT_SSH_KNOWN_HOSTS as an absolute path (a relative one is the
-    server's working directory's), or None when it is unset, empty, or the git
-    command-line fetch is off."""
+    server's working directory's), or None when it is unset or empty: host keys
+    are then trusted on first use."""
     path = opal_server_config.SCOPES_GIT_SSH_KNOWN_HOSTS
-    if not path or not opal_server_config.SCOPES_GIT_FETCH_WITH_CLI:
+    if not path:
         return None
     return os.path.abspath(path)
+
+
+def known_hosts_problem() -> Optional[str]:
+    """Why SCOPES_GIT_SSH_KNOWN_HOSTS cannot be used now, or None (it can, or
+    it is unset)."""
+    path = known_hosts_file()
+    return None if path is None else _known_hosts_problem(path)
+
+
+def host_key_record(repo_path: Path) -> Path:
+    """The SSH host keys recorded for the clone at ``repo_path`` by the git
+    command line (trust on first use): a file beside the clone, as its lock
+    file is, so that a re-clone keeps them.
+
+    Absolute, as ssh reads it from git's working directory, which for a
+    fetch is the clone.
+    """
+    return Path(os.path.abspath(repo_path.parent)) / f".{repo_path.name}.known_hosts"
 
 
 def clone_timeout() -> float:
@@ -428,26 +456,30 @@ def validate_git_cli_settings() -> None:
     command-line fetch needs.
 
     Without SCOPES it checks nothing: a server without scopes runs no scope
-    git op, and needs no git. With SCOPES_GIT_FETCH_WITH_CLI off it only
-    checks SCOPES_REPO_CLONES_SHARDS and logs an ERROR when
-    SCOPES_GIT_SSH_KNOWN_HOSTS is set, which is then ignored: turning the
-    CLI setting off alone, to fall back to libgit2, never stops a server.
-    With it on, a uid with no entry in the user database, which ssh
-    refuses to run under, is logged as an ERROR: only SSH sources fail. So
-    is, as a WARNING once per process, a SCOPES_REPO_CLONES_SHARDS other
-    than 1, which the git command-line fetch ignores.
+    git op, and needs no git. With SCOPES_GIT_FETCH_WITH_CLI off it checks
+    SCOPES_REPO_CLONES_SHARDS, SCOPES_GIT_SSH_KNOWN_HOSTS and the path
+    libgit2 takes its SSH host keys from, and logs an ERROR when host keys
+    are trusted on first use and there is no ssh-keyscan to record them
+    with: only SSH sources fail. With it on, a uid with no entry in the user
+    database, which ssh refuses to run under, is logged as an ERROR: only
+    SSH sources fail. So is, as a WARNING once per process, a
+    SCOPES_REPO_CLONES_SHARDS other than 1, which the git command-line
+    fetch ignores.
 
     Raises:
-        ValueError: SCOPES_REPO_CLONES_SHARDS is below 1; or, with
-            SCOPES_GIT_FETCH_WITH_CLI on, there is no git on PATH, or one
-            older than 2.32, or no executable /bin/sh;
-            SCOPES_GIT_CLI_KILL_GRACE is not a finite number >= 0;
-            SCOPES_GIT_CLONE_TIMEOUT is below SCOPES_GIT_FETCH_TIMEOUT;
+        ValueError: SCOPES_REPO_CLONES_SHARDS is below 1;
             SCOPES_GIT_SSH_KNOWN_HOSTS names no readable file, or its path
             holds whitespace (which ssh would read as a list of files), % or
-            $, a quote or a backslash; or the directory SSH key files go to
-            has % or $ in its path (ssh expands both, in a known_hosts path
-            and in a key's).
+            $, a quote or a backslash; with SCOPES_GIT_FETCH_WITH_CLI off,
+            BASE_DIR's git_sources path holds : or $ (libgit2 would read its
+            home there as a list, or expand it); or, with it on, there is no
+            git on PATH, or one older than 2.32, or no executable /bin/sh;
+            SCOPES_GIT_CLI_KILL_GRACE is not a finite number >= 0;
+            SCOPES_GIT_CLONE_TIMEOUT is below SCOPES_GIT_FETCH_TIMEOUT;
+            BASE_DIR's git_sources path, where a clone's recorded host keys
+            are, holds what the known_hosts path may not; or the directory
+            SSH key files go to has % or $ in its path (ssh expands both, in
+            a known_hosts path and in a key's).
     """
     if not opal_server_config.SCOPES:
         return
@@ -457,12 +489,28 @@ def validate_git_cli_settings() -> None:
             f"SCOPES_REPO_CLONES_SHARDS={shards}: must be 1 or more (the number "
             "of clones of one repository)"
         )
+    problem = known_hosts_problem()
+    if problem is not None:
+        raise ValueError(problem)
+    # Where GitPolicyFetcher.base_dir puts the clones and their host keys.
+    clones_dir = os.path.join(
+        os.path.abspath(opal_server_config.BASE_DIR), "git_sources"
+    )
     if not opal_server_config.SCOPES_GIT_FETCH_WITH_CLI:
-        if opal_server_config.SCOPES_GIT_SSH_KNOWN_HOSTS:
+        if ":" in clones_dir or "$" in clones_dir:
+            raise ValueError(
+                f"BASE_DIR={opal_server_config.BASE_DIR!r}: libgit2 reads the SSH "
+                f"host keys from a directory in {clones_dir!r}, whose path holds : "
+                "or $, which libgit2 would read as a list of directories or "
+                "expand; use another BASE_DIR"
+            )
+        if known_hosts_file() is None and shutil.which("ssh-keyscan") is None:
             logger.error(
-                "SCOPES_GIT_SSH_KNOWN_HOSTS is set but SCOPES_GIT_FETCH_WITH_CLI is "
-                "off: only the git command-line fetch verifies the git host's SSH "
-                "key against that file, so it is ignored"
+                "SCOPES_GIT_FETCH_WITH_CLI is off and SCOPES_GIT_SSH_KNOWN_HOSTS is "
+                "not set, but there is no ssh-keyscan on PATH: libgit2 records an "
+                "SSH host's key with it the first time, so every scope source "
+                "fetched over SSH fails (HTTP sources are not affected). Install "
+                "ssh-keyscan (OpenSSH's client), or set SCOPES_GIT_SSH_KNOWN_HOSTS"
             )
         return
     grace = opal_server_config.SCOPES_GIT_CLI_KILL_GRACE
@@ -498,11 +546,14 @@ def validate_git_cli_settings() -> None:
             "the whole repository, so it gets at least a fetch's time; raise it, "
             "or unset it for 5 times the fetch timeout"
         )
-    path = known_hosts_file()
-    if path is not None:
-        problem = _known_hosts_problem(path)
+    if known_hosts_file() is None:
+        problem = _ssh_path_problem(os.path.join(clones_dir, ".SOURCE_ID.known_hosts"))
         if problem is not None:
-            raise ValueError(problem)
+            raise ValueError(
+                f"BASE_DIR={opal_server_config.BASE_DIR!r}: the git command line "
+                f"records SSH host keys in {clones_dir!r}, whose path {problem}; "
+                "use another BASE_DIR, or set SCOPES_GIT_SSH_KNOWN_HOSTS"
+            )
     key_dir_parent = _key_dir_parent()
     if _ssh_expands(key_dir_parent):
         raise ValueError(
@@ -580,22 +631,28 @@ def _check_git_version() -> None:
         )
 
 
-def _known_hosts_problem(path: str) -> Optional[str]:
+def _ssh_path_problem(path: str) -> Optional[str]:
+    """What keeps ssh from reading ``path`` as one known_hosts file, given as
+    UserKnownHostsFile: "holds ...", or None."""
     if any(c.isspace() for c in path):
-        return (
-            f"SCOPES_GIT_SSH_KNOWN_HOSTS={path!r}: the path holds whitespace, "
-            "which ssh would read as more than one file"
-        )
+        return "holds whitespace, which ssh would read as more than one file"
     if _ssh_expands(path):
         return (
-            f"SCOPES_GIT_SSH_KNOWN_HOSTS={path!r}: the path holds % or $, which "
-            "ssh would expand (%h to the host, ${VAR} to a variable)"
+            "holds % or $, which ssh would expand (%h to the host, ${VAR} to a "
+            "variable)"
         )
     if any(c in path for c in "'\"\\"):
         return (
-            f"SCOPES_GIT_SSH_KNOWN_HOSTS={path!r}: the path holds a quote or a "
-            "backslash, which ssh would read as quoting (another file, or none)"
+            "holds a quote or a backslash, which ssh would read as quoting "
+            "(another file, or none)"
         )
+    return None
+
+
+def _known_hosts_problem(path: str) -> Optional[str]:
+    problem = _ssh_path_problem(path)
+    if problem is not None:
+        return f"SCOPES_GIT_SSH_KNOWN_HOSTS={path!r}: the path {problem}"
     if not os.path.isfile(path) or not os.access(path, os.R_OK):
         return f"SCOPES_GIT_SSH_KNOWN_HOSTS={path!r}: no readable file there"
     return None
@@ -1178,13 +1235,28 @@ async def _run_op(
     0, with the op still to finish (see _run_git)."""
     running = False
     try:
-        with _git_env(source, remote) as (env, redact):
+        with _git_env(source, remote, op.repo_path) as (env, redact):
             running = True
             await _run_git(args, env=env, timeout=timeout, redact=redact, op=op)
+    except GitCliError as e:
+        if not running:
+            await op.not_started()
+            raise
+        if type(e) is GitCliError and remote.is_ssh and _refused_a_host_key(e):
+            raise GitCliHostKeyError(e.returncode, e.stderr_tail) from None
+        raise
     except BaseException:
         if not running:  # git's environment could not be set up
             await op.not_started()
         raise
+
+
+def _refused_a_host_key(error: GitCliError) -> bool:
+    """Whether ssh itself refused the host's key: its own line, not a line of
+    the remote's (``remote: ...``) or one git quotes."""
+    return any(
+        line.startswith(_HOST_KEY_REFUSED) for line in error.stderr_tail.splitlines()
+    )
 
 
 async def _take_clone_lock_off_loop(repo_path: Path) -> Optional[int]:
@@ -1866,9 +1938,10 @@ def _remote_for_git(url: str, source: GitPolicyScopeSource) -> _Remote:
     return remote
 
 
-def _ssh_host_key_options(remote: _Remote) -> List[str]:
+def _ssh_host_key_options(remote: _Remote, record: Path) -> List[str]:
     """The host-key options of ssh: verified against SCOPES_GIT_SSH_KNOWN_HOSTS
-    when it is set (and never written to), else as libgit2 does it.
+    when it is set (and never written to), else trusted on first use, with
+    ``record`` (the clone's host_key_record) as the known hosts.
 
     Raises:
         GitCliLocalError: the known_hosts file cannot be read, for an SSH
@@ -1876,7 +1949,7 @@ def _ssh_host_key_options(remote: _Remote) -> List[str]:
     """
     path = known_hosts_file()
     if path is None:
-        return list(_SSH_HOST_KEYS_AS_LIBGIT2)
+        return [*_SSH_HOST_KEYS_ON_FIRST_USE, "-o", f"UserKnownHostsFile={record}"]
     if remote.is_ssh:
         problem = _known_hosts_problem(path)
         if problem is not None:
@@ -1945,10 +2018,10 @@ def _isolated_env() -> Dict[str, str]:
 
 @contextmanager
 def _git_env(
-    source: GitPolicyScopeSource, remote: _Remote
+    source: GitPolicyScopeSource, remote: _Remote, repo_path: Path
 ) -> Iterator[Tuple[Dict[str, str], Callable[[str], str]]]:
-    """The environment of git for one op, and a function that redacts the op's
-    credentials from text.
+    """The environment of git for one op on the clone at ``repo_path``, and a
+    function that redacts the op's credentials from text.
 
     The SSH key file, in a directory of its own, is removed on the way
     out, whatever happened.
@@ -1987,7 +2060,11 @@ def _git_env(
     def redact(text: str) -> str:
         return redact_sensitive_text(remote.redact(text), source.url)
 
-    ssh = ["ssh", *_SSH_OPTIONS, *_ssh_host_key_options(remote)]
+    ssh = [
+        "ssh",
+        *_SSH_OPTIONS,
+        *_ssh_host_key_options(remote, host_key_record(repo_path)),
+    ]
     key_dir: Optional[str] = None
     key_lock: Optional[int] = None
     try:
@@ -2352,7 +2429,7 @@ class _Group:
     def stderr_tail(self, redact: Callable[[str], str]) -> str:
         """The end of git's stderr, ``redact``-ed before it is cut, so that no
         part of a secret the cut goes through is left, and without ssh's note
-        of a host key it added to /dev/null."""
+        of a host key it recorded."""
         try:
             raw = self._stderr.done.result()
         except (asyncio.CancelledError, Exception):
