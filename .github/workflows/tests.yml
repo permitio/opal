@@ -194,6 +194,33 @@ jobs:
             echo "$image: Wolfi, Python 3.14 in /opt/venv, opal 1000:1000 with home /opal"
           done
 
+      - name: Check the server image's SSH known_hosts and home
+        # For an SSH policy repo on github.com, ssh and libgit2 read $HOME/.ssh/known_hosts, which
+        # the build fills with POLICY_REPO_HOST's keys (github.com by default). The opal user's
+        # HOME must be /opal, where that file is, and the file must hold github.com's ed25519
+        # and ecdsa keys. ssh-keygen runs on the runner; the image has none.
+        run: |
+          image=permitio/opal-server:test
+          # shellcheck disable=SC2016 # the image expands $HOME
+          home=$(docker run --rm --entrypoint sh "$image" -c 'echo "$HOME"')
+          if [ "$home" != /opal ]; then
+            echo "::error::$image runs as opal with HOME=$home, not /opal"
+            exit 1
+          fi
+          known_hosts=$RUNNER_TEMP/known_hosts
+          if ! docker run --rm --entrypoint cat "$image" /opal/.ssh/known_hosts >"$known_hosts"; then
+            echo "::error::$image has no /opal/.ssh/known_hosts: the build did not scan POLICY_REPO_HOST"
+            exit 1
+          fi
+          entries=$(ssh-keygen -F github.com -f "$known_hosts") || entries=''
+          for type in ssh-ed25519 ecdsa-sha2-nistp256; do
+            if ! grep -q " $type " <<<"$entries"; then
+              echo "::error::$image: /opal/.ssh/known_hosts has no $type key for github.com"
+              exit 1
+            fi
+          done
+          echo "$image: HOME=/opal, and known_hosts holds github.com's ed25519 and ecdsa keys"
+
       - name: Gate the images on Trivy and Grype
         # .github/scripts/image_gate.py scans both images with Trivy and with Grype and fails on a
         # fixable HIGH or CRITICAL vulnerability that no waiver in force in
