@@ -891,7 +891,22 @@ For more information, see [tracking a Git repository](/tutorials/track_a_git_rep
 
 Default: `*`
 
-File pattern to add files to all git default files.
+A git pathspec, as `git add` takes it, that picks the files of the API source's bundle the server
+commits and serves. git reads no system or user git config, ignore file or attributes for it.
+
+- `*` takes every file, top-level dotfiles included.
+- A `.gitignore` in the bundle leaves out the files it ignores, unless an earlier bundle committed
+  them: a committed file stays tracked, and takes each new bundle's content, until a bundle drops
+  it.
+- A file deleted from the bundle is deleted from the clients with the next policy update.
+- If the pattern matches no file in a bundle or in the last commit, `git add` fails and the server
+  logs git's error, which names the pattern; for the first bundle it retries every 5 seconds.
+- A `.manifest` that lists paths (OPAL's format) orders the policy modules, as on a git source. An
+  OPA bundle's own `.manifest`, a JSON object, is skipped and orders nothing.
+
+Before OPAL 0.10, the pattern was a Python glob: `*` skipped top-level dotfiles and took the files a
+`.gitignore` ignores, `*.rego` matched top-level files only, and a file deleted from the bundle
+stayed on the clients.
 
 #### OPAL_POLICY_BUNDLE_URL
 

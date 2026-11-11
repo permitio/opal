@@ -849,7 +849,9 @@ class OpalServerConfig(Confi):
     POLICY_BUNDLE_GIT_ADD_PATTERN = confi.str(
         "POLICY_BUNDLE_GIT_ADD_PATTERN",
         "*",
-        description="File pattern to add files to git default to all the files (*)",
+        description="Git pathspec (as git add takes it) of the API source bundle's files "
+        "to commit and serve, read with no host git config. * takes every file but those "
+        "a .gitignore in the bundle ignores (a file once committed stays tracked)",
     )
 
     REPO_WATCHER_ENABLED = confi.bool(

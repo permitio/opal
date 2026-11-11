@@ -14,6 +14,7 @@ root_dir = os.path.abspath(
 )
 sys.path.append(root_dir)
 
+import json
 from pathlib import Path
 from typing import List, Tuple
 
@@ -22,6 +23,7 @@ from git.objects import Commit
 from opal_common.git_utils.bundle_maker import BundleMaker
 from opal_common.git_utils.commit_viewer import CommitViewer
 from opal_common.schemas.policy import PolicyBundle, RegoModule
+from opal_common.tests.log_capture import capture_records
 
 OPA_FILE_EXTENSIONS = (".rego", ".json")
 
@@ -261,6 +263,30 @@ def test_bundle_maker_sorts_according_to_explicit_manifest(local_repo: Repo, hel
     assert "other/abac.rego" == bundle.manifest[1]
     assert "rbac.rego" in bundle.manifest
     assert "other/data.json" in bundle.manifest
+
+
+@pytest.mark.parametrize("indent", [None, 2], ids=["one-line", "pretty"])
+def test_an_opa_bundle_manifest_is_skipped_without_warnings(
+    local_repo: Repo, helpers, indent
+):
+    """An OPA-built bundle (an API bundle source) carries a JSON .manifest of
+    its own; it orders nothing and is not read line by line as OPAL's."""
+    repo: Repo = local_repo
+    maker = BundleMaker(
+        repo, in_directories=set([Path(".")]), extensions=OPA_FILE_EXTENSIONS
+    )
+    without_manifest = maker.make_bundle(repo.head.commit).manifest
+    helpers.create_new_file_commit(
+        repo,
+        Path(repo.working_tree_dir) / ".manifest",
+        contents=json.dumps({"revision": "abc", "roots": [""]}, indent=indent),
+    )
+
+    with capture_records() as records:
+        bundle = maker.make_bundle(repo.head.commit)
+
+    assert bundle.manifest == without_manifest
+    assert [r["message"] for r in records.emitted if r["level"].name == "WARNING"] == []
 
 
 def test_bundle_maker_sorts_according_to_explicit_manifest_nested(
