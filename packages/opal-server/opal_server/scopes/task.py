@@ -28,6 +28,7 @@ from opal_server.metrics_setup import configure_server_metrics
 from opal_server.policy.watcher.task import BasePolicyWatcherTask
 from opal_server.pubsub_resilience import ReconnectingBroadcaster
 from opal_server.redis_utils import RedisDB
+from opal_server.scopes.missing_scope import validate_missing_scope_settings
 from opal_server.scopes.purge import LeaderScopePurger
 from opal_server.scopes.readiness import required_clones, validate_required_repos
 from opal_server.scopes.scope_repository import ScopeRepository
@@ -394,6 +395,7 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             # Before any clone, and before a worker exists to refuse to start.
             validate_git_cli_settings()
             validate_required_repos()
+            validate_missing_scope_settings()
             # This runs in the gunicorn MASTER (scripts/gunicorn_conf.py::when_ready)
             # before any worker configured monitoring. Without
             # configure_server_metrics() the git metrics emitted during preload

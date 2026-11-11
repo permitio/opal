@@ -12,6 +12,12 @@ class ScopeNotFoundError(Exception):
         return f"Scope {self._id} not found"
 
 
+# SCAN's COUNT for ids(): how many keys Redis looks at per call. With 1,000,
+# tens of thousands of scopes take tens of calls rather than thousands, and
+# each call stays short.
+_IDS_SCAN_COUNT = 1000
+
+
 class ScopeRepository:
     def __init__(self, redis_db: RedisDB):
         self._redis_db = redis_db
@@ -43,6 +49,20 @@ class ScopeRepository:
             scopes.append(scope)
 
         return scopes
+
+    async def ids(self) -> List[str]:
+        """The id of every stored scope, sorted, from the names of the keys
+        alone: no record is read.
+
+        They are the ids of the scopes ``all()`` returns, read the same
+        way (a SCAN of the scope keys), without reading and parsing each
+        record.
+        """
+        prefix = f"{self._prefix}:"
+        found = set()
+        async for key in self._redis_db.scan_keys(f"{prefix}*", _IDS_SCAN_COUNT):
+            found.add(key.decode()[len(prefix) :])
+        return sorted(found)
 
     async def get(self, scope_id: str) -> Scope:
         key = self._redis_key(scope_id)

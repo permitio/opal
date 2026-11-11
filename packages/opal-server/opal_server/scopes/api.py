@@ -57,6 +57,11 @@ from opal_server.git_fetcher import (
     fetch_mark_after,
     git_cli_enabled,
 )
+from opal_server.scopes.missing_scope import (
+    MissingScopeMode,
+    MissingScopeReporter,
+    missing_scope_mode,
+)
 from opal_server.scopes.purge import ScopePurgeCommand
 from opal_server.scopes.scope_repository import ScopeNotFoundError, ScopeRepository
 from opal_server.scopes.service import ScopesService
@@ -1170,6 +1175,7 @@ def init_scope_router(
     scopes_service: ScopesService,
 ):
     router = APIRouter()
+    missing_scopes = MissingScopeReporter()
 
     def _allowed_scoped_authenticator(
         claims: JWTClaims = Depends(authenticator), scope_id: str = Path(...)
@@ -1361,6 +1367,19 @@ def init_scope_router(
 
         return await scopes.all()
 
+    # Ahead of GET /{scope_id}, which would take "ids" for a scope id.
+    @router.get("/ids", response_model=List[str])
+    async def get_scope_ids(*, claims: JWTClaims = Depends(authenticator)):
+        """The id of every stored scope, sorted, read from the store's keys
+        without reading the records."""
+        try:
+            require_peer_type(authenticator, claims, PeerType.datasource)
+        except Unauthorized as ex:
+            logger.error(f"Unauthorized to get scope ids: {repr(ex)}")
+            raise
+
+        return await scopes.ids()
+
     @router.get(
         "/{scope_id}",
         response_model=Scope,
@@ -1481,6 +1500,15 @@ def init_scope_router(
         try:
             scope = await scopes.get(scope_id)
         except ScopeNotFoundError:
+            missing_scopes.report(scope_id, "policy")
+            if missing_scope_mode() is MissingScopeMode.not_found:
+                logger.warning(
+                    "Requested scope {scope_id} not found, returning 404",
+                    scope_id=scope_id,
+                )
+                raise HTTPException(
+                    status.HTTP_404_NOT_FOUND, detail=f"No such scope: {scope_id}"
+                )
             logger.warning(
                 "Requested scope {scope_id} not found, returning default scope",
                 scope_id=scope_id,
@@ -1849,19 +1877,34 @@ def init_scope_router(
             # path). The persisted scope keeps the authored form.
             return normalize_data_topics_for_scope(scope_id, scope.data)
         except ScopeNotFoundError as ex:
-            logger.warning(
-                "Requested scope {scope_id} not found, serving an empty data-source config",
-                scope_id=scope_id,
-            )
+            missing_scopes.report(scope_id, "data")
+            if missing_scope_mode() is MissingScopeMode.not_found:
+                logger.warning(
+                    "Requested scope {scope_id} not found, returning 404",
+                    scope_id=scope_id,
+                )
+                raise HTTPException(
+                    status.HTTP_404_NOT_FOUND, detail=f"No such scope: {scope_id}"
+                )
             try:
                 config: ServerDataSourceConfig = opal_server_config.DATA_CONFIG_SOURCES
 
                 if config.external_source_url:
+                    logger.warning(
+                        "Requested scope {scope_id} not found, redirecting to the "
+                        "external source of OPAL_DATA_CONFIG_SOURCES",
+                        scope_id=scope_id,
+                    )
                     url = str(config.external_source_url)
                     token = get_token_from_header(authorization)
                     redirect_url = set_url_query_param(url, "token", token)
                     return RedirectResponse(url=redirect_url)
                 else:
+                    logger.warning(
+                        "Requested scope {scope_id} not found, serving an empty "
+                        "data config",
+                        scope_id=scope_id,
+                    )
                     # A scope that is not (yet) in the repository has no
                     # scope-specific data sources to serve. Returning the
                     # server-global OPAL_DATA_CONFIG_SOURCES here leaks the

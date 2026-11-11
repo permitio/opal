@@ -953,6 +953,50 @@ class OpalServerConfig(Confi):
         "request holds after this one gets what is left of 55 seconds. Requests "
         "with base_hash never wait, nor any with SCOPES_GIT_FETCH_WITH_CLI off.",
     )
+    SCOPES_MISSING_SCOPE = confi.str(
+        "SCOPES_MISSING_SCOPE",
+        "default",
+        description="What GET /scopes/:scope_id/policy and GET "
+        "/scopes/:scope_id/data answer for a scope that is not stored. default: "
+        "the policy of the scope named default (a 404 when that one is not stored "
+        "either), and an empty data configuration, or a redirect to the "
+        "external_source_url of OPAL_DATA_CONFIG_SOURCES when it has one. "
+        "not_found: a 404 for both, so a client whose scope is gone keeps the "
+        "policy and data it has and never loads the default scope's policy. With "
+        "either, each such request logs a WARNING and counts "
+        "opal_server.scopes.missing_scope, tagged with the route (policy or data; "
+        "the WARNING names the scope), and is posted to "
+        "SCOPES_MISSING_SCOPE_WEBHOOK_URL when that is set. The server does not "
+        "start in scopes mode with any other value.",
+    )
+    SCOPES_MISSING_SCOPE_WEBHOOK_URL = confi.str(
+        "SCOPES_MISSING_SCOPE_WEBHOOK_URL",
+        None,
+        description="An http:// or https:// URL that a worker POSTs to when a "
+        "policy or data request finds a scope that is not stored (see "
+        "SCOPES_MISSING_SCOPE), so that whatever writes the scopes can put it "
+        "back. The body is a JSON object with scope_id, route (policy or data) and "
+        "seen_at (when the request came, ISO 8601, UTC), sent with "
+        "SCOPES_MISSING_SCOPE_WEBHOOK_TOKEN as a Bearer token when that is set. "
+        "Each worker posts a scope at most once per 5 minutes, in the background "
+        "(the request does not wait for it), with a 5-second timeout and no "
+        "retry, and at most 100 at a time: a scope seen while 100 are under way "
+        "is posted at a later request for it. Each POST is counted in "
+        "opal_server.scopes.missing_scope_webhook by outcome. Of the URL, only its "
+        "scheme, host and port are logged. The server does not start in scopes mode when this is not an "
+        "http:// or https:// URL with a host, or carries a password while "
+        "SCOPES_MISSING_SCOPE_WEBHOOK_TOKEN is set. Unset, nothing is posted.",
+        sensitive=True,
+    )
+    SCOPES_MISSING_SCOPE_WEBHOOK_TOKEN = confi.str(
+        "SCOPES_MISSING_SCOPE_WEBHOOK_TOKEN",
+        None,
+        description="The Bearer token of the SCOPES_MISSING_SCOPE_WEBHOOK_URL "
+        "POSTs, sent as their Authorization header and never logged. Unset, the "
+        "POSTs carry no Authorization header. The server does not start in scopes "
+        "mode when this is set without SCOPES_MISSING_SCOPE_WEBHOOK_URL.",
+        sensitive=True,
+    )
     LEADER_LOCK_FILE_PATH = confi.str(
         "LEADER_LOCK_FILE_PATH",
         "/tmp/opal_server_leader.lock",

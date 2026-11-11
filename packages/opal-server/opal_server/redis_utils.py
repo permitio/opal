@@ -1,4 +1,4 @@
-from typing import Generator
+from typing import AsyncIterator, Generator
 
 import redis.asyncio as redis
 from opal_common.http_utils import redact_url
@@ -41,6 +41,20 @@ class RedisDB:
             for key in keys:
                 value = await self._redis.get(key)
                 yield value
+
+    async def scan_keys(self, pattern: str, count: int) -> AsyncIterator[bytes]:
+        """Every key that matches ``pattern``, read with SCAN alone.
+
+        ``count`` is SCAN's COUNT, how many keys Redis looks at per call.
+        A key can come more than once, as SCAN may return it more than once.
+        """
+        cursor = 0
+        while True:
+            cursor, keys = await self._redis.scan(cursor, match=pattern, count=count)
+            for key in keys:
+                yield key
+            if not cursor:
+                return
 
     async def delete(self, key: str):
         await self._redis.delete(key)

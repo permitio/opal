@@ -42,6 +42,7 @@ from opal_server.pubsub_resilience import ReconnectingBroadcaster
 from opal_server.redis_utils import RedisDB
 from opal_server.scopes.api import init_scope_router
 from opal_server.scopes.loader import load_scopes
+from opal_server.scopes.missing_scope import validate_missing_scope_settings
 from opal_server.scopes.purge import subscribe_worker_purge_handler
 from opal_server.scopes.readiness import required_clones, validate_required_repos
 from opal_server.scopes.scope_repository import ScopeRepository
@@ -148,6 +149,7 @@ class OpalServer:
         # when uvicorn runs the server on its own).
         validate_git_cli_settings()
         validate_required_repos()
+        validate_missing_scope_settings()
         if opal_server_config.SCOPES and opal_server_config.SCOPES_GIT_FETCH_WITH_CLI:
             # SSH key files of a worker that died (SIGKILL, an OOM kill) before
             # it could remove them; the pre-fork preload sweeps them too.

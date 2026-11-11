@@ -137,7 +137,58 @@ scope's connected clients get the new entries when they next connect.
 For a scope that is not stored, `GET /scopes/<scope_id>/data` answers an
 empty configuration, or redirects to the `external_source_url` of
 [`OPAL_DATA_CONFIG_SOURCES`](/getting-started/configuration#opal_data_config_sources)
-when that is set.
+when that is set (see [A missing scope](#a-missing-scope) for a 404 instead).
+
+### A missing scope
+
+A scope is missing when its record is not in the scope store: it was never
+stored, it was deleted, or the store lost it.
+[`OPAL_SCOPES_MISSING_SCOPE`](/getting-started/configuration#opal_scopes_missing_scope)
+says what the scope's clients get:
+
+- `default` (the default): `GET /scopes/<scope_id>/policy` serves the policy of
+  the scope named `default` (a 404 when that one is not stored either), and
+  `GET /scopes/<scope_id>/data` an empty configuration, or the redirect above.
+  A client whose scope is lost moves to the `default` scope's policy at its
+  next policy fetch.
+- `not_found`: both answer 404. An opal-client keeps the policy and data it
+  has: after a policy 404 it reports itself unhealthy, and after a data 404 it
+  stops polling its entries. Its data connection then reconnects about every
+  minute or two and asks again, each time a 404 (with a WARNING and a count),
+  until the scope is back; a data update published between two of those
+  connections is missed, and the next connect's fetch makes up for it. A client
+  that starts while its scope is missing loads no policy until the scope is
+  back.
+
+With either, every such request logs a WARNING
+(`Requested scope <scope_id> not found, ...`) and counts
+`opal_server.scopes.missing_scope`, tagged with the route (`policy` or
+`data`). The metric does not say which scope, so that a store that loses many
+scopes does not make a series for each: the WARNING names it, and so does the
+webhook below.
+
+To have the scope put back, set
+[`OPAL_SCOPES_MISSING_SCOPE_WEBHOOK_URL`](/getting-started/configuration#opal_scopes_missing_scope_webhook_url)
+to an endpoint of whatever writes the scopes, and
+[`OPAL_SCOPES_MISSING_SCOPE_WEBHOOK_TOKEN`](/getting-started/configuration#opal_scopes_missing_scope_webhook_token)
+to the token it expects. A worker that sees a missing scope POSTs
+
+```json
+{"scope_id": "internal", "route": "policy", "seen_at": "2026-11-11T09:30:00.000+00:00"}
+```
+
+with `Authorization: Bearer` and the token, at most once per scope per 5
+minutes, in the background, with a 5-second timeout and no retry; each POST
+is counted in `opal_server.scopes.missing_scope_webhook` by outcome. Of the
+URL, the server logs only its scheme, host and port. A
+`PUT /scopes` of the scope then stores it again and syncs it, and its clients
+are told to fetch its policy and data.
+
+`GET /scopes/ids` lists the id of every stored scope, sorted, from the names
+of the store's keys, without reading the records as `GET /scopes` does. So a
+writer can compare the scopes it expects with the stored ones cheaply. A scope
+whose id is `ids` cannot be read with `GET /scopes/<scope_id>`; its other
+routes are not affected.
 
 ### Launch OPAL Client with a scope
 
@@ -321,6 +372,14 @@ for a fresh clone.
   `<scope_id>:data:<topic>`, which the scope's clients take, where 0.9 wrote
   `data:<topic>`, which they dropped; a topic already starting with
   `<scope_id>:data:` is kept as it is.
+- A request for a missing scope's policy or data now counts
+  `opal_server.scopes.missing_scope`, besides its WARNING (see
+  [A missing scope](#a-missing-scope)). `OPAL_SCOPES_MISSING_SCOPE` is
+  `default`, which answers as 0.9 did, but for the empty data configuration
+  above. Set it to `not_found` once whatever writes the scopes puts a lost one
+  back (for example from `OPAL_SCOPES_MISSING_SCOPE_WEBHOOK_URL`), so that a
+  client whose scope is lost keeps its own policy. A value other than `default`
+  or `not_found` stops the server.
 
 ### OpenShift and other arbitrary user ids
 

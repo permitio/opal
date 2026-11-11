@@ -44,6 +44,16 @@ The state can then be retrieved as a JSON object by calling the `/statistics` ap
 
 - [opal_server/statistics.py](https://github.com/permitio/opal/blob/master/packages/opal-server/opal_server/statistics.py)
 
+## Missing scope metrics
+
+Sent by opal-server in scopes mode for a request of a scope that is not stored
+(see [A missing scope](/overview/scopes#a-missing-scope)).
+
+| Metric | Type | Tags | What it counts |
+|---|---|---|---|
+| `opal_server.scopes.missing_scope` | count | `route`: `policy`, `data` | A `GET /scopes/<scope_id>/policy` or `GET /scopes/<scope_id>/data` for a scope that is not stored, whatever [`OPAL_SCOPES_MISSING_SCOPE`](/getting-started/configuration#opal_scopes_missing_scope) answers. Not tagged with the scope: the WARNING logged with each (`Requested scope <scope_id> not found, ...`) names it. |
+| `opal_server.scopes.missing_scope_webhook` | count | `outcome`: `sent`, `rejected`, `timeout`, `failed`, `shed`, `error` | A report of a missing scope to [`OPAL_SCOPES_MISSING_SCOPE_WEBHOOK_URL`](/getting-started/configuration#opal_scopes_missing_scope_webhook_url). `sent`: it answered 2xx; `rejected`: it answered another status; `timeout`: no answer in 5 seconds; `failed`: no connection, or another error of the request; `shed`: 100 POSTs of the worker were under way, so none was sent (a later request for the scope posts it); `error`: a fault of the server's own, logged at ERROR. None is retried. |
+
 ## Scope git metrics
 
 With `OPAL_ENABLE_METRICS=true`, opal-server sends DogStatsD metrics to the agent at `DD_AGENT_HOST` (default `localhost`), port 8125, with `permit.opal.` before each name. In scopes mode (`OPAL_SCOPES=true`), these count what happens to the git operations on the scope clones:
