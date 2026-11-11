@@ -194,7 +194,19 @@ jobs:
             echo "$image: Wolfi, Python 3.14 in /opt/venv, opal 1000:1000 with home /opal"
           done
 
+      - name: Gate the images on Trivy and Grype
+        # .github/scripts/image_gate.py scans both images with Trivy and with Grype and fails on a
+        # fixable HIGH or CRITICAL vulnerability that no waiver in force in
+        # .github/image-waivers.toml covers. The job summary lists what blocked and what is waived.
+        # The steps after it still run when the gate failed (they publish nothing), so a finding
+        # the pull request did not cause does not hide what its E2E does; never after a cancel.
+        id: gate
+        run: >-
+          .github/scripts/image_gate.py --summary "$GITHUB_STEP_SUMMARY"
+          permitio/opal-client:test permitio/opal-server:test
+
       - name: Check that an image built FROM the client adds a package with pip install --user
+        if: ${{ !cancelled() && (success() || steps.gate.outcome == 'failure') }}
         # The docs add a custom fetch provider this way. The venv keeps the user site for it. The
         # default builder is the one that sees the image loaded above.
         run: |
@@ -210,17 +222,20 @@ jobs:
           docker run --rm --entrypoint python opal-client:derived -c 'import opal_fetcher_ci'
 
       - name: Set up Python
+        if: ${{ !cancelled() && (success() || steps.gate.outcome == 'failure') }}
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: "3.14"
 
       - name: Install opal packages
+        if: ${{ !cancelled() && (success() || steps.gate.outcome == 'failure') }}
         run: |
           python -m pip install -e ./packages/opal-common
           python -m pip install -e ./packages/opal-client
           python -m pip install -e ./packages/opal-server
 
       - name: App Tests
+        if: ${{ !cancelled() && (success() || steps.gate.outcome == 'failure') }}
         working-directory: ./app-tests
         env:
           OPAL_IMAGE_TAG: test

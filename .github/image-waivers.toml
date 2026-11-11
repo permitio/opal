@@ -1,0 +1,37 @@
+# Waivers for .github/scripts/image_gate.py, the gate on the Trivy and Grype findings of the images
+# that CI builds and the release publishes. Only a fixable HIGH or CRITICAL finding fails the gate,
+# so only such a finding needs a waiver here. Each waiver accepts one vulnerability in one package
+# (optionally one version, and some images) through its expiry date, the last day it applies, at
+# most 180 days ahead; after that, the finding fails the gate again. Say why it is accepted, and
+# delete the waiver once the gate reports that it covers no finding. The keys are listed in
+# image_gate.py.
+
+[[waiver]]
+id = "CVE-2025-47273"
+package = "setuptools"
+version = "70.3.0"
+expires = 2027-02-06
+reason = """\
+Listed by pip's vendored SBOM (pip/_vendor), not installed: pip vendors only pkg_resources from \
+that setuptools release, and the advisory is in package_index, which it does not vendor. The \
+installed setuptools is 84.1 or newer."""
+
+[[waiver]]
+id = "CVE-2026-78661"
+package = "golang.org/x/net"
+version = "v0.60.0"
+images = ["permitio/opal-client"]
+expires = 2026-12-11
+reason = """\
+In the OPA binary (1.21.4) that the client image bundles. It clears when docker/Dockerfile moves \
+to an OPA release built with golang.org/x/net 0.62.0 or later."""
+
+[[waiver]]
+id = "CVE-2026-116591"
+package = "github.com/klauspost/compress"
+version = "v1.20.0"
+images = ["permitio/opal-client"]
+expires = 2026-12-11
+reason = """\
+In the OPA binary (1.21.4) that the client image bundles. It clears when docker/Dockerfile moves \
+to an OPA release built with klauspost/compress 1.20.2 or later."""

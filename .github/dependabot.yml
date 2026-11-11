@@ -119,6 +119,18 @@ updates:
         patterns: ["*"]
         update-types: [minor, patch]
 
+  # The Grype release that .github/scripts/image_gate.py runs, pinned in .github/grype/Dockerfile.
+  - package-ecosystem: docker
+    directory: /.github/grype
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci
+
   # The actions that the workflows in .github/workflows use, each pinned to a commit SHA with a
   # version comment, which Dependabot updates together. on_release.yml stays on older majors on
   # purpose: it runs only when a release is published, so each major update arrives as a pull

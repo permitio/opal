@@ -98,6 +98,15 @@ jobs:
           tags: |
             permitio/opal-server:test
 
+      - name: Gate the images on Trivy and Grype
+        # .github/scripts/image_gate.py scans both images with Trivy and with Grype and fails on a
+        # fixable HIGH or CRITICAL vulnerability that no waiver in force in
+        # .github/image-waivers.toml covers. The job summary lists what blocked and what is waived.
+        # A failure here stops the release before any image is published.
+        run: >-
+          .github/scripts/image_gate.py --summary "$GITHUB_STEP_SUMMARY"
+          permitio/opal-client:test permitio/opal-server:test
+
       - name: Create modified docker compose file
         run: sed 's/:latest/:test/g' docker/docker-compose-example.yml > docker/docker-compose-test.yml
 

@@ -90,6 +90,13 @@ def setup_python_versions(job: dict) -> list:
     ]
 
 
+def image_gate_runs(job: dict) -> list[str]:
+    """The run: of each step of a job that runs .github/scripts/image_gate.py."""
+    return [
+        step["run"] for step in steps_of(job) if "image_gate.py" in step.get("run", "")
+    ]
+
+
 def environment_name(job: dict) -> str | None:
     environment = job.get("environment")
     if isinstance(environment, dict):
@@ -267,6 +274,29 @@ class TestTests:
     def test_the_e2e_job_installs_the_packages_on_their_python(self, jobs):
         assert setup_python_versions(jobs["e2e-tests"]) == [PACKAGES_PYTHON]
 
+    def test_the_e2e_job_gates_the_images_it_builds(self, jobs):
+        (gate,) = image_gate_runs(jobs["e2e-tests"])
+
+        assert "permitio/opal-client:test" in gate
+        assert "permitio/opal-server:test" in gate
+
+    def test_the_e2e_checks_after_the_gate_still_run_when_only_the_gate_failed(
+        self, jobs
+    ):
+        """A blocking finding fails the job, but the E2E still reports."""
+        steps = steps_of(jobs["e2e-tests"])
+        (index,) = [
+            i for i, step in enumerate(steps) if "image_gate.py" in step.get("run", "")
+        ]
+
+        assert steps[index]["id"] == "gate"
+        assert steps[index + 1 :]
+        for step in steps[index + 1 :]:
+            # Never after a cancel: a pull request's newer commit cancels its older run.
+            assert step.get("if") == (
+                "${{ !cancelled() && (success() || steps.gate.outcome == 'failure') }}"
+            ), step
+
     def test_the_vuln_job_scans_the_published_ranges_with_vuln_sh(self, jobs):
         """vuln.sh resolves the packages' requires files at their floor and
         ceiling and fails on a fixable HIGH or CRITICAL vulnerability; the job
@@ -295,6 +325,13 @@ class TestRelease:
 
         assert {(leg["repository"], leg["target"]) for leg in legs} == RELEASE_IMAGES
         assert len(legs) == len(RELEASE_IMAGES)
+
+    def test_the_images_pass_the_gate_before_any_is_published(self, jobs):
+        (gate,) = image_gate_runs(jobs["build_and_test"])
+
+        assert "permitio/opal-client:test" in gate
+        assert "permitio/opal-server:test" in gate
+        assert "build_and_test" in jobs["publish_docker_images"]["needs"]
 
     def test_the_package_build_installs_a_pinned_setuptools(self, jobs):
         """Python 3.14 ships no setuptools, which each setup.py imports."""

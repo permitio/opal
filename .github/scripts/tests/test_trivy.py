@@ -66,7 +66,12 @@ def vuln(vuln_id: str, severity: str, fixed: str | None = None, **fields) -> dic
     return found
 
 
-def report(vulns=(), packages: int = PIN_COUNT, root_package: bool = False) -> dict:
+def report(
+    vulns=(),
+    packages: int = PIN_COUNT,
+    root_package: bool = False,
+    os_family: str | None = None,
+) -> dict:
     """A Trivy JSON report of one target.
 
     Args:
@@ -80,7 +85,7 @@ def report(vulns=(), packages: int = PIN_COUNT, root_package: bool = False) -> d
     listed = [{"Name": f"pkg{i}", "Version": "1.0"} for i in range(packages)]
     if root_package:
         listed.append({"Name": "project", "Version": "0", "Relationship": "root"})
-    return {
+    found = {
         "SchemaVersion": 2,
         "ArtifactType": "filesystem",
         "Results": [
@@ -91,6 +96,9 @@ def report(vulns=(), packages: int = PIN_COUNT, root_package: bool = False) -> d
             }
         ],
     }
+    if os_family is not None:
+        found["Metadata"] = {"OS": {"Family": os_family, "Name": "20230201"}}
+    return found
 
 
 class Trivy:
@@ -496,12 +504,14 @@ def test_a_target_without_a_pin(trivy):
 
 
 def test_an_image_target(trivy):
-    trivy.report(report(packages=5))
+    trivy.report(report(packages=5, os_family="wolfi"))
 
     result = trivy.run("block", "image:example.invalid/opal-server:latest")
 
     assert result.returncode == 0, result.output
-    assert "trivy: example.invalid/opal-server:latest: 5 packages" in result.stdout
+    assert (
+        "trivy: example.invalid/opal-server:latest (wolfi): 5 packages" in result.stdout
+    )
     assert trivy.args[0] == "image"
     assert trivy.args[-1] == "example.invalid/opal-server:latest"
     assert "linux/amd64" in trivy.args
@@ -525,6 +535,38 @@ def test_an_image_target_without_an_image(trivy):
     assert 'the target "image:" names no image' in result.stdout
 
 
+def test_an_archive_target(trivy, tmp_path):
+    archive = tmp_path / "opal-server.tar"
+    archive.write_bytes(b"an image archive")
+    trivy.report(report(packages=5, os_family="wolfi"))
+
+    result = trivy.run("report", f"archive:{archive}")
+
+    assert result.returncode == 0, result.output
+    assert f"trivy: {archive} (wolfi): 5 packages" in result.stdout
+    assert trivy.args[0] == "image"
+    assert trivy.args[-2:] == ["--input", str(archive)]
+
+
+def test_an_archive_target_without_packages(trivy, tmp_path):
+    archive = tmp_path / "opal-server.tar"
+    archive.write_bytes(b"an image archive")
+    trivy.report(report(packages=0))
+
+    result = trivy.run("report", f"archive:{archive}")
+
+    assert result.returncode == 2
+    assert f"Trivy listed no package in {archive}" in result.stdout
+
+
+def test_an_archive_target_that_is_not_a_file(trivy, tmp_path):
+    result = trivy.run("block", f"archive:{tmp_path / 'missing.tar'}")
+
+    assert result.returncode == 2
+    assert f"{tmp_path / 'missing.tar'} is not a file" in result.stdout
+    assert not (trivy.out / "args").exists()
+
+
 def test_trivy_variables_and_files_cannot_change_the_scan(trivy):
     (trivy.repo.root / "trivy.yaml").write_text("severity: [LOW]\n")
     (trivy.repo.root / ".trivyignore").write_text("CVE-1\n")
@@ -543,3 +585,19 @@ def test_jq_is_missing(trivy):
 
     assert result.returncode == 2
     assert "jq is not installed" in result.stdout
+
+
+@pytest.mark.parametrize("family", [None, ""])
+@pytest.mark.parametrize("kind", ["image", "archive"])
+def test_an_image_whose_os_trivy_did_not_find_did_not_run(
+    trivy, tmp_path, kind, family
+):
+    archive = tmp_path / "image.tar"
+    archive.write_bytes(b"an image archive")
+    target = f"archive:{archive}" if kind == "archive" else "image:example.invalid/x:1"
+    trivy.report(report(packages=5, os_family=family))
+
+    result = trivy.run("report", target)
+
+    assert result.returncode == 2
+    assert "Trivy found no OS in" in result.stdout

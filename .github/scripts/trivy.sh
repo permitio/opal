@@ -9,7 +9,10 @@
 #                  uv pip compile. The scan counts only when Trivy lists exactly as many packages
 #                  as the file has pins.
 #   image:<ref>    a published image, such as image:permitio/opal-server:latest, pulled from its
-#                  registry for linux/amd64. The scan counts only when Trivy lists a package.
+#                  registry for linux/amd64. The scan counts only when Trivy found the image's
+#                  OS and lists a package.
+#   archive:<file> an image saved with docker image save, such as image_gate.py scans. The scan
+#                  counts only when Trivy found the image's OS and lists a package.
 #
 # With a findings file, it also writes each vulnerability there as a JSON line: its ID, package,
 # installed and fixed versions, severity in lowercase (empty for UNKNOWN), title, CVSS base score
@@ -59,6 +62,12 @@ if [[ $target == image:* ]]; then
   [[ -n $image ]] || fail "the target \"$target\" names no image"
   scan=(image --image-src remote --platform linux/amd64 "$image")
   expected=''
+elif [[ $target == archive:* ]]; then
+  archive=${target#archive:}
+  [[ -f $archive ]] || fail "$archive is not a file"
+  image=$(CDPATH='' cd -- "$(dirname -- "$archive")" && pwd)/$(basename -- "$archive")
+  scan=(image --input "$image")
+  expected=''
 else
   [[ -f $target ]] || fail "$target is not a file"
   file=$(CDPATH='' cd -- "$(dirname -- "$target")" && pwd)/$(basename -- "$target")
@@ -91,7 +100,11 @@ if [[ -n $expected ]]; then
   what="$target: $packages packages, $expected pins"
 else
   [[ $packages -gt 0 ]] || fail "Trivy listed no package in $image"
-  what="$image: $packages packages"
+  # Without the OS, Trivy matches no OS package, and its language packages alone would pass.
+  family=$(jq -r '.Metadata.OS.Family // "" | strings' "$work/report.json") ||
+    fail "reading the OS from Trivy's report failed"
+  [[ -n $family ]] || fail "Trivy found no OS in $image, so it matched no OS package"
+  what="$image ($family): $packages packages"
 fi
 
 vulns='def fixable: (.Severity == "HIGH" or .Severity == "CRITICAL") and .FixedVersion != "";
