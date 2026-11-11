@@ -637,6 +637,8 @@ Default: `None`
 
 URI for the broadcast backend (Redis, PostgreSQL, etc.).
 
+**A `%` in the password:** the password in the URI is percent-decoded, by the Postgres and the Redis client alike, so write a `%` in a broadcaster password as `%25` (`urllib.parse.quote` does it): the password `p%07ss` goes into the URI as `p%2507ss`. Written raw, `%07` reaches the backbone as a control character and authentication fails. The server logs a warning at startup when the password decodes to a control character.
+
 **Postgres TCP keepalive (opal-server ≥ 0.9.9-rc.3 / `permit-broadcaster` ≥ 0.2.7):** the Postgres backend enables TCP keepalive on every backbone connection by default (idle 30 s, interval 10 s, 3 lost probes → a silently vanished server — e.g. an RDS Multi-AZ failover — is detected within ~60 s instead of never). It can be tuned or disabled with libpq-style parameters in the URI: `postgres://…/db?keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=3` (`keepalives=0` disables).
 
 :::danger version constraint
