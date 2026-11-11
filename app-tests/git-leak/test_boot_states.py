@@ -218,7 +218,8 @@ def test_boot_with_unreachable_remotes_still_serves_healthy(opal):
 @pytest.mark.allow_worker_restart
 @pytest.mark.invariant_exempt("I1")
 def test_shard_reconfig_still_serves_but_orphans_old_clones(opal, tmp_path):
-    """S5: SCOPES_REPO_CLONES_SHARDS reconfig moves every source_id.
+    """S5: SCOPES_REPO_CLONES_SHARDS reconfig moves every source_id. Shards
+    exist only with libgit2, so the reconfigured server fetches with it.
     GREEN half: serving must survive the reshard (re-clone under new ids).
     RED half (until the orphan sweep lands, PER-15612): the old-shard dirs are
     orphaned."""
@@ -234,7 +235,9 @@ def test_shard_reconfig_still_serves_but_orphans_old_clones(opal, tmp_path):
     compose("cp", "opal_server:/opal/git_sources", str(tmp_path / "saved"))
 
     shards_before = os.environ.get("OPAL_TEST_SHARDS")
+    fetch_with_cli_before = os.environ.get("OPAL_TEST_FETCH_WITH_CLI")
     os.environ["OPAL_TEST_SHARDS"] = "4"
+    os.environ["OPAL_TEST_FETCH_WITH_CLI"] = "false"
     try:
         compose("up", "-d", "--no-deps", "--force-recreate", "opal_server")
         opal.wait_healthy()
@@ -256,5 +259,9 @@ def test_shard_reconfig_still_serves_but_orphans_old_clones(opal, tmp_path):
             del os.environ["OPAL_TEST_SHARDS"]
         else:
             os.environ["OPAL_TEST_SHARDS"] = shards_before
+        if fetch_with_cli_before is None:
+            del os.environ["OPAL_TEST_FETCH_WITH_CLI"]
+        else:
+            os.environ["OPAL_TEST_FETCH_WITH_CLI"] = fetch_with_cli_before
         compose("up", "-d", "--no-deps", "--force-recreate", "opal_server")
         opal.wait_healthy()

@@ -146,7 +146,7 @@ class OpalServer:
         # through loguru's default handler (no gunicorn master configured it
         # when uvicorn runs the server on its own).
         validate_git_cli_settings()
-        if opal_server_config.SCOPES_GIT_FETCH_WITH_CLI:
+        if opal_server_config.SCOPES and opal_server_config.SCOPES_GIT_FETCH_WITH_CLI:
             # SSH key files of a worker that died (SIGKILL, an OOM kill) before
             # it could remove them; the pre-fork preload sweeps them too.
             remove_dead_key_dirs()

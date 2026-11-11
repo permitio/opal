@@ -27,6 +27,9 @@ from opal_server.scopes.purge import purge_local_memory
 from opal_server.scopes.scope_repository import ScopeNotFoundError
 from opal_server.scopes.service import ScopesService
 
+# What these tests stub or measure is libgit2's fetch and clone.
+pytestmark = pytest.mark.fetch_backend("libgit2")
+
 # The shipped base is 10s; the suite pins a round 60s so the doubling and the
 # per-pass arithmetic read cleanly. Nothing here depends on the real default.
 _BASE = 60.0

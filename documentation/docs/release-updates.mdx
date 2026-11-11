@@ -25,6 +25,18 @@ Read more about **[OPAL+ here](/opal-plus/introduction)**.
 
 ---
 
+## OPAL - 0.10.0
+
+#### Breaking: scopes mode fetches with the git command line
+
+opal-server clones and fetches scope repositories with git (2.32 or later) by
+default, one clone per repository; `OPAL_SCOPES_GIT_FETCH_WITH_CLI=false` keeps
+libgit2. `OPAL_SCOPES_REPO_CLONES_SHARDS` is ignored with git, and a clone has a
+timeout of its own, `OPAL_SCOPES_GIT_CLONE_TIMEOUT`. See
+[upgrading from 0.9](/overview/scopes#upgrading-from-09).
+
+---
+
 ## OPAL - 0.5.0
 
 This release contains several small fixes and improvements.

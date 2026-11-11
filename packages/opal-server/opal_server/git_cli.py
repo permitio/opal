@@ -124,6 +124,12 @@ class GitCliTimeoutError(TimeoutError):
 # later, once that process exits.
 KILL_WAIT_SECONDS = 10.0
 _DEFAULT_KILL_GRACE_SECONDS = 5.0
+# SCOPES_GIT_CLONE_TIMEOUT, when unset, is this many SCOPES_GIT_FETCH_TIMEOUTs.
+_CLONE_TIMEOUT_FETCH_TIMEOUTS = 5
+# The libgit2 way back, named by every startup refusal of what the CLI needs.
+_LIBGIT2_WAY_BACK = (
+    "; set OPAL_SCOPES_GIT_FETCH_WITH_CLI=false to fetch with libgit2 instead"
+)
 # How often a group whose pipes are closed is checked for members left, and a
 # clone's lock for being free.
 _GROUP_POLL_SECONDS = 0.05
@@ -359,6 +365,9 @@ _SHM = "/dev/shm"
 _background: Set["asyncio.Future"] = set()
 # Every clone-lock fd this process holds, and its lock file.
 _lock_fds: Dict[int, Path] = {}
+# The processes that logged that SCOPES_REPO_CLONES_SHARDS is ignored: once
+# each, a worker forked after the preload included.
+_shards_warned_pids: Set[int] = set()
 
 
 def background_ops() -> int:
@@ -405,25 +414,54 @@ def known_hosts_file() -> Optional[str]:
     return os.path.abspath(path)
 
 
-def validate_git_cli_settings() -> None:
-    """Check, at startup, what the git command-line fetch needs.
+def clone_timeout() -> float:
+    """The timeout of a git command-line clone: SCOPES_GIT_CLONE_TIMEOUT, or,
+    when it is unset, 5 times SCOPES_GIT_FETCH_TIMEOUT.
 
-    With SCOPES_GIT_FETCH_WITH_CLI off it only logs an ERROR when
+    Read as SCOPES_GIT_FETCH_TIMEOUT is: 0 or less, or not finite, means
+    no limit.
+    """
+    timeout = opal_server_config.SCOPES_GIT_CLONE_TIMEOUT
+    if timeout is None:
+        fetch_timeout = float(opal_server_config.SCOPES_GIT_FETCH_TIMEOUT)
+        return _CLONE_TIMEOUT_FETCH_TIMEOUTS * fetch_timeout
+    return float(timeout)
+
+
+def validate_git_cli_settings() -> None:
+    """Check, at startup, the settings of the scope clones and what the git
+    command-line fetch needs.
+
+    Without SCOPES it checks nothing: a server without scopes runs no scope
+    git op, and needs no git. With SCOPES_GIT_FETCH_WITH_CLI off it only
+    checks SCOPES_REPO_CLONES_SHARDS and logs an ERROR when
     SCOPES_GIT_SSH_KNOWN_HOSTS is set, which is then ignored: turning the
     CLI setting off alone, to fall back to libgit2, never stops a server.
     With it on, a uid with no entry in the user database, which ssh
-    refuses to run under, is logged as an ERROR: only SSH sources fail.
+    refuses to run under, is logged as an ERROR: only SSH sources fail. So
+    is, as a WARNING once per process, a SCOPES_REPO_CLONES_SHARDS other
+    than 1, which the git command-line fetch ignores.
 
     Raises:
-        ValueError: with SCOPES_GIT_FETCH_WITH_CLI on, there is no git on
-            PATH, or one older than 2.32, or no executable /bin/sh;
+        ValueError: SCOPES_REPO_CLONES_SHARDS is below 1; or, with
+            SCOPES_GIT_FETCH_WITH_CLI on, there is no git on PATH, or one
+            older than 2.32, or no executable /bin/sh;
             SCOPES_GIT_CLI_KILL_GRACE is not a finite number >= 0;
+            SCOPES_GIT_CLONE_TIMEOUT is below SCOPES_GIT_FETCH_TIMEOUT;
             SCOPES_GIT_SSH_KNOWN_HOSTS names no readable file, or its path
             holds whitespace (which ssh would read as a list of files), % or
             $, a quote or a backslash; or the directory SSH key files go to
             has % or $ in its path (ssh expands both, in a known_hosts path
             and in a key's).
     """
+    if not opal_server_config.SCOPES:
+        return
+    shards = opal_server_config.SCOPES_REPO_CLONES_SHARDS
+    if shards < 1:
+        raise ValueError(
+            f"SCOPES_REPO_CLONES_SHARDS={shards}: must be 1 or more (the number "
+            "of clones of one repository)"
+        )
     if not opal_server_config.SCOPES_GIT_FETCH_WITH_CLI:
         if opal_server_config.SCOPES_GIT_SSH_KNOWN_HOSTS:
             logger.error(
@@ -446,13 +484,24 @@ def validate_git_cli_settings() -> None:
     if not os.access(_SH, os.X_OK):
         raise ValueError(
             f"SCOPES_GIT_FETCH_WITH_CLI is on but {_SH} is not executable: git "
-            "runs under it"
+            f"runs under it{_LIBGIT2_WAY_BACK}"
         )
-    if _timeout_or_none(opal_server_config.SCOPES_GIT_FETCH_TIMEOUT) is None:
+    fetch_limit = _timeout_or_none(opal_server_config.SCOPES_GIT_FETCH_TIMEOUT)
+    if fetch_limit is None:
         logger.warning(
             "SCOPES_GIT_FETCH_WITH_CLI is on but SCOPES_GIT_FETCH_TIMEOUT is not "
             "positive: scope git ops have no time limit, and a hung one is never "
             "stopped"
+        )
+    clone_limit = _timeout_or_none(clone_timeout())
+    if clone_limit is not None and (fetch_limit is None or clone_limit < fetch_limit):
+        raise ValueError(
+            "SCOPES_GIT_CLONE_TIMEOUT="
+            f"{opal_server_config.SCOPES_GIT_CLONE_TIMEOUT!r} is below "
+            "SCOPES_GIT_FETCH_TIMEOUT="
+            f"{opal_server_config.SCOPES_GIT_FETCH_TIMEOUT!r}: a clone downloads "
+            "the whole repository, so it gets at least a fetch's time; raise it, "
+            "or unset it for 5 times the fetch timeout"
         )
     path = known_hosts_file()
     if path is not None:
@@ -467,6 +516,23 @@ def validate_git_cli_settings() -> None:
             f"expand; point TMPDIR elsewhere, or make {_SHM} writable"
         )
     _check_user_entry()
+    if shards != 1:
+        _warn_shards_ignored(shards)
+
+
+def _warn_shards_ignored(shards: int) -> None:
+    """A WARNING, once per process, that the git command-line fetch keeps one
+    clone per repository whatever SCOPES_REPO_CLONES_SHARDS says."""
+    if os.getpid() in _shards_warned_pids:
+        return
+    _shards_warned_pids.add(os.getpid())
+    logger.warning(
+        "SCOPES_REPO_CLONES_SHARDS={shards} is ignored with the git command-line "
+        "fetch: each repository has one clone. Remove it, or set "
+        "OPAL_SCOPES_GIT_FETCH_WITH_CLI=false to keep {shards} libgit2 clones "
+        "per repository",
+        shards=shards,
+    )
 
 
 def _check_user_entry() -> None:
@@ -492,7 +558,9 @@ def _check_user_entry() -> None:
 def _check_git_version() -> None:
     git = shutil.which("git")
     if git is None:
-        raise ValueError("SCOPES_GIT_FETCH_WITH_CLI is on but there is no git on PATH")
+        raise ValueError(
+            f"SCOPES_GIT_FETCH_WITH_CLI is on but there is no git on PATH{_LIBGIT2_WAY_BACK}"
+        )
     try:
         out = subprocess.run(
             [git, "--version"],
@@ -503,7 +571,8 @@ def _check_git_version() -> None:
         ).stdout
     except (OSError, subprocess.SubprocessError) as e:
         raise ValueError(
-            f"SCOPES_GIT_FETCH_WITH_CLI is on but {git} --version failed: {e}"
+            f"SCOPES_GIT_FETCH_WITH_CLI is on but {git} --version failed: "
+            f"{e}{_LIBGIT2_WAY_BACK}"
         ) from None
     match = _GIT_VERSION_RE.search(out)
     found = tuple(int(n) for n in match.groups()) if match else None
@@ -512,7 +581,7 @@ def _check_git_version() -> None:
         raise ValueError(
             f"SCOPES_GIT_FETCH_WITH_CLI is on but {git} is "
             f"{out.strip() or 'of an unknown version'}; it needs git {needed} or "
-            "later"
+            f"later{_LIBGIT2_WAY_BACK}"
         )
 
 

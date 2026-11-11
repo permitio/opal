@@ -29,6 +29,9 @@ from opal_server.scopes.api import init_scope_router
 from opal_server.scopes.scope_repository import ScopeNotFoundError
 from opal_server.scopes.service import NewCommitsCallbacks, ScopesService
 
+# These syncs fetch real local origins through the scope fetch backend.
+pytestmark = pytest.mark.fetch_backend("both")
+
 SCOPE_ID = "s1"
 AUTHOR = git.Actor("test", "test@example.com")
 

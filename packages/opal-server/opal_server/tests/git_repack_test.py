@@ -59,6 +59,9 @@ from opal_server.scopes.purge import purge_local_memory
 from opal_server.scopes.scope_repository import ScopeNotFoundError
 from opal_server.scopes.service import NewCommitsCallbacks, ScopesService
 
+# What these tests stub or measure is libgit2's fetch and clone.
+pytestmark = pytest.mark.fetch_backend("libgit2")
+
 _SIG = pygit2.Signature("opal-test", "opal-test@example.com")
 
 

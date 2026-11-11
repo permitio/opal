@@ -393,7 +393,9 @@ def test_preload_scopes_configures_logging_when_nothing_did(
 
 def _ignored_known_hosts(monkeypatch, tmp_path) -> None:
     """Settings on which the git settings check logs an ERROR (an ignored
-    SCOPES_GIT_SSH_KNOWN_HOSTS) and starts the server all the same."""
+    SCOPES_GIT_SSH_KNOWN_HOSTS, in scopes mode) and starts the server all the
+    same."""
+    monkeypatch.setattr(opal_server_config, "SCOPES", True)
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", False)
     monkeypatch.setattr(
         opal_server_config, "SCOPES_GIT_SSH_KNOWN_HOSTS", str(tmp_path / "known")

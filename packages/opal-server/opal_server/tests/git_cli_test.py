@@ -85,6 +85,9 @@ def _source(url: str, auth=None) -> GitPolicyScopeSource:
 
 @pytest.fixture(autouse=True)
 def _short_grace(monkeypatch):
+    """Scopes mode, where the server checks the git command line's settings at
+    start, with a short kill grace."""
+    monkeypatch.setattr(opal_server_config, "SCOPES", True)
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_CLI_KILL_GRACE", _GRACE)
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_SSH_KNOWN_HOSTS", None)
 

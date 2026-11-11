@@ -21,6 +21,53 @@ import pygit2
 import pytest
 from opal_server.config import opal_server_config
 
+# --- the scope fetch backend ---------------------------------------------------
+
+# What each name of the fetch_backend marker sets SCOPES_GIT_FETCH_WITH_CLI to.
+_FETCH_BACKENDS = {"cli": True, "libgit2": False}
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "fetch_backend(name): pin the scope fetch backend for the test: "
+        '"cli" (the git command line), "libgit2", or "both" (the test runs '
+        "once with each)",
+    )
+
+
+def pytest_generate_tests(metafunc):
+    marker = metafunc.definition.get_closest_marker("fetch_backend")
+    if marker is not None and marker.args == ("both",):
+        metafunc.parametrize("fetch_backend", list(_FETCH_BACKENDS), indirect=True)
+
+
+def fetch_backend_cli_setting(name: Optional[str]) -> bool:
+    """SCOPES_GIT_FETCH_WITH_CLI for the backend ``name`` names.
+
+    Raises:
+        ValueError: ``name`` is no backend's ("both" is resolved before).
+    """
+    if name not in _FETCH_BACKENDS:
+        raise ValueError(
+            f"fetch_backend({name!r}): use one of {sorted(_FETCH_BACKENDS)} or 'both'"
+        )
+    return _FETCH_BACKENDS[name]
+
+
+@pytest.fixture(autouse=True)
+def fetch_backend(request, monkeypatch) -> Optional[str]:
+    """The backend the test's fetch_backend marker pins, set for the test;
+    None, and the setting left as configured, for a test without one."""
+    marker = request.node.get_closest_marker("fetch_backend")
+    if marker is None:
+        return None
+    name = getattr(request, "param", None) or next(iter(marker.args), None)
+    monkeypatch.setattr(
+        opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", fetch_backend_cli_setting(name)
+    )
+    return name
+
 
 class NoScopes:
     """A ScopeRepository with no scopes."""
@@ -257,7 +304,8 @@ class GitHttpServer(ThreadingHTTPServer):
     this many bytes of a pack (the answer to a fetch request), then hold
     the connection open until the server closes. The answer's
     Content-Length is the whole pack's, so the client waits for the rest:
-    without one, libgit2 fails the fetch at once. ``error``: answer every
+    without one, libgit2 fails the fetch at once. ``delay``: hold the answer
+    to a fetch request this many seconds, then send it whole. ``error``: answer every
     request (once authorized) with a git ``ERR`` packet carrying this
     message, which git prints as a remote error. Every request's headers
     are kept in ``requests``, and its scheme (http or https) at the same
@@ -273,6 +321,7 @@ class GitHttpServer(ThreadingHTTPServer):
         self.tls: Optional[ssl.SSLContext] = None
         self.authorization: Optional[str] = None
         self.stall_after: Optional[int] = None
+        self.delay: Optional[float] = None
         self.error: Optional[str] = None
         self.stalled = threading.Event()
         self.release = threading.Event()
@@ -398,12 +447,13 @@ class _GitHttpHandler(BaseHTTPRequestHandler):
                 status = int(value.split()[0])
             elif key:
                 headers.append((key, value.strip()))
-        stall = (
-            server.stall_after
-            if self.command == "POST"
-            and (b"command=fetch" in plain or b"want " in plain)
-            else None
+        asks_for_a_pack = self.command == "POST" and (
+            b"command=fetch" in plain or b"want " in plain
         )
+        stall = server.stall_after if asks_for_a_pack else None
+        if asks_for_a_pack and server.delay is not None:
+            if server.release.wait(server.delay):
+                return
         self.send_response(status)
         for key, value in headers:
             self.send_header(key, value)

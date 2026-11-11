@@ -6,6 +6,9 @@ import pytest
 from opal_common.schemas.policy_source import GitPolicyScopeSource, NoAuthData
 from opal_server.git_fetcher import GitPolicyFetcher
 
+# What these tests stub or measure is libgit2's fetch and clone.
+pytestmark = pytest.mark.fetch_backend("libgit2")
+
 
 def _make_fetcher(
     base_dir: Path, scope_id: str, url: str, branch: str = "main"

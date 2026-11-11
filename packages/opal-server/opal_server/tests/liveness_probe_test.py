@@ -13,6 +13,9 @@ from opal_server.git_fetcher import GitPolicyFetcher
 from opal_server.scopes.scope_repository import ScopeNotFoundError
 from opal_server.scopes.service import ScopesService
 
+# What these tests stub or measure is libgit2's fetch and clone.
+pytestmark = pytest.mark.fetch_backend("libgit2")
+
 
 def _source(url="https://git/repo-a.git"):
     return GitPolicyScopeSource(

@@ -738,6 +738,8 @@ async def test_concurrent_purges_for_shared_source_do_not_both_skip(tmp_path):
     ), "both purges skipped — the shared source's caches leaked fleet-wide"
 
 
+# Shards exist only with libgit2: the git command line keeps one clone per repo.
+@pytest.mark.fetch_backend("libgit2")
 @pytest.mark.asyncio
 async def test_find_scope_sharing_source_distinguishes_shards(monkeypatch):
     monkeypatch.setattr(opal_server_config, "SCOPES_REPO_CLONES_SHARDS", 4)

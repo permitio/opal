@@ -121,3 +121,75 @@ docker run -it \
   -p 8181:8181 \
   permitio/opal-client
 ```
+
+## How the server fetches scope repositories
+
+The server clones and fetches each scope's repository with the git command
+line, git 2.32 or later, run under `/bin/sh`, with `ssh` for SSH sources. The
+official images have all three. Each repository has one clone, which every
+scope on it shares. A clone gets
+[`OPAL_SCOPES_GIT_CLONE_TIMEOUT`](/getting-started/configuration#opal_scopes_git_clone_timeout)
+(by default 5 times `OPAL_SCOPES_GIT_FETCH_TIMEOUT`), and a fetch
+[`OPAL_SCOPES_GIT_FETCH_TIMEOUT`](/getting-started/configuration#opal_scopes_git_fetch_timeout);
+git is stopped at either. The server checks for git and `/bin/sh` at start
+only with `OPAL_SCOPES` on; a policy repository tracked outside scopes mode
+(`OPAL_POLICY_SOURCE_TYPE=GIT`, the default) runs git too.
+
+libgit2 is the second backend:
+[`OPAL_SCOPES_GIT_FETCH_WITH_CLI`](/getting-started/configuration#opal_scopes_git_fetch_with_cli)`=false`
+selects it, and with it `OPAL_SCOPES_REPO_CLONES_SHARDS` clones per
+repository. The reference entry of that setting lists what the two backends
+do differently.
+
+### Upgrading from 0.9
+
+0.9 fetched with libgit2 unless `OPAL_SCOPES_GIT_FETCH_WITH_CLI` was on. From
+0.10 the git command line is the default:
+
+- A server in scopes mode does not start without git 2.32 or later and
+  `/bin/sh`; the error names `OPAL_SCOPES_GIT_FETCH_WITH_CLI=false`, which
+  keeps libgit2. A server installed from the Python packages needs git on its
+  `PATH`.
+- `OPAL_SCOPES_REPO_CLONES_SHARDS` is ignored with the git command line, with a
+  WARNING at start when it is not 1: remove it. A value below 1 stops the
+  server, with either backend.
+- A server that restarts on the same `OPAL_BASE_DIR` fetches libgit2's first
+  clone of each repository (the directory whose name ends in `-0`) without
+  cloning again. The clones of the other shards are no longer used; remove
+  them by hand. A Kubernetes pod on an `emptyDir` starts with an empty volume
+  and makes one clone per repository.
+- The clone timeout is hard: a clone still running at
+  `OPAL_SCOPES_GIT_CLONE_TIMEOUT` is stopped and never lands, where libgit2
+  let a slow clone finish in the background. Measure a clone of your largest
+  repository and set the timeout above it, with room to spare. A value below
+  `OPAL_SCOPES_GIT_FETCH_TIMEOUT` stops the server. The pre-fork preload waits
+  for each clone, so a start can take up to this timeout, plus
+  `OPAL_SCOPES_GIT_CLI_KILL_GRACE`, while a remote stalls: size startup
+  probes for it (by default 600 seconds, where 0.9's libgit2 clone gave up
+  after 120).
+- git reads neither the system's nor the user's git config (a `url.insteadOf`
+  there no longer applies), and OpenSSH refuses a git server that offers only
+  an `ssh-rsa` host key, which libgit2 accepted.
+
+### OpenShift and other arbitrary user ids
+
+OpenShift runs a container under an arbitrary user id in group 0, whatever
+user the image names. To run the server there:
+
+- Make what the server writes writable by group 0, in an image built on the
+  official one: `chgrp -R 0 /opal && chmod -R g=u /opal`. Or put
+  `OPAL_BASE_DIR`, where the scope clones are, on a volume the user id can
+  write.
+- Set `HOME=/opal`. Without a user database entry for the user id, `HOME`
+  may not be the image user's home, and defaults that are under it
+  (`OPAL_BASE_DIR`, the policy repository's SSH key file) then point
+  elsewhere.
+- `ssh` does not run under a user id with no entry in the user database
+  (`/etc/passwd`), so every scope source fetched over SSH fails there; the
+  server logs it at ERROR at start, and HTTPS sources are not affected. Run
+  the server as the image's own user, give the user id an entry with
+  `nss_wrapper` (its `LD_PRELOAD` and `NSS_WRAPPER_*` variables reach git and
+  ssh), or fetch scopes with libgit2
+  (`OPAL_SCOPES_GIT_FETCH_WITH_CLI=false`), which needs no entry. A policy
+  repository tracked over SSH outside scopes mode runs git and ssh too, and
+  needs an entry with either backend.

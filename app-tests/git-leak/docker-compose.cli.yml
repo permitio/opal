@@ -3,4 +3,6 @@
 services:
   opal_server:
     environment:
-      OPAL_SCOPES_GIT_FETCH_WITH_CLI: "true"
+      # Through the base file's knob, so that a test that recreates the server
+      # on libgit2 (the reshard test: only libgit2 has shards) gets it.
+      OPAL_SCOPES_GIT_FETCH_WITH_CLI: "${OPAL_TEST_FETCH_WITH_CLI:-true}"

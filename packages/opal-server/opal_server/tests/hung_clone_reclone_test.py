@@ -32,6 +32,9 @@ from opal_server.git_fetcher import (
     run_in_git_executor,
 )
 
+# What these tests stub or measure is libgit2's fetch and clone.
+pytestmark = pytest.mark.fetch_backend("libgit2")
+
 HOST = git_fetcher_module._HUNG_MARKER_HOST
 
 

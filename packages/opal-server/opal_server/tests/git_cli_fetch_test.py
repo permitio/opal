@@ -8,6 +8,7 @@ Real git against local remotes only (see git_cli_test).
 
 import asyncio
 import errno
+import math
 import os
 import shutil
 import subprocess
@@ -294,6 +295,125 @@ async def test_a_member_that_outlives_sigkill_holds_no_max_workers_slot(
     assert git_op_in_flight(survivor)
     assert _refs(free)["refs/remotes/origin/master"] == new
     await _until(lambda: not git_op_in_flight(survivor))
+
+
+@pytest.mark.asyncio
+async def test_stalled_clones_hold_a_healthy_clone_one_fetch_timeout_a_round(
+    cli_on, blackhole, git_origin, tmp_path, monkeypatch, processes_with
+):
+    """Clones of remotes that never answer, begun first, keep a healthy
+    source's clone waiting one fetch timeout per round of slots.
+
+    A clone holds its SCOPES_GIT_MAX_WORKERS slot for
+    SCOPES_GIT_FETCH_TIMEOUT at most and runs on outside it, to
+    SCOPES_GIT_CLONE_TIMEOUT, so a round is not one clone timeout.
+    """
+    fetch_timeout, clone_timeout = 0.5, 4.0
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_MAX_WORKERS", 2)
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_TIMEOUT", fetch_timeout)
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_CLONE_TIMEOUT", clone_timeout)
+    marker = f"stalled-{uuid.uuid4().hex}"
+    base = tmp_path / "base"
+    stalled = [
+        _fetcher(base, _source(f"http://127.0.0.1:{blackhole}/{marker}-{i}.git"))
+        for i in range(4)
+    ]
+    syncs = [asyncio.ensure_future(f.fetch_and_notify_on_changes()) for f in stalled]
+    await _until(lambda: all(git_op_in_flight(f.clone_source_id) for f in stalled[:2]))
+    healthy = _fetcher(base, _source(git_origin.url))
+    head = str(git_origin.repo.references["refs/heads/master"].target)
+
+    start = time.monotonic()
+    await healthy.fetch_and_notify_on_changes()
+    elapsed = time.monotonic() - start
+
+    assert healthy.callbacks.updates == [(None, head)]
+    assert elapsed <= 2 * fetch_timeout + 2, (
+        f"the healthy clone waited {elapsed:.1f}s for a slot (clone timeout "
+        f"{clone_timeout}s, fetch timeout {fetch_timeout}s)"
+    )
+    assert all(git_op_in_flight(f.clone_source_id) for f in stalled)
+    await asyncio.gather(*syncs)
+    await _until(lambda: processes_with(marker) == [])
+
+
+def _stalled_clone(blackhole: int, path: Path, timeout: float, slot_timeout):
+    """A clone from a remote that never answers, run by run_git_cli_op as a
+    task; the task and the op's in-flight key."""
+    key = f"stalled-{uuid.uuid4().hex}"
+    url = f"http://127.0.0.1:{blackhole}/{key}.git"
+    op = run_git_cli_op(
+        partial(cli_clone, url, path, _source(url), remote="origin", timeout=timeout),
+        timeout=timeout,
+        busy_key=key,
+        slot_timeout=slot_timeout,
+    )
+    return asyncio.ensure_future(op), key
+
+
+async def _clone_on_a_slot(origin_url: str, path: Path) -> float:
+    """How long a git command-line clone of ``origin_url`` took, waiting for
+    its SCOPES_GIT_MAX_WORKERS slot included."""
+    start = time.monotonic()
+    await run_git_cli_op(
+        partial(
+            cli_clone,
+            origin_url,
+            path,
+            _source(origin_url),
+            remote="origin",
+            timeout=60,
+        ),
+        timeout=60,
+        busy_key=f"healthy-{uuid.uuid4().hex}",
+    )
+    return time.monotonic() - start
+
+
+@pytest.mark.asyncio
+async def test_an_op_gives_its_slot_back_at_its_slot_timeout_and_runs_on(
+    blackhole, git_origin, tmp_path, monkeypatch, processes_with
+):
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_MAX_WORKERS", 1)
+    slot_timeout, timeout = 0.5, 3.0
+    stalled, key = _stalled_clone(
+        blackhole, tmp_path / "stalled", timeout, slot_timeout
+    )
+    await _until(lambda: git_op_in_flight(key))
+
+    waited = await _clone_on_a_slot(git_origin.url, tmp_path / "healthy")
+
+    assert slot_timeout - 0.2 <= waited <= slot_timeout + 1.5
+    assert git_op_in_flight(key) and not stalled.done()
+    with pytest.raises(GitCliTimeoutError):
+        await stalled
+    await _until(lambda: not git_op_in_flight(key))
+    assert processes_with(key) == []
+    # Given back once: the one slot is free, and taking it leaves none.
+    slots = git_fetcher_module._get_live_ops_semaphore()
+    await asyncio.wait_for(slots.acquire(), 1)
+    assert slots.locked()
+    slots.release()
+
+
+@pytest.mark.parametrize("slot_timeout", [None, 0.0, -1.0, math.nan, math.inf])
+@pytest.mark.asyncio
+async def test_without_a_positive_finite_slot_timeout_an_op_holds_its_slot(
+    slot_timeout, blackhole, git_origin, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_MAX_WORKERS", 1)
+    timeout = 1.0
+    stalled, key = _stalled_clone(
+        blackhole, tmp_path / "stalled", timeout, slot_timeout
+    )
+    await _until(lambda: git_op_in_flight(key))
+
+    waited = await _clone_on_a_slot(git_origin.url, tmp_path / "healthy")
+
+    assert waited >= timeout - 0.2
+    assert stalled.done()
+    with pytest.raises(GitCliTimeoutError):
+        await stalled
 
 
 @pytest.mark.asyncio
@@ -701,6 +821,7 @@ def test_the_server_starts_with_known_hosts_and_the_cli_off_and_logs_an_error(
     # The capture sink would go with every other handler.
     monkeypatch.setattr(server_module, "configure_logs", lambda: None)
     path = tmp_path / "missing_known_hosts"
+    monkeypatch.setattr(opal_server_config, "SCOPES", True)
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", False)
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_SSH_KNOWN_HOSTS", str(path))
     records = []
@@ -782,6 +903,7 @@ def test_a_worker_s_start_removes_the_ssh_key_files_of_processes_that_died(
     import opal_server.server as server_module
 
     monkeypatch.setattr(server_module, "configure_logs", lambda: None)
+    monkeypatch.setattr(opal_server_config, "SCOPES", True)
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", True)
     shm = tmp_path / "shm"
     shm.mkdir()

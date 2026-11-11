@@ -58,6 +58,7 @@ from opal_server.git_cli import (
     GitCliRefusedSourceError,
     cli_clone,
     cli_fetch,
+    clone_timeout,
 )
 from pygit2 import (
     KeypairFromMemory,
@@ -1149,6 +1150,14 @@ def git_cli_enabled() -> bool:
     return bool(opal_server_config.SCOPES_GIT_FETCH_WITH_CLI)
 
 
+def clone_shards() -> int:
+    """How many clones one repository has: 1 with the git command-line fetch,
+    which ignores SCOPES_REPO_CLONES_SHARDS, else that setting."""
+    if git_cli_enabled():
+        return 1
+    return opal_server_config.SCOPES_REPO_CLONES_SHARDS
+
+
 async def run_git_cli_op(
     op: Callable[..., Awaitable[None]],
     *,
@@ -1156,6 +1165,7 @@ async def run_git_cli_op(
     busy_key: str,
     marker_dir: Optional[Path] = None,
     mark_when_hung: bool = False,
+    slot_timeout: Optional[float] = None,
 ) -> None:
     """Run a git command-line op (``git_cli.cli_fetch`` or ``cli_clone``, given
     every argument but ``on_gone``) under the bookkeeping
@@ -1166,8 +1176,10 @@ async def run_git_cli_op(
     gone and its clone cleaned up, which for a stop or a git that outlives
     SIGKILL can be after the op returned) it counts as in flight
     (``busy_key``, SCOPES_GIT_MAX_ZOMBIES); it holds a
-    SCOPES_GIT_MAX_WORKERS slot until it returns. It writes a hung-op
-    marker at ``timeout`` when ``mark_when_hung`` says so and removes it
+    SCOPES_GIT_MAX_WORKERS slot until it returns or, with a positive and
+    finite ``slot_timeout``, until it has run that long, and then runs on
+    outside the limit, as a libgit2 op past its timeout does. It writes a
+    hung-op marker at ``timeout`` when ``mark_when_hung`` says so and removes it
     at its on_gone; an op that succeeds within its timeout removes every
     marker in ``marker_dir``. An op the end of the event loop cut short
     (on_gone told None: SIGKILLed, its clean-up left to the next op on the
@@ -1181,7 +1193,18 @@ async def run_git_cli_op(
     loop = asyncio.get_running_loop()
     sem = _get_live_ops_semaphore()
     await sem.acquire()
+    holds_slot = True
+
+    def _give_slot_back() -> None:
+        nonlocal holds_slot
+        if holds_slot:
+            holds_slot = False
+            sem.release()
+
+    slot_timer = None
     try:
+        if slot_timeout and math.isfinite(slot_timeout) and slot_timeout > 0:
+            slot_timer = loop.call_later(slot_timeout, _give_slot_back)
         _mark_git_op_started(busy_key)
         timer = (
             loop.call_later(timeout, hung.timed_out)
@@ -1198,7 +1221,9 @@ async def run_git_cli_op(
 
         await op(on_gone=_gone)
     finally:
-        sem.release()
+        if slot_timer is not None:
+            slot_timer.cancel()
+        _give_slot_back()
 
 
 # --- scope clone repack -------------------------------------------------------
@@ -3996,9 +4021,10 @@ class GitPolicyFetcher(PolicyFetcher):
 
     async def _clone_repository(self) -> Repository:
         """Clone the source to the clone path, with git
-        (SCOPES_GIT_FETCH_WITH_CLI) or libgit2; a handle on the clone."""
-        timeout = opal_server_config.SCOPES_GIT_FETCH_TIMEOUT
+        (SCOPES_GIT_FETCH_WITH_CLI, within SCOPES_GIT_CLONE_TIMEOUT) or libgit2
+        (within SCOPES_GIT_FETCH_TIMEOUT); a handle on the clone."""
         if git_cli_enabled():
+            timeout = clone_timeout()
             await run_git_cli_op(
                 partial(
                     cli_clone,
@@ -4012,6 +4038,10 @@ class GitPolicyFetcher(PolicyFetcher):
                 busy_key=self._source_id,
                 marker_dir=hung_marker_dir(self._repo_path),
                 mark_when_hung=reclone_hung_enabled(),
+                # No longer than a fetch's: clones of remotes that never
+                # answer would hold every slot for the clone timeout, and
+                # every other git op of this process would wait behind them.
+                slot_timeout=opal_server_config.SCOPES_GIT_FETCH_TIMEOUT,
             )
             try:
                 return await run_sync(Repository, str(self._repo_path))
@@ -4025,7 +4055,7 @@ class GitPolicyFetcher(PolicyFetcher):
             str(self._repo_path),
             repository=_init_scope_clone,
             callbacks=self._auth_callbacks,
-            timeout=timeout,
+            timeout=opal_server_config.SCOPES_GIT_FETCH_TIMEOUT,
             busy_key=self._source_id,
             marker_dir=hung_marker_dir(self._repo_path),
             mark_when_hung=reclone_hung_enabled(),
@@ -4450,10 +4480,8 @@ class GitPolicyFetcher(PolicyFetcher):
     @staticmethod
     def source_id(source: GitPolicyScopeSource) -> str:
         base = hashlib.sha256(source.url.encode("utf-8")).hexdigest()
-        index = (
-            hashlib.sha256(source.branch.encode("utf-8")).digest()[0]
-            % opal_server_config.SCOPES_REPO_CLONES_SHARDS
-        )
+        shards = clone_shards()
+        index = hashlib.sha256(source.branch.encode("utf-8")).digest()[0] % shards
         return f"{base}-{index}"
 
     @staticmethod

@@ -473,7 +473,11 @@ class TestGitCliInImage:
 
         assert git_cli, "no git_cli*_test.py under opal_server/tests"
         assert git_cli <= files
-        assert {"git_config_isolation_test.py", "git_repack_test.py"} <= files
+        assert {
+            "git_config_isolation_test.py",
+            "git_repack_test.py",
+            "default_fetch_backend_test.py",
+        } <= files
         for name in files:
             assert (self.TESTS / name).is_file(), name
 

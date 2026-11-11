@@ -50,6 +50,9 @@ from opal_server.scopes.service import NewCommitsCallbacks, ScopesService
 from opal_server.scopes.task import ScopesPolicyWatcherTask
 from starlette.requests import Request
 
+# What these tests stub or measure is libgit2's fetch and clone.
+pytestmark = pytest.mark.fetch_backend("libgit2")
+
 _WAIT_METRIC = "opal_server.scopes.policy_clone_wait"
 _REFRESH_METRIC = "opal_server.scopes.policy_branch_refresh"
 AUTHOR = git.Actor("test", "test@example.com")

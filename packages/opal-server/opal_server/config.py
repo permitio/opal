@@ -225,27 +225,52 @@ class OpalServerConfig(Confi):
     SCOPES_GIT_FETCH_TIMEOUT = confi.float(
         "SCOPES_GIT_FETCH_TIMEOUT",
         120.0,
-        description="Soft timeout in seconds for a single scope git clone/fetch: "
-        "the awaiting operation is abandoned (the event loop and the sync pass "
-        "move on) and the op is logged and skipped, retried next cycle. It is a "
-        "SOFT timeout: the underlying git call keeps running on its own thread, "
-        "and the pinned libgit2 sets no socket/server read timeout, so a "
-        "black-holed remote can keep that thread — and the source's in-flight "
-        "marker — alive for the life of the process (that source is then skipped "
-        "until it recovers or the process restarts); SCOPES_GIT_MAX_ZOMBIES "
-        "bounds how many such threads accumulate. Either way one unreachable repo "
-        "never blocks boot or other scopes (0 = no timeout). With "
-        "SCOPES_GIT_FETCH_WITH_CLI on it is a HARD timeout instead: git is "
-        "stopped at the timeout (see SCOPES_GIT_CLI_KILL_GRACE).",
+        description="Timeout in seconds for a single scope git fetch, and with "
+        "SCOPES_GIT_FETCH_WITH_CLI off for a clone too: the op is logged and "
+        "skipped, retried next cycle, so one unreachable repo never blocks boot "
+        "or other scopes (0 = no timeout). With SCOPES_GIT_FETCH_WITH_CLI on "
+        "(the default) it is a HARD timeout: git is stopped at the timeout (see "
+        "SCOPES_GIT_CLI_KILL_GRACE), and a clone has SCOPES_GIT_CLONE_TIMEOUT "
+        "instead. With it off it is a SOFT timeout: the awaiting operation is "
+        "abandoned (the event loop and the sync pass move on), but the "
+        "underlying libgit2 call keeps running on its own thread, and libgit2 "
+        "sets no socket/server read timeout, so a black-holed remote can keep "
+        "that thread — and the source's in-flight marker — alive for the life "
+        "of the process (that source is then skipped until it recovers or the "
+        "process restarts); SCOPES_GIT_MAX_ZOMBIES bounds how many such threads "
+        "accumulate.",
+    )
+    SCOPES_GIT_CLONE_TIMEOUT = confi.float(
+        "SCOPES_GIT_CLONE_TIMEOUT",
+        None,
+        description="With SCOPES_GIT_FETCH_WITH_CLI on: the hard timeout in "
+        "seconds of a scope clone, which downloads the whole repository and "
+        "takes longer than a fetch. git is stopped at it as a fetch is at "
+        "SCOPES_GIT_FETCH_TIMEOUT (see SCOPES_GIT_CLI_KILL_GRACE), and a clone "
+        "stopped there never lands: the next sync starts it over. When unset "
+        "(the default), 5 times SCOPES_GIT_FETCH_TIMEOUT; 0 or less means no "
+        "limit. Size it from a measured clone of the largest repository, with "
+        "room to spare. The pre-fork scope preload waits for each clone, so a "
+        "start can take this long, plus SCOPES_GIT_CLI_KILL_GRACE, when a "
+        "remote stalls a clone: size a startup probe for it. The server does "
+        "not start when it is below "
+        "SCOPES_GIT_FETCH_TIMEOUT (no limit counting as the highest). With "
+        "SCOPES_GIT_FETCH_WITH_CLI off, a libgit2 clone has "
+        "SCOPES_GIT_FETCH_TIMEOUT.",
     )
     SCOPES_GIT_FETCH_WITH_CLI = confi.bool(
         "SCOPES_GIT_FETCH_WITH_CLI",
-        False,
+        True,
         description="Whether scope fetches and clones run the git command line "
-        "(git fetch) instead of libgit2. A libgit2 fetch runs on a thread that "
+        "(git fetch; the default) or, when false, libgit2. With the git command "
+        "line each repository has one clone (see SCOPES_REPO_CLONES_SHARDS). "
+        "What it needs is checked at start only in scopes mode (a policy "
+        "repository tracked outside scopes mode, with POLICY_SOURCE_TYPE GIT, "
+        "the default, runs git too). A libgit2 fetch runs on a thread that "
         "cannot be stopped, so one that hangs keeps its clone from syncing until "
         "it returns or the process restarts. With this on each op runs git in a "
-        "process group of its own, and SCOPES_GIT_FETCH_TIMEOUT is hard: at the "
+        "process group of its own, and SCOPES_GIT_FETCH_TIMEOUT "
+        "(SCOPES_GIT_CLONE_TIMEOUT for a clone) is hard: at the "
         "timeout the group gets SIGTERM, then SIGKILL SCOPES_GIT_CLI_KILL_GRACE "
         "seconds later, the lock files and partial pack git left in the clone "
         "are removed, and the next sync fetches the clone again. The group also "
@@ -336,7 +361,8 @@ class OpalServerConfig(Confi):
         "SCOPES_GIT_CLI_KILL_GRACE",
         5.0,
         description="With SCOPES_GIT_FETCH_WITH_CLI on: seconds a git fetch or "
-        "clone that ran past SCOPES_GIT_FETCH_TIMEOUT gets to exit on SIGTERM, "
+        "clone that ran past its timeout (SCOPES_GIT_FETCH_TIMEOUT, or "
+        "SCOPES_GIT_CLONE_TIMEOUT for a clone) gets to exit on SIGTERM, "
         "which lets git remove its own lock files and temporary pack, before its "
         "process group gets SIGKILL. OPAL then waits up to 10 seconds more for "
         "the group to exit, and once it has, removes what git left in the "
@@ -396,9 +422,13 @@ class OpalServerConfig(Confi):
         "tail is bounded by SCOPES_GIT_MAX_ZOMBIES, which is a GLOBAL ceiling: "
         "read its description, because at that ceiling new git ops are refused "
         "for every scope, healthy ones included. With SCOPES_GIT_FETCH_WITH_CLI "
-        "on, a timed-out op leaves no thread behind, and holds its slot until "
+        "on, a timed-out fetch leaves no thread behind, and holds its slot until "
         "git is stopped: up to SCOPES_GIT_CLI_KILL_GRACE plus 10 seconds, plus "
-        "the removal of what git left, past the timeout.",
+        "the removal of what git left, past the timeout. A clone gives its slot "
+        "back once it has run SCOPES_GIT_FETCH_TIMEOUT and runs on outside this "
+        "limit, up to SCOPES_GIT_CLONE_TIMEOUT, still counted against "
+        "SCOPES_GIT_MAX_ZOMBIES: clones of remotes that never answer hold the "
+        "slots no longer than fetches do.",
     )
     SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT = confi.float(
         "SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT",
@@ -417,10 +447,13 @@ class OpalServerConfig(Confi):
         "SCOPES_GIT_RECLONE_HUNG_ON_START",
         False,
         description="Whether a server start clones again the scope clones on which a git "
-        "op was still hung when its server process ended. A fetch or clone "
-        "that runs past SCOPES_GIT_FETCH_TIMEOUT keeps running on its daemon "
-        "thread, and the clone is not fetched again while it lasts. With this "
-        "on (and SCOPES_GIT_FETCH_TIMEOUT positive), such an op writes a "
+        "op was still hung when its server process ended. A libgit2 fetch or "
+        "clone that runs past SCOPES_GIT_FETCH_TIMEOUT keeps running on its "
+        "daemon thread, and the clone is not fetched again while it lasts; a "
+        "git command-line one (SCOPES_GIT_FETCH_WITH_CLI) is stopped at its "
+        "timeout (SCOPES_GIT_CLONE_TIMEOUT for a clone), which it can outlive "
+        "only stuck in uninterruptible I/O. With this on (and "
+        "SCOPES_GIT_FETCH_TIMEOUT positive), such an op writes a "
         "marker file of its own, with a unique name, in a directory beside "
         "the clone (git_sources/SOURCE_ID.hung/, SOURCE_ID being the clone's "
         "directory name) and removes it when it returns. A marker whose "
@@ -1027,7 +1060,16 @@ class OpalServerConfig(Confi):
     SCOPES_REPO_CLONES_SHARDS = confi.int(
         "SCOPES_REPO_CLONES_SHARDS",
         1,
-        description="The max number of local clones to use for the same repo (reused across scopes).",
+        description="With SCOPES_GIT_FETCH_WITH_CLI off: the number of local "
+        "clones of the same repository (reused across scopes) that libgit2 "
+        "spreads its scopes over, by branch. With SCOPES_GIT_FETCH_WITH_CLI on "
+        "(the default) each repository has one clone and this is ignored, with "
+        "a WARNING at start when it is not 1. That clone is libgit2's first "
+        "one (its directory name ends in -0), so a server switched to the git "
+        "command line fetches it without cloning again, and the clones of the "
+        "other shards stay unused in BASE_DIR's git_sources directory until "
+        "they are removed. The server does not start in scopes mode when this "
+        "is below 1.",
     )
 
     REDIS_URL = confi.str(
