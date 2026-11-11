@@ -161,6 +161,18 @@ class CloneNotPopulatedError(ValueError):
     client_disconnected: bool = False
 
 
+class _InvalidClone(Exception):
+    """The clone is not a repository, or is corrupt beyond use: delete it and
+    clone again.
+
+    ``reason`` tags opal_server.scopes.clone_deletions.
+    """
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
 class BranchHeadNotFoundError(ValueError):
     """The clone has remote-tracking refs, but not the configured branch's.
 
@@ -482,6 +494,26 @@ async def wait_for_git_op_gone(key: str, timeout: float) -> bool:
 # backend: whatever the clone holds (no branch at all, from an empty remote),
 # it has landed.
 _CLONED_KEY = "opal.cloned"
+
+
+def _check_object_dirs_readable(git_dir: Path, oid: str) -> None:
+    """Raise PermissionError when this process cannot list a directory libgit2
+    reads ``oid`` from: objects/, its loose fan-out directory, objects/pack.
+
+    libgit2 reads an object in a directory it cannot list as not found, which
+    says nothing about the clone. A fan-out or pack directory that is not
+    there is no fault: the object lives elsewhere.
+    """
+    objects = git_dir / "objects"
+    for directory in (objects, objects / oid[:2], objects / "pack"):
+        try:
+            is_dir = stat.S_ISDIR(os.stat(directory).st_mode)
+        except FileNotFoundError:
+            continue
+        if is_dir and not os.access(directory, os.R_OK | os.X_OK):
+            raise PermissionError(
+                errno.EACCES, os.strerror(errno.EACCES), str(directory)
+            )
 
 
 def clone_says_it_landed(git_dir: Path) -> bool:
@@ -3475,7 +3507,25 @@ class GitPolicyFetcher(PolicyFetcher):
                     # The probe opens/parses a fresh Repository handle from
                     # disk — off the event loop so a slow disk can't stall
                     # every other request being served on this worker.
-                    repo = await run_sync(self._get_valid_repo)
+                    invalid_reason: Optional[str] = None
+                    try:
+                        repo = await run_sync(self._get_valid_repo)
+                    except _InvalidClone as invalid:
+                        repo, invalid_reason = None, invalid.reason
+                    except OSError as e:
+                        # The server's side, not the clone's: a re-clone
+                        # would cost minutes and fix none of it.
+                        metrics.increment(
+                            "opal_server.scopes.git_op_skipped",
+                            tags={"reason": "clone_unreadable"},
+                        )
+                        logger.warning(
+                            "Could not open scope clone {path}, keeping it for "
+                            "the next sync: {err}",
+                            path=self._repo_path,
+                            err=repr(e),
+                        )
+                        return False
                     if repo is not None:
                         pass_started = GitPolicyFetcher.current_pass_started()
                         should_fetch = await self._should_fetch(
@@ -3600,6 +3650,11 @@ class GitPolicyFetcher(PolicyFetcher):
                             removed = await run_sync(
                                 _rmtree_unless_locked, str(self._repo_path)
                             )
+                            if removed:
+                                metrics.increment(
+                                    "opal_server.scopes.clone_deletions",
+                                    tags={"reason": invalid_reason},
+                                )
                         except FileNotFoundError:
                             removed = True  # already gone — the intended end state
                         except OSError as e:
@@ -4359,6 +4414,19 @@ class GitPolicyFetcher(PolicyFetcher):
             if not removed:
                 self._skip_locked_delete()
                 return
+            if self._repo_path.exists():
+                # Part of it is left (a directory this server cannot read):
+                # a clone into it would fail, and back the source off for a
+                # fault of this server's.
+                logger.error(
+                    "Not cloning {url} for scope {scope}: {path} is still there "
+                    "after a delete that failed; remove it, or make it removable "
+                    "by this server",
+                    url=redact_url(self._source.url),
+                    scope=self._scope_id,
+                    path=self._repo_path,
+                )
+                return
         logger.info(
             "Cloning repo at '{url}' to '{path}'",
             url=redact_url(self._source.url),
@@ -4444,7 +4512,17 @@ class GitPolicyFetcher(PolicyFetcher):
             GitPolicyFetcher.repos[path] = Repository(path)
         return GitPolicyFetcher.repos[path]
 
-    def _get_valid_repo(self) -> Optional[Repository]:
+    def _get_valid_repo(self) -> Repository:
+        """The clone's repository, once it is known to be usable.
+
+        Raises:
+            _InvalidClone: pygit2 says the clone is not a repository or is
+                corrupt (a pygit2.GitError), or the object the branch names
+                is gone.
+            OSError: the server could not read the clone (too many open
+                files, a permission): pygit2 raises OSError for libgit2's
+                OS errors, which say nothing about the clone.
+        """
         try:
             repo = self._get_repo()
             RepoInterface.verify_found_repo_matches_remote(repo, self._source.url)
@@ -4473,18 +4551,23 @@ class GitPolicyFetcher(PolicyFetcher):
                     # scope's siblings on it wait for in a sync pass.
                     return repo
                 if probe.get(ref.target) is None:
+                    _check_object_dirs_readable(
+                        self._repo_path / ".git", str(ref.target)
+                    )
                     logger.warning(
                         "Repo at {path} has refs but an unreadable object "
                         "store (missing head object) — treating as invalid",
                         path=self._repo_path,
                     )
-                    return None
+                    raise _InvalidClone("missing_object")
                 return repo
             finally:
                 probe.free()
-        except pygit2.GitError:
-            logger.warning("Invalid repo at: {path}", path=self._repo_path)
-            return None
+        except pygit2.GitError as e:
+            logger.warning(
+                "Invalid repo at {path}: {err}", path=self._repo_path, err=repr(e)
+            )
+            raise _InvalidClone("invalid") from None
 
     async def _should_fetch(
         self,
