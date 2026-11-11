@@ -222,7 +222,7 @@ class TestCiJob:
         return steps[0]["env"]
 
     def test_needs_every_other_job(self, jobs):
-        assert set(jobs["ci"]["needs"]) == set(jobs) - {"ci"}
+        assert set(jobs["ci"]["needs"]) == set(jobs) - {"ci", "notify"}
 
     def test_needs_the_pinned_jobs(self, jobs):
         assert set(jobs["ci"]["needs"]) == CI_NEEDS
@@ -362,7 +362,10 @@ class TestRelease:
         """The jobs a pull request runs, from a fork too, use nothing
         stored."""
         for job_id, job in jobs.items():
-            if job.get("if") == "github.event_name == 'release'":
+            # A job runs on a release only when its condition requires the release event.
+            if re.search(
+                r"(^|&& )github\.event_name == 'release'( &&|$)", job.get("if", "")
+            ):
                 continue
             text = yaml.safe_dump(job)
             assert "secrets." not in text, job_id
@@ -552,3 +555,38 @@ def test_only_the_image_publish_job_logs_in_to_docker_hub_and_through_oidc():
     assert login["env"]["DOCKERHUB_OIDC_CONNECTIONID"] == (
         "${{ vars.DOCKERHUB_OIDC_CONNECTIONID }}"
     )
+
+
+# The jobs that post a failure to Slack, per workflow: the condition they run on. Each runs
+# .github/scripts/notify.sh with the webhook of the security-scan environment.
+NOTIFY_CONDITIONS = {
+    "tests.yml": (
+        "always() && github.event_name == 'push' && github.ref == 'refs/heads/master'"
+        " && needs.ci.result != 'success'"
+    ),
+    "pre-commit.yml": (
+        "always() && github.event_name == 'push' && github.ref == 'refs/heads/master'"
+        " && needs.pre-commit.result != 'success'"
+    ),
+    "on_release.yml": (
+        "always() && github.event_name == 'release'"
+        " && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))"
+    ),
+}
+
+
+@pytest.mark.parametrize(("file_name", "condition"), NOTIFY_CONDITIONS.items())
+def test_a_failed_gate_on_master_or_a_failed_release_reaches_slack(
+    file_name, condition
+):
+    jobs = load(WORKFLOWS / file_name)["jobs"]
+    notify = jobs["notify"]
+    runs = [step.get("run", "") for step in steps_of(notify)]
+
+    assert notify["if"] == condition
+    assert environment_name(notify) == "security-scan"
+    assert notify["permissions"] == {"contents": "read"}
+    assert any(".github/scripts/notify.sh" in run for run in runs)
+    # tests.yml and pre-commit.yml: the required check's job; on_release.yml: every job.
+    expected = {"tests.yml": {"ci"}, "pre-commit.yml": {"pre-commit"}}
+    assert set(notify["needs"]) == expected.get(file_name, set(jobs) - {"notify"})

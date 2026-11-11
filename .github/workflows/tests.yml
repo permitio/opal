@@ -378,8 +378,9 @@ jobs:
         run: |
           workflow=.github/workflows/tests.yml
           # The parentheses matter: yq reads a - b - c as a - (b - c).
-          unlisted=$(yq -r '((.jobs | keys) - ["ci"]) - .jobs.ci.needs | .[]' "$workflow")
-          unknown=$(yq -r '.jobs.ci.needs - ((.jobs | keys) - ["ci"]) | .[]' "$workflow")
+          # notify runs after CI, so CI cannot need it.
+          unlisted=$(yq -r '((.jobs | keys) - ["ci", "notify"]) - .jobs.ci.needs | .[]' "$workflow")
+          unknown=$(yq -r '.jobs.ci.needs - ((.jobs | keys) - ["ci", "notify"]) | .[]' "$workflow")
           if [[ -n "$unlisted" ]]; then
             echo "Add these jobs to the needs list of the CI job in $workflow:" >&2
             echo "$unlisted" >&2
@@ -400,3 +401,26 @@ jobs:
           EXPECTED_JOBS: 6
           PULL_REQUEST_JOBS: dependency-review vuln
         run: .github/scripts/ci-aggregate.sh
+
+  # On a push to master only, when the CI check did not pass: a notice to the security Slack
+  # channel, through .github/scripts/notify.sh and the webhook of the security-scan environment,
+  # which admits master only. Not on pull requests, where the red check is already in front of
+  # the author: a failure on master means it got in. The run's link names the jobs that failed.
+  notify:
+    needs: [ci]
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/master' && needs.ci.result != 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: security-scan
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Post to Slack
+        env:
+          RESULT: ${{ needs.ci.result }}
+          SECURITY_SLACK_WEBHOOK_URL: ${{ secrets.SECURITY_SLACK_WEBHOOK_URL }}
+        run: .github/scripts/notify.sh CI "$RESULT on master at ${GITHUB_SHA:0:12}"

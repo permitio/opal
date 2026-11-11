@@ -586,3 +586,40 @@ jobs:
           .github/scripts/verify_release.py packages "$PYPI_VERSION"
           --project opal-common --project opal-client --project opal-server
           --repository "$GITHUB_REPOSITORY" --workflow on_release.yml --environment pypi
+
+  # On a release only, when any job failed or was cancelled: a notice to the security Slack channel
+  # that names those jobs, through .github/scripts/notify.sh and the webhook of the security-scan
+  # environment, which must admit release tags too. A dry run on a pull request posts nothing.
+  notify:
+    needs:
+      - version
+      - build-images
+      - test-images
+      - build-packages
+      - test-packages
+      - publish-images
+      - release-assets
+      - publish-packages
+      - verify
+    if: always() && github.event_name == 'release' && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: security-scan
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Post to Slack
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          TAG: ${{ github.event.release.tag_name }}
+          SECURITY_SLACK_WEBHOOK_URL: ${{ secrets.SECURITY_SLACK_WEBHOOK_URL }}
+        run: |
+          body=$RUNNER_TEMP/failed-jobs.txt
+          jq -r 'to_entries[] | select(.value.result == "failure" or .value.result == "cancelled")
+            | "• \(.key): \(.value.result)"' <<<"$NEEDS" >"$body"
+          .github/scripts/notify.sh "release $TAG" "failed" "$body"
