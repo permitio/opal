@@ -346,13 +346,13 @@ CASES: List[Case] = [
             "details": {
                 "id": "dddddddd-9999-9999-9999-999999999999",
                 "type": "client",
-                # the production shape: security/api.py builds this with
-                # datetime.utcnow() + ttl, which is NAIVE, not tz-aware
+                # the production shape: security/api.py builds this from the
+                # UTC clock + ttl as a NAIVE datetime, not a tz-aware one
                 "expired": "2027-09-15T10:00:00",
                 "claims": {},
             },
         },
-        "naive expiry, as POST /token actually emits it (datetime.utcnow())",
+        "naive expiry, as POST /token actually emits it (naive UTC)",
     ),
     Case(
         "access_token_no_details",

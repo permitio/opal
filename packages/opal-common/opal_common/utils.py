@@ -7,7 +7,7 @@ import json
 import logging
 import os
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from hashlib import sha1
 from typing import Coroutine, Dict, List, Tuple
 
@@ -90,7 +90,7 @@ def build_aws_rest_auth_headers(
     # SHA256 of empty string.  This is needed when S3 request payload is empty.
     SHA256_EMPTY = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
-    t = datetime.utcnow()
+    t = datetime.now(timezone.utc)
     amzdate = t.strftime("%Y%m%dT%H%M%SZ")
     datestamp = t.strftime("%Y%m%d")
 

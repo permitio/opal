@@ -683,3 +683,20 @@ def make_sshd(tmp_path):
 def sshd(make_sshd):
     """A local sshd serving git, or a skip where none can be started."""
     return make_sshd()
+
+
+@pytest.fixture(params=["Etc/GMT-5", "Etc/GMT+5"], ids=["utc+5", "utc-5"])
+def local_time_off_utc(request):
+    """The process's local time zone five hours east, then west, of UTC: a
+    local clock read as UTC is five hours off there."""
+    before = os.environ.get("TZ")
+    os.environ["TZ"] = request.param
+    time.tzset()
+    try:
+        yield
+    finally:
+        if before is None:
+            del os.environ["TZ"]
+        else:
+            os.environ["TZ"] = before
+        time.tzset()
