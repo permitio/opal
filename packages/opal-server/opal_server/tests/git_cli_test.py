@@ -199,7 +199,7 @@ async def _run_and_watch(coro, marker, processes_with):
 @pytest.mark.asyncio
 async def test_a_clone_is_laid_out_like_a_libgit2_clone(git_origin, tmp_path):
     """Same remote and URL, same refs/remotes/origin/*, and an EMPTY
-    FETCH_HEAD: measured with pygit2 1.14.1 / libgit2 1.7.2, a libgit2 clone
+    FETCH_HEAD: measured with pygit2 1.21.0 / libgit2 1.9.7, a libgit2 clone
     writes an empty FETCH_HEAD, while ``git clone`` writes none at all. No
     reflog is written for the clone's refs."""
     libgit2 = tmp_path / "libgit2"
@@ -1748,7 +1748,7 @@ def test_a_member_listed_after_another_user_s_process_still_counts(monkeypatch):
 def reaped_elsewhere(monkeypatch):
     """Every child asyncio reaps was already reaped by someone else, as when
     the gunicorn master's SIGCHLD handler gets to it first: asyncio then
-    reports 255 for it (with Python 3.12's pidfd watcher, for every child).
+    reports 255 for it (with asyncio's pidfd child watching, for every child).
 
     The pids taken are recorded.
     """
@@ -3000,7 +3000,7 @@ def _known_hosts(sshd, case: str):
 async def test_ssh_host_keys_get_the_answer_libgit2_gives(
     known_hosts, sshd, make_origin, tmp_path, monkeypatch
 ):
-    """Measured with pygit2 1.14.1 and libgit2 1.7.2 against this sshd, with
+    """Measured with pygit2 1.21.0 and libgit2 1.9.7 against this sshd, with
     $HOME/.ssh/known_hosts (the file libgit2 reads) holding:
 
     ==========================  ===========  ======================

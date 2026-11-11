@@ -207,7 +207,7 @@ jobs:
       - name: Python setup
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with:
-          python-version: '3.11'
+          python-version: '3.14'
 
       - name: Bump version - packaging__.py
         id: version
@@ -297,7 +297,7 @@ jobs:
       - name: Python setup
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with:
-          python-version: '3.11'
+          python-version: '3.14'
 
       - name: Bump version - packaging__.py
         env:
@@ -329,7 +329,8 @@ jobs:
 
       - name: Build every sub-packages
         run: |
-          pip install wheel==0.48.0
+          # Python 3.14 comes without setuptools, which every setup.py imports.
+          pip install setuptools==84.2.1 wheel==0.48.0
 
           # Helper: rename sdist to use underscores in package name (PEP 625). Newer setuptools
           # already writes that name, so a file whose name is unchanged is left alone.

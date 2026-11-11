@@ -17,6 +17,7 @@ import uvicorn
 from fastapi import Depends, FastAPI, Header, HTTPException
 from opal_common.fetcher import FetchingEngine
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
+from opal_common.tests.test_utils import wait_for_server
 
 # Configurable
 PORT = int(os.environ.get("PORT") or "9110")
@@ -54,6 +55,9 @@ def server():
     # Run the server as a separate process
     proc = Process(target=setup_server, args=(), daemon=True)
     proc.start()
+    # The server process imports everything afresh (forkserver on Linux, spawn
+    # on macOS), which can take a while on a busy runner.
+    wait_for_server(PORT, timeout=30)
     yield proc
     proc.kill()  # Cleanup after test
 

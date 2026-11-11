@@ -84,8 +84,8 @@ updates:
   # The published images. Dependabot reads FROM lines only, so it cannot see the OPA image
   # (copied by skopeo from ARG opa_tag/opa_digest) or the EOPA binary (a wget URL checked against
   # ARG checksums); bump those by hand. It does not update the two `alpine:latest` stages either.
-  # The python bases are two-part tags without a digest (python:3.12-bookworm), so Dependabot has
-  # nothing to offer inside 3.12, and the ignore below holds the minor: no python base pull
+  # The python bases are two-part tags without a digest (python:3.14-bookworm), so Dependabot has
+  # nothing to offer inside 3.14, and the ignore below holds the minor: no python base pull
   # requests come from this entry. Today it tracks permitio/cedar-agent.
   - package-ecosystem: docker
     directory: /docker
@@ -103,9 +103,9 @@ updates:
         patterns: ["*"]
         update-types: [minor, patch]
     ignore:
-      # opal-server's python_requires stops below 3.13, and the Dockerfile hard-codes the
-      # python3.12 site-packages path, so a python minor bump here would only be a red pull
-      # request. Remove this when opal-server supports the next minor and the Dockerfile moves
+      # The packages' python_requires stops below 3.15, and the Dockerfile hard-codes the
+      # python3.14 site-packages path, so a python minor bump here would only be a red pull
+      # request. Remove this when the packages support the next minor and the Dockerfile moves
       # with it.
       - dependency-name: python
         update-types: [version-update:semver-minor, version-update:semver-major]

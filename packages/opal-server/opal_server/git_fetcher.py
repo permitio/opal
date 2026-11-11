@@ -205,6 +205,7 @@ class GitNotFoundError(FileNotFoundError):
 
 
 _zombie_cap_logged = False
+_non_daemon_workers_logged = False
 
 
 class _DaemonThreadPoolExecutor(ThreadPoolExecutor):
@@ -219,39 +220,28 @@ class _DaemonThreadPoolExecutor(ThreadPoolExecutor):
     objects in a temp pack and swaps refs atomically under lockfiles, and a
     half-written clone dir is detected as invalid and re-cloned on next boot).
 
-    Only thread creation is customised, mirroring CPython's
+    Only thread creation is customised, mirroring CPython 3.14's
     ``_adjust_thread_count``. If a future CPython changes the internals we rely
-    on, we fall back to the stdlib (non-daemon) behaviour.
+    on, we fall back to the stdlib (non-daemon) behaviour, and say so once.
     """
 
     def _adjust_thread_count(self) -> None:  # pragma: no cover - thread mgmt
         worker = getattr(cf_thread, "_worker", None)
         # Fall back to the stdlib if any internal we mirror has moved or changed
-        # shape: _worker must exist and take exactly the 4 positional args we pass,
-        # _threads_queues must exist, and this executor must expose _initializer.
+        # shape: _worker must exist and take exactly the 3 positional args we
+        # pass, _threads_queues must exist, and so must every private of this
+        # executor that the code below touches. A CPython that drops one would
+        # rewrite its own _adjust_thread_count accordingly, so the stdlib
+        # fallback still works, while ours would raise AttributeError out of
+        # submit() and fail every scope git op.
         if (
             worker is None
             or not hasattr(cf_thread, "_threads_queues")
-            or not hasattr(self, "_initializer")
-            # _idle_semaphore is used below and is just as private as the rest.
-            # A CPython that drops it would rewrite its own _adjust_thread_count
-            # accordingly, so the stdlib fallback would still work — but ours
-            # would raise AttributeError out of submit(), failing every scope
-            # git op. Guarding it is what routes that case to the fallback.
-            # (Not demonstrable by deleting the attribute at runtime: that
-            # leaves the stdlib's method still using it, a state CPython can
-            # never actually be in.)
-            # Every private this method goes on to touch, not just the ones
-            # whose absence seemed likely. The argument above for
-            # _idle_semaphore applies verbatim to each: a CPython that drops
-            # one would rewrite its own _adjust_thread_count accordingly, so
-            # the stdlib fallback still works while ours raises AttributeError
-            # out of submit() and fails every scope git op.
             or not all(
                 hasattr(self, name)
                 for name in (
+                    "_create_worker_context",
                     "_idle_semaphore",
-                    "_initargs",
                     "_max_workers",
                     "_thread_name_prefix",
                     "_threads",
@@ -259,12 +249,12 @@ class _DaemonThreadPoolExecutor(ThreadPoolExecutor):
                 )
             )
         ):
-            return super()._adjust_thread_count()
+            return self._stdlib_adjust_thread_count()
         try:
-            if len(inspect.signature(worker).parameters) != 4:
-                return super()._adjust_thread_count()
+            if len(inspect.signature(worker).parameters) != 3:
+                return self._stdlib_adjust_thread_count()
         except (TypeError, ValueError):
-            return super()._adjust_thread_count()
+            return self._stdlib_adjust_thread_count()
         # If idle threads are available, don't spin up new ones.
         if self._idle_semaphore.acquire(timeout=0):
             return
@@ -280,9 +270,8 @@ class _DaemonThreadPoolExecutor(ThreadPoolExecutor):
                 target=cf_thread._worker,
                 args=(
                     weakref.ref(self, weakref_cb),
+                    self._create_worker_context(),
                     self._work_queue,
-                    self._initializer,
-                    self._initargs,
                 ),
                 daemon=True,
             )
@@ -295,6 +284,16 @@ class _DaemonThreadPoolExecutor(ThreadPoolExecutor):
             # git call — the exact "stuck on an offline repo" hang this class
             # exists to avoid, relocated to shutdown/restart. Normal shutdown
             # uses ``self._threads`` + queue sentinels and is unaffected.
+
+    def _stdlib_adjust_thread_count(self) -> None:
+        global _non_daemon_workers_logged
+        if not _non_daemon_workers_logged:
+            _non_daemon_workers_logged = True
+            logger.warning(
+                "git executor workers are not daemon threads on this Python: "
+                "a hung git op can hold up shutdown"
+            )
+        super()._adjust_thread_count()
 
 
 def shutdown_git_executor() -> None:
@@ -685,26 +684,21 @@ def clear_hung_markers(markers: Path) -> None:
     Not tied to the setting, so markers left while it was on cannot
     outlive a later good fetch. Blocking: run_in_git_executor calls it
     on the op's own thread. Never raises.
+
+    Another process's op returning removes its own marker, maybe while this
+    walks them: rmtree passes over an entry gone before it gets there, and
+    raises FileNotFoundError only for ``markers`` itself.
     """
-    for _ in range(2):
-        try:
-            shutil.rmtree(markers)
-            return
-        except FileNotFoundError as e:
-            if not os.path.lexists(markers):
-                return  # gone: nothing hung, or another process removed it
-            # On Python 3.11-3.12 rmtree stops when an entry it listed is
-            # removed before it gets there (another process's op returning
-            # and removing its own marker), leaving the rest: once more.
-            err: OSError = e
-        except OSError as e:
-            err = e
-            break
-    logger.warning(
-        "Could not remove hung-op markers {path}: {err}",
-        path=markers,
-        err=repr(err),
-    )
+    try:
+        shutil.rmtree(markers)
+    except FileNotFoundError:
+        return  # gone: nothing hung, or another process removed it
+    except OSError as e:
+        logger.warning(
+            "Could not remove hung-op markers {path}: {err}",
+            path=markers,
+            err=repr(e),
+        )
 
 
 # When the hung clones of the current scopes' sources span at least this many
@@ -880,9 +874,7 @@ def _reclone_hung_under_lock(
 def _reclone_one(clone: Path) -> bool:
     """Delete one hung clone, then its markers; True when it deleted it.
 
-    Never raises: the stat calls are inside the try too, since on Python
-    3.11-3.12 they re-raise e.g. EIO or EACCES, and a raise here would
-    stop the server from starting.
+    Never raises: a raise here would stop the server from starting.
     """
     try:
         if clone.is_symlink():
@@ -1322,8 +1314,7 @@ def _ref_steps_due(repo_path: str | os.PathLike[str]) -> bool:
 
     False without a clone, and for one that cannot be read. Never raises:
     its callers never fail the sync (_mark_repack_due) or the pass's other
-    repacks (_repack_due_clone), and Path.is_dir() re-raises EACCES, EIO or
-    ESTALE on Python 3.11-3.12, where os.path.isdir() answers False.
+    repacks (_repack_due_clone).
     """
     git_dir = Path(repo_path) / ".git"
     if not os.path.isdir(git_dir):
@@ -1575,7 +1566,7 @@ def _drop_repack_lock(fd: int) -> None:
 
 
 async def remove_clone_dir_exclusive(path: str) -> bool:
-    """``_remove_clone_tree(path)`` of a scope clone, under the repack lock.
+    """``shutil.rmtree(path)`` of a scope clone, under the repack lock.
 
     For a process that deletes a clone without holding the lock_source
     of the process that repacks it (the DELETE floor runs on whichever
@@ -1601,7 +1592,7 @@ async def remove_clone_dir_exclusive(path: str) -> bool:
         except OSError as e:
             if not _removes_without_lock(path, e):
                 raise
-            await run_sync(_remove_clone_tree, path)
+            await run_sync(shutil.rmtree, path)
             return True
         if fd is not None:
             break
@@ -1624,7 +1615,7 @@ def _rmtree_then_drop_lock(path: str, fd: int) -> bool:
 
 
 def _rmtree_unless_locked(path: str) -> bool:
-    """``_remove_clone_tree(path)`` of a scope clone under the clone's own lock
+    """``shutil.rmtree(path)`` of a scope clone under the clone's own lock
     (git_cli.take_clone_lock): whether it ran. False, having removed nothing,
     while a git op holds that lock (a git command-line op of another process,
     one whose worker died included, a repack, or a libgit2 fetch looking for an
@@ -1640,34 +1631,15 @@ def _rmtree_unless_locked(path: str) -> bool:
     except OSError as e:
         if not _removes_without_lock(path, e):
             raise
-        _remove_clone_tree(path)
+        shutil.rmtree(path)
         return True
     if fd is None:
         return False
     try:
-        _remove_clone_tree(path)
+        shutil.rmtree(path)
     finally:
         git_cli.drop_clone_lock(fd)
     return True
-
-
-def _remove_clone_tree(path: str) -> None:
-    """``shutil.rmtree(path)``, to which an entry gone before the walk gets to
-    it is no error.
-
-    The reflog removal thread (_remove_reflogs_set_aside) removes inside
-    the clone outside its lock, so a delete of the clone can find gone an
-    entry it listed. On Python 3.11-3.12 rmtree then stops, leaving the
-    rest, and raises FileNotFoundError, which callers take for the clone
-    being gone. ``path`` itself gone still raises it.
-    """
-
-    def _unless_an_entry_is_gone(function, failed: str, exc_info) -> None:
-        if failed == path or not isinstance(exc_info[1], FileNotFoundError):
-            raise exc_info[1]
-
-    # onerror, not onexc: onexc is new in Python 3.12.
-    shutil.rmtree(path, onerror=_unless_an_entry_is_gone)
 
 
 def _removes_without_lock(path: str, err: OSError) -> bool:
@@ -2179,7 +2151,7 @@ def _tidy_refs(
     and leaves a file per ref, which git keeps appending to). Only once
     reflogs are off in the clone's config: git appends to a reflog that
     exists whatever the setting, and creates one only while it is on;
-    libgit2 1.7.2 writes none while it is off (both measured). Nothing in
+    libgit2 1.9.7 writes none while it is off (both measured). Nothing in
     OPAL reads a reflog. The setting is replaced, not set: a clone made by
     ``git clone -c core.logAllRefUpdates=false``, with no -c for it before
     ``clone``, has it twice, clone's own true and then false, and git config
@@ -2847,7 +2819,7 @@ def _lock_is_busy(lock: asyncio.Lock) -> bool:
     it wakes taking the lock, locked() is False, and an acquire then
     queues behind that task's whole hold. asyncio.Lock has no public way
     to ask, nor a non-blocking acquire. Its queue is ``_waiters`` on every
-    CPython this package supports (3.11 to 3.12); without one this falls
+    CPython this package supports (3.14); without one this falls
     back to locked() alone. A cancelled waiter does not count, as it does
     not for the lock's own acquire.
     """
@@ -2885,9 +2857,9 @@ class RepoInterface:
             else:
                 raise RuntimeError("Base branch was not found on remote")
             logger.debug(
-                f"Created local branch '{branch_name}', pointing to: {commit.hex}"
+                f"Created local branch '{branch_name}', pointing to: {commit.id}"
             )
-            return repo.create_reference(f"refs/heads/{branch_name}", commit.hex)
+            return repo.create_reference(f"refs/heads/{branch_name}", commit.id)
         else:
             logger.debug(
                 f"No need to create local branch '{branch_name}': already exists!"
@@ -2915,7 +2887,7 @@ class RepoInterface:
     def get_commit_hash(repo: Repository, branch: str, remote: str) -> Optional[str]:
         try:
             (commit, _) = repo.resolve_refish(f"{remote}/{branch}")
-            return commit.hex
+            return str(commit.id)
         except (pygit2.GitError, KeyError, pygit2.InvalidSpecError):
             # InvalidSpecError: an empty branch, as for has_remote_branch.
             return None
@@ -4279,7 +4251,7 @@ class GitPolicyFetcher(PolicyFetcher):
                 repo, self.local_branch_name, self._remote, self._source.branch
             )
         else:
-            old_revision = local_branch.target.hex
+            old_revision = str(local_branch.target)
 
         await self.callbacks.on_update(old_revision, new_revision)
 
@@ -4354,7 +4326,7 @@ class GitPolicyFetcher(PolicyFetcher):
             #     for a scope that will recover on its own.
             try:
                 commit, _ = repo.resolve_refish(f"{self._remote}/{self._source.branch}")
-                head_commit_hash = commit.hex
+                head_commit_hash = str(commit.id)
             except KeyError:
                 # Split the KeyError by DISK STATE, not by the in-flight marker:
                 # an empty remote-tracking namespace means the clone has not been

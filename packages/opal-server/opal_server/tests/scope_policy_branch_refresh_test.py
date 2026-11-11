@@ -1911,8 +1911,8 @@ def test_a_branch_change_on_one_repository_is_a_repoint(monkeypatch):
 async def test_a_publish_that_raises_timeout_error_itself_is_a_failed_publish(
     monkeypatch, emitted
 ):
-    """Mutation: `wait_for` (as before) takes it for the hold running out on
-    3.11+: the claim is kept and the request held for a sync never sent."""
+    """Mutation: `wait_for` (as before) takes it for the hold running out: the
+    claim is kept and the request held for a sync never sent."""
 
     async def times_out():
         raise TimeoutError("the broadcast backend timed out")

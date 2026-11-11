@@ -45,8 +45,8 @@ def test_opa_cli_options_are_all_exactly_str(options: OpaServerOptions):
     """Every value handed to the OPA cli must be exactly ``str``.
 
     ``runner.py`` builds argv with ``f"{k}={v}"``, so an enum member surviving
-    the dump renders as ``LogLevel.info`` on python 3.11+ (``Enum.__format__``
-    changed there) and OPA rejects the flag at parse time.
+    the dump renders as ``LogLevel.info`` and OPA rejects the flag at parse
+    time.
 
     Note this asserts ``type(value) is str`` rather than ``isinstance``: these
     enums are ``str`` mixins, so ``isinstance(LogLevel.info, str)`` is True and

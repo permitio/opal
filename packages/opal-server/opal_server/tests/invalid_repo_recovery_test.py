@@ -215,7 +215,7 @@ def test_branch_head_does_not_touch_shared_handle(monkeypatch, tmp_path):
     # _get_current_branch_head must open a FRESH handle (Repository(self._repo_path))
     # and resolve off it — never the poisoned shared cache handle above.
     class _FreshCommit:
-        hex = "abc123"
+        id = "abc123"
 
     class _FreshRepo:
         def resolve_refish(self, refish):

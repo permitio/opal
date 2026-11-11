@@ -71,7 +71,7 @@ def _init_remote(path: Path) -> pygit2.Repository:
 def _commit(repo: pygit2.Repository, content: str, parent=None) -> pygit2.Oid:
     blob = repo.create_blob(content.encode())
     builder = repo.TreeBuilder()
-    builder.insert("policy.rego", blob, pygit2.GIT_FILEMODE_BLOB)
+    builder.insert("policy.rego", blob, pygit2.enums.FileMode.BLOB)
     parents = [parent] if parent is not None else []
     return repo.create_commit(
         "refs/heads/master", _SIG, _SIG, content, builder.write(), parents
@@ -175,7 +175,7 @@ def test_repack_keeps_a_packed_object_no_ref_names_yet(tmp_path):
     try:
         blob = remote.create_blob(b"package policy\n# landing\n")
         builder = remote.TreeBuilder()
-        builder.insert("policy.rego", blob, pygit2.GIT_FILEMODE_BLOB)
+        builder.insert("policy.rego", blob, pygit2.enums.FileMode.BLOB)
         landing = str(
             remote.create_commit(
                 None,
@@ -494,7 +494,7 @@ def test_leftovers_of_a_dead_repack_are_removed_before_git_runs(tmp_path, monkey
     nothing else ever removes it.
 
     libgit2's files stay: its in-flight names, and a fetched pack's ``.idx``
-    committed before its ``.pack`` (measured on libgit2 1.7.2).
+    committed before its ``.pack`` (measured on libgit2 1.9.7).
     """
     clone_path = _fake_clone(tmp_path)
     pack = _pack_dir(clone_path)
@@ -911,7 +911,7 @@ def test_a_leader_killed_mid_repack_takes_its_git_with_it(tmp_path, monkeypatch)
 
 
 @pytest.mark.skipif(not hasattr(os, "fork"), reason="needs os.fork")
-# Python 3.12+ warns on fork() with threads alive, as it would in the gunicorn
+# Python warns on fork() with threads alive, as it would in the gunicorn
 # master this stands in for; the child below makes nothing but raw syscalls.
 @pytest.mark.filterwarnings(
     "ignore:This process .* is multi-threaded:DeprecationWarning"
@@ -1332,7 +1332,7 @@ class _ScopeRepo:
         """Rewrite the branch to a new commit on ``onto``, dropping the tip."""
         blob = self.remote.create_blob(self._next_content().encode())
         builder = self.remote.TreeBuilder()
-        builder.insert("policy.rego", blob, pygit2.GIT_FILEMODE_BLOB)
+        builder.insert("policy.rego", blob, pygit2.enums.FileMode.BLOB)
         rewritten = self.remote.create_commit(
             None, _SIG, _SIG, "rewrite", builder.write(), [onto]
         )
@@ -2493,7 +2493,7 @@ async def test_purge_the_refresh_waited_behind_leaves_it_nothing_to_do(
     sid = repo.source_id
     svc = _service(tmp_path)  # the deleted scope is no longer stored
     # The floor parks in its store read until this is set. Ungated, a read that
-    # fails at once ends the floor in the tick that starts it: from 3.12
+    # fails at once ends the floor in the tick that starts it:
     # asyncio.wait_for runs the read in the floor's own task.
     read_gate = asyncio.Event()
     read_store = svc._scopes.all
@@ -3753,7 +3753,7 @@ def test_repack_of_a_clone_git_clone_made_replaces_its_two_reflogs_settings(
 async def test_a_scope_clone_writes_no_reflog(tmp_path):
     """A scope clone is made with reflogs off, so neither its clone, nor a
     fetch, nor a scope's own ref (refs/heads/scopes/<scope>) writes one:
-    libgit2 1.7.2 honours core.logAllRefUpdates=false.
+    libgit2 1.9.7 honours core.logAllRefUpdates=false.
 
     Mutation: cloning without the repository callback that turns them off
     writes a reflog for every ref.
@@ -4012,9 +4012,6 @@ def test_a_clone_that_cannot_be_read_has_no_ref_steps_due(tmp_path):
     """The check never raises: the mark after a fetch never fails the sync,
     and the due run never ends the pass's other repacks. A clone dir with mode
     000, whose .git a stat then fails with EACCES.
-
-    Mutation: Path.is_dir(), which re-raises EACCES on Python 3.11-3.12,
-    raises PermissionError out of it.
     """
     clone = _fake_clone(tmp_path)
     clone.chmod(0)
@@ -4436,11 +4433,11 @@ async def test_a_clone_delete_beside_the_reflog_removal_thread_removes_it_all(
 ):
     """The reflog removal thread runs outside the clone's lock, so a delete of
     the clone (invalid-repo recovery, a DELETE) can walk the reflogs the thread
-    is removing, and find gone an entry it listed. On Python 3.11 and 3.12
-    rmtree then stops with FileNotFoundError and leaves the rest, and the
-    callers take that error for the clone being gone already.
+    is removing, and find gone an entry it listed.
 
-    Mutation: a plain rmtree leaves the clone's directory.
+    Stopped there with a FileNotFoundError, the delete would leave the
+    rest, and the callers would take that error for the clone being gone
+    already.
     """
     clone = tmp_path / "git_sources" / "src"
     aside = clone / ".git" / f"{git_cli.REFLOGS_SET_ASIDE}0001"

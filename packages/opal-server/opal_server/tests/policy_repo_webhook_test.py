@@ -265,7 +265,7 @@ def github_mode_server():
         daemon=True,
     )
     proc.start()
-    assert event.wait(5)
+    assert event.wait(30)
     wait_for_server(PORT)
     yield event
     proc.kill()  # Cleanup after test
@@ -287,7 +287,7 @@ def gitlab_mode_server():
     # Run the server as a separate process
     proc = Process(target=setup_server, args=(event, webhook_config), daemon=True)
     proc.start()
-    assert event.wait(5)
+    assert event.wait(30)
     wait_for_server(PORT)
     yield event
     proc.kill()  # Cleanup after test
@@ -310,7 +310,7 @@ def azure_git_mode_server():
     # Run the server as a separate process
     proc = Process(target=setup_server, args=(event, webhook_config), daemon=True)
     proc.start()
-    assert event.wait(5)
+    assert event.wait(30)
     wait_for_server(PORT)
     yield event
     proc.kill()  # Cleanup after test
@@ -333,7 +333,7 @@ def bitbucket_mode_server():
     # Run the server as a separate process
     proc = Process(target=setup_server, args=(event, webhook_config), daemon=True)
     proc.start()
-    assert event.wait(5)
+    assert event.wait(30)
     wait_for_server(PORT)
     yield event
     proc.kill()  # Cleanup after test

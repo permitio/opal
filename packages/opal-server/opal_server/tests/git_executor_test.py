@@ -15,8 +15,19 @@ from opal_server.git_fetcher import (
 )
 
 
-def test_daemon_worker_not_registered_in_global_join_queue():
-    """A worker thread must NOT land in concurrent.futures' _threads_queues.
+def _first_worker(ex: _DaemonThreadPoolExecutor) -> threading.Thread:
+    for _ in range(200):
+        if ex._threads:
+            break
+        time.sleep(0.01)
+    assert ex._threads, "no worker thread spawned"
+    (worker,) = ex._threads
+    return worker
+
+
+def test_daemon_worker_is_daemon_and_not_joined_at_exit():
+    """A worker thread is a daemon thread and is NOT in concurrent.futures'
+    _threads_queues.
 
     The stdlib's _python_exit atexit handler joins every thread in that
     global regardless of daemon=True, so a registered worker running a
@@ -28,18 +39,28 @@ def test_daemon_worker_not_registered_in_global_join_queue():
     gate = threading.Event()
     try:
         ex.submit(gate.wait)  # forces one worker thread to spawn
-        for _ in range(200):
-            if ex._threads:
-                break
-            time.sleep(0.01)
-        assert ex._threads, "no worker thread spawned"
-        registered = set(ex._threads) & set(cf_thread._threads_queues)
-        assert not registered, (
+        worker = _first_worker(ex)
+        assert worker.daemon
+        assert worker not in set(cf_thread._threads_queues), (
             "daemon worker registered in _threads_queues; _python_exit would "
             "join it and block shutdown on a hung git op"
         )
     finally:
         gate.set()
+        ex.shutdown(wait=True)
+
+
+def test_daemon_worker_runs_the_initializer():
+    """The worker context carries the executor's initializer, as the stdlib's
+    workers do."""
+    ran = threading.Event()
+    ex = _DaemonThreadPoolExecutor(
+        max_workers=1, thread_name_prefix="test-init", initializer=ran.set
+    )
+    try:
+        assert ex.submit(lambda: 7).result(timeout=5) == 7
+        assert ran.is_set()
+    finally:
         ex.shutdown(wait=True)
 
 
@@ -317,23 +338,97 @@ async def test_negative_max_zombies_is_treated_as_no_cap(monkeypatch):
 
 from concurrent.futures import ThreadPoolExecutor
 
-from opal_server.git_fetcher import _DaemonThreadPoolExecutor
+import opal_server.git_fetcher as git_fetcher_module
+from opal_common import logger as opal_common_logger
 
 
-def test_adjust_thread_count_falls_back_on_worker_shape_mismatch(monkeypatch):
+@pytest.fixture
+def stdlib_fallback(monkeypatch):
+    """The stdlib's _adjust_thread_count, replaced by a recorder, and the
+    WARNING lines logged while the test runs."""
+    monkeypatch.setattr(git_fetcher_module, "_non_daemon_workers_logged", False)
+    calls = []
+    monkeypatch.setattr(
+        ThreadPoolExecutor, "_adjust_thread_count", lambda self: calls.append(self)
+    )
+    warnings = []
+    sink = opal_common_logger.logger.add(
+        lambda m: warnings.append(m.record["message"]), level="WARNING"
+    )
+    yield calls, warnings
+    opal_common_logger.logger.remove(sink)
+
+
+def test_adjust_thread_count_falls_back_on_worker_shape_mismatch(
+    monkeypatch, stdlib_fallback
+):
+    calls, warnings = stdlib_fallback
     ex = _DaemonThreadPoolExecutor(max_workers=1, thread_name_prefix="shape-test")
     try:
         monkeypatch.setattr(
-            cf_thread, "_worker", lambda a, b, c: None
-        )  # wrong arity (3)
-        called = {"super": False}
-        monkeypatch.setattr(
-            ThreadPoolExecutor,
-            "_adjust_thread_count",
-            lambda self: called.__setitem__("super", True),
-        )
+            cf_thread, "_worker", lambda a, b, c, d: None
+        )  # wrong arity (4)
         ex._adjust_thread_count()  # must not raise
-        assert called["super"] is True
+        ex._adjust_thread_count()
+        assert calls == [ex, ex]
+        assert sum("not daemon threads" in m for m in warnings) == 1
+    finally:
+        ex.shutdown(wait=False)
+
+
+def test_adjust_thread_count_takes_the_daemon_path_on_this_python(stdlib_fallback):
+    """This Python's _worker and executor internals have the shape the daemon
+    path mirrors: it starts the worker itself, without the stdlib fallback or
+    its warning."""
+    calls, warnings = stdlib_fallback
+    ex = _DaemonThreadPoolExecutor(max_workers=1, thread_name_prefix="shape-ok")
+    gate = threading.Event()
+    try:
+        ex.submit(gate.wait)
+        assert calls == [], "the stdlib fallback ran on a matching worker shape"
+        assert not any("not daemon threads" in m for m in warnings)
+        assert _first_worker(ex).daemon
+    finally:
+        gate.set()
+        ex.shutdown(wait=True)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "_create_worker_context",
+        "_idle_semaphore",
+        "_max_workers",
+        "_thread_name_prefix",
+        "_threads",
+        "_work_queue",
+    ],
+)
+def test_adjust_thread_count_falls_back_without_an_internal_it_uses(
+    stdlib_fallback, name
+):
+    calls, warnings = stdlib_fallback
+    ex = _DaemonThreadPoolExecutor(max_workers=1, thread_name_prefix="gone-test")
+    kept = getattr(ex, name)
+    try:
+        delattr(ex, name)
+        ex._adjust_thread_count()  # must not raise
+        assert calls == [ex]
+        assert any("not daemon threads" in m for m in warnings)
+    finally:
+        setattr(ex, name, kept)
+        ex.shutdown(wait=False)
+
+
+def test_adjust_thread_count_falls_back_without_the_global_join_queue(
+    monkeypatch, stdlib_fallback
+):
+    calls, _ = stdlib_fallback
+    ex = _DaemonThreadPoolExecutor(max_workers=1, thread_name_prefix="queue-test")
+    try:
+        monkeypatch.delattr(cf_thread, "_threads_queues")
+        ex._adjust_thread_count()
+        assert calls == [ex]
     finally:
         ex.shutdown(wait=False)
 

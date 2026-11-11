@@ -1,6 +1,6 @@
 """Facts about .github/workflows that the repository relies on: permissions,
 pinned actions, checkouts without stored credentials, the jobs the CI check
-needs, and the release's Python and PyPI environment.
+needs, the Python that CI and the release run on, and the PyPI environment.
 
 A change that breaks one of them fails here. A deliberate change, such
 as a new job or a new write permission, also edits the fact pinned here.
@@ -14,6 +14,12 @@ import yaml
 
 WORKFLOWS = Path(__file__).resolve().parents[2] / "workflows"
 WORKFLOW_FILES = sorted(WORKFLOWS.glob("*.y*ml"))
+PACKAGES = Path(__file__).resolve().parents[3] / "packages"
+
+# The one Python the three packages support (python_requires in packages/*/setup.py), so the one
+# that CI tests them on and the release builds them on.
+PACKAGES_PYTHON = "3.14"
+PACKAGES_PYTHON_REQUIRES = '">=3.14,<3.15"'
 
 # The required checks of the branch ruleset: the job names, per workflow.
 REQUIRED_CHECKS = {"tests.yml": "CI", "pre-commit.yml": "pre-commit"}
@@ -228,6 +234,30 @@ class TestCiJob:
         ), "ci-aggregate.sh fails a skipped job that is not in PULL_REQUEST_JOBS"
 
 
+@pytest.mark.parametrize("package", ["opal-common", "opal-client", "opal-server"])
+def test_every_package_requires_the_python_ci_runs(package):
+    setup_py = (PACKAGES / package / "setup.py").read_text()
+
+    assert f"python_requires={PACKAGES_PYTHON_REQUIRES}," in setup_py
+    assert f'"Programming Language :: Python :: {PACKAGES_PYTHON}",' in setup_py
+
+
+class TestTests:
+    """tests.yml: the Python of the unit and E2E jobs."""
+
+    @pytest.fixture
+    def jobs(self):
+        return load(WORKFLOWS / "tests.yml")["jobs"]
+
+    def test_the_unit_job_runs_on_the_packages_python_only(self, jobs):
+        assert jobs["build"]["strategy"]["matrix"] == {
+            "python-version": [PACKAGES_PYTHON]
+        }
+
+    def test_the_e2e_job_installs_the_packages_on_their_python(self, jobs):
+        assert setup_python_versions(jobs["e2e-tests"]) == [PACKAGES_PYTHON]
+
+
 class TestRelease:
     """on_release.yml: the publish jobs' Python and the PyPI environment."""
 
@@ -238,8 +268,18 @@ class TestRelease:
     @pytest.mark.parametrize(
         "job_id", ["publish_docker_images", "publish_python_packages"]
     )
-    def test_the_publish_jobs_set_up_python_3_11(self, jobs, job_id):
-        assert setup_python_versions(jobs[job_id]) == ["3.11"]
+    def test_the_publish_jobs_set_up_python_3_14(self, jobs, job_id):
+        assert setup_python_versions(jobs[job_id]) == [PACKAGES_PYTHON]
+
+    def test_the_package_build_installs_a_pinned_setuptools(self, jobs):
+        """Python 3.14 ships no setuptools, which each setup.py imports."""
+        (build,) = [
+            step["run"]
+            for step in steps_of(jobs["publish_python_packages"])
+            if "setup.py sdist" in step.get("run", "")
+        ]
+
+        assert re.search(r"^\s*pip install .*\bsetuptools==\d", build, re.MULTILINE)
 
     def test_the_pypi_publish_job_runs_in_the_pypi_environment(self, jobs):
         publishers = {

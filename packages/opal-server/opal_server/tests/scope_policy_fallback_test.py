@@ -229,8 +229,8 @@ class _FakeRepo:
 
 
 class _FakeCommit:
-    def __init__(self, hex_):
-        self.hex = hex_
+    def __init__(self, id_):
+        self.id = id_
 
 
 def _raise(exc):

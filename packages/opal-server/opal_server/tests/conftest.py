@@ -255,7 +255,9 @@ class GitHttpServer(ThreadingHTTPServer):
     context, on the same port. ``authorization``: the exact Authorization
     header every request must carry, else 401. ``stall_after``: send only
     this many bytes of a pack (the answer to a fetch request), then hold
-    the connection open until the server closes. ``error``: answer every
+    the connection open until the server closes. The answer's
+    Content-Length is the whole pack's, so the client waits for the rest:
+    without one, libgit2 fails the fetch at once. ``error``: answer every
     request (once authorized) with a git ``ERR`` packet carrying this
     message, which git prints as a remote error. Every request's headers
     are kept in ``requests``, and its scheme (http or https) at the same
@@ -405,8 +407,7 @@ class _GitHttpHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         for key, value in headers:
             self.send_header(key, value)
-        if stall is None:
-            self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
         if stall is None:
             self.wfile.write(payload)

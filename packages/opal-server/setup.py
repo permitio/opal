@@ -69,12 +69,13 @@ setup(
         "License :: OSI Approved :: Apache Software License",
         "Programming Language :: Python",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.11",
-        "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3 :: Only",
+        "Programming Language :: Python :: 3.14",
         "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
         "Topic :: Internet :: WWW/HTTP :: WSGI",
     ],
-    python_requires=">=3.11,<3.13",
+    # The cap goes when a 3.15 CI leg is green.
+    python_requires=">=3.14,<3.15",
     install_requires=server_install_requires + about.get_install_requires(project_root),
     entry_points={
         "console_scripts": ["opal-server = opal_server.cli:cli"],

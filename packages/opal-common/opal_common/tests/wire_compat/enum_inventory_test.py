@@ -4,8 +4,8 @@ The inline-OPA regression was one instance of a class: under pydantic v2
 ``use_enum_values`` fires at validation time, defaults are never validated, and
 a ``force_enum`` validator can put the member back afterwards - so an enum field
 can reach a python-mode dump as the MEMBER where v1 gave its value. That value
-renders as ``ClassName.member`` in an f-string on python 3.11+ and is not JSON
-serialisable if the enum is not a ``str`` mixin.
+renders as ``ClassName.member`` in an f-string and is not JSON serialisable
+if the enum is not a ``str`` mixin.
 
 The corpus in ``payloads.py`` pins the models we know about. This test stops a
 NEW enum-bearing model from quietly joining them: every such model must either
@@ -103,18 +103,15 @@ IMPORT_FAILURES: list = []
 # Swept packages whose DISTRIBUTION is not installed in this environment at
 # all, as (package, top-level name). Distinct from IMPORT_FAILURES on purpose:
 # a package that is installed but fails to import is a bug the sweep must
-# surface; a package that is simply absent (the CI 3.13 leg installs only
-# opal-common and opal-client, because opal-server's pygit2 has no cp313 wheel)
-# is a known, checkable gap. `test_sweep_skips_only_genuinely_absent_packages`
-# guarantees nothing installed can ever land here, and nothing outside
-# ALLOWED_ABSENT either.
+# surface; a package that is simply absent is a smaller environment.
+# `test_sweep_skips_only_genuinely_absent_packages` guarantees nothing
+# installed can ever land here, and nothing outside ALLOWED_ABSENT either.
 NOT_INSTALLED: list = []
 
-# The only swept package that MAY be absent: the CI 3.13 leg installs
-# opal-common and opal-client only, because opal-server's pinned pygit2 has no
-# cp313 wheel. Any other absence is the sweep shrinking, and the guard test
-# fails on it rather than reporting green over less coverage.
-ALLOWED_ABSENT = frozenset({"opal_server.scopes"})
+# The swept packages that MAY be absent: none, since every CI leg installs all
+# three packages. Any absence is the sweep shrinking, and the guard test fails
+# on it rather than reporting green over less coverage.
+ALLOWED_ABSENT: frozenset = frozenset()
 
 # Swept packages that were actually imported and walked. A package can be
 # walked and legitimately contribute zero enum-bearing models, so "walked" is
@@ -204,14 +201,13 @@ def test_sweep_covers_every_package_it_claims_to():
 
 def test_sweep_skips_only_genuinely_absent_packages():
     """NOT_INSTALLED holds only packages that truly are not installed, and only
-    the one the CI 3.13 leg is designed to omit.
+    those in ALLOWED_ABSENT, which is empty.
 
     Both halves are needed to keep the absent-package path from becoming a
     silent way to shrink the sweep. First: if a package IS importable, it
     belongs in DISCOVERED (or IMPORT_FAILURES), never here. Second: an absence
-    is tolerated only for ALLOWED_ABSENT - so on a full install this list is
-    empty, on the 3.13 leg it is exactly `opal_server.scopes`, and an
-    environment missing anything else fails here instead of passing over a
+    is tolerated only for ALLOWED_ABSENT - so this list is empty, and an
+    environment missing a swept package fails here instead of passing over a
     smaller sweep.
     """
     wrongly_skipped = [
@@ -226,7 +222,7 @@ def test_sweep_skips_only_genuinely_absent_packages():
     unexpected = [name for name, _ in NOT_INSTALLED if name not in ALLOWED_ABSENT]
     assert not unexpected, (
         f"these SWEPT_PACKAGES entries fell out of the sweep and are not the "
-        f"known 3.13-leg gap {sorted(ALLOWED_ABSENT)}: {unexpected}"
+        f"allowed absences {sorted(ALLOWED_ABSENT)}: {unexpected}"
     )
     # and every swept package is accounted for: either walked, or recorded as
     # absent. A package that is neither was silently lost by the sweep.
@@ -298,8 +294,8 @@ def test_enum_bearing_model_is_covered_or_excused(dotted):
     pytest.fail(
         f"\n{dotted} has enum field(s) {sorted(fields)} but no wire_compat case.\n\n"
         "Under v2 an enum field can reach a python-mode dump as the MEMBER, which "
-        "renders as 'ClassName.member' in an f-string on python 3.11+ and is not "
-        "JSON serialisable for a non-str enum.\n\n"
+        "renders as 'ClassName.member' in an f-string and is not JSON "
+        "serialisable for a non-str enum.\n\n"
         "Either add a Case to payloads.py (and regenerate the goldens under v1), "
         "or add it to NOT_ON_THE_WIRE with the reason it never reaches a peer."
     )

@@ -12,7 +12,7 @@ There are multiple ways you can monitor your OPAL deployment:
 - [**Callbacks**](/tutorials/healthcheck_policy_and_update_callbacks#-data-update-callbacks) - Using the callback webhooks feature - having OPAL-clients report their updates
 - **Statistics** - Using the built-in statistics feature in OPAL ([See below](#opal-statistics))
 - **Metrics** - DogStatsD metrics, among them those of the scope clones' git operations ([See below](#scope-git-metrics))
-- **DataDog APM** - OPAL supports DataDog APM tracing (requires ddtrace v4.8.2+; OPAL itself requires Python 3.11+)
+- **DataDog APM** - OPAL supports DataDog APM tracing (requires ddtrace v4.8.2+; OPAL itself requires Python 3.14)
 
 ## Health checks
 
@@ -65,7 +65,7 @@ OPAL supports DataDog APM (Application Performance Monitoring) for observing you
 ### Requirements
 
 - **ddtrace v4.8.2 or higher, below 5** - 4.8.2 is the first release with the fix for CVE-2026-50271 (GHSA-mw54-j2v2-42hr)
-- **Python 3.11 or higher** - OPAL's own floor (ddtrace v4 itself supports 3.9+)
+- **Python 3.14** - the one Python OPAL supports (ddtrace v4 itself supports 3.9+)
 
 ### Configuration
 

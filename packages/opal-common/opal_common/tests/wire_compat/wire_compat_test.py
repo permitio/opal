@@ -432,8 +432,8 @@ def test_python_mode_dump_matches_pydantic_v1(case: Case):
             f"  why this case exists: {case.note}\n"
             f"  model: {case.model}\n\n  " + "\n  ".join(diffs) + "\n\n"
             "A '__enum__' on the v2 side means use_enum_values did not fire - "
-            "that value will render as 'ClassName.member' in an f-string on "
-            "python 3.11+ and is not JSON serializable."
+            "that value will render as 'ClassName.member' in an f-string "
+            "and is not JSON serializable."
         )
 
 

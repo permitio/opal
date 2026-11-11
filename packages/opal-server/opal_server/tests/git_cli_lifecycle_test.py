@@ -632,9 +632,9 @@ def test_a_cancel_before_asyncio_has_connected_sh_s_pipes_ends_the_group(
     git_origin, tmp_path, blackhole, monkeypatch, processes_with
 ):
     """The asyncio loop, giving up on a start it was cancelled in, kills sh and
-    closes the pipes it has connected, then waits for sh: since Python 3.12 for
-    the rest of its pipes too, which it goes on connecting, and which git holds
-    while it lives.
+    closes the pipes it has connected, then waits for sh, and for the rest of
+    its pipes too, which it goes on connecting, and which git holds while it
+    lives.
 
     sh's pipes are the op's own, which asyncio does not wait for, so the
     cancel ends the group at once however far asyncio got. Here the

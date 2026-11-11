@@ -6,10 +6,8 @@ sufficient: these enums are ``str`` mixins, so a broken value satisfies both
 fooled is handing the argv to ``opa`` and seeing whether it parses.
 
 This is the check that would have caught the inline-OPA regression directly.
-It renders differently per python version (``Enum.__format__`` changed in 3.11)
-and the CI unit matrix runs it on 3.11, 3.12 and 3.13 (the 3.13 leg, which
-installs opal-common and opal-client only, includes it), so this test inherits
-the version matrix for free - which the 3.12-only images and E2E leg do not.
+It renders differently per python version (``Enum.__format__`` changed in 3.11),
+so it runs on every leg of the CI unit matrix.
 
 The binary is located from, in order:
   OPAL_TEST_OPA_BINARY, OPAL_INLINE_OPA_EXEC_PATH, then ``opa`` on PATH.
@@ -110,7 +108,7 @@ def test_real_opa_accepts_generated_argv(name):
         f"  argv: {argv}\n"
         f"  opa:  {output.strip().splitlines()[0] if output.strip() else '<no output>'}\n\n"
         "An enum member surviving model_dump() renders as 'ClassName.member' in "
-        "the f-string runner.py builds argv with, on python 3.11+."
+        "the f-string runner.py builds argv with."
     )
 
 

@@ -151,9 +151,8 @@ _SH = "/bin/sh"
 # done. The status is read from there because waitpid cannot be trusted for it:
 # the scope preload runs in the gunicorn master, whose SIGCHLD handler reaps
 # every child with waitpid(-1), and asyncio then reports 255 for a child that
-# handler reaped first. Python 3.12's PidfdChildWatcher loses that race on
-# every child (it reaps through a pidfd the handler's waitpid(-1) beats);
-# 3.11's ThreadedChildWatcher only when the handler happens to run first.
+# handler reaped first. asyncio's pidfd child watching loses that race on
+# every child (it reaps through a pidfd the handler's waitpid(-1) beats).
 # git's own stdout goes to /dev/null, so the status is all that sh's stdout
 # carries, and no status at all means sh was killed before git's came back.
 #
@@ -749,8 +748,8 @@ def remove_dead_op_leftovers(repo_path: Path) -> bool:
     whether all of it is gone. For the holder of the clone's lock.
 
     A git dir that cannot be looked at (EACCES, EIO) counts as not all
-    gone, so that the dead op stays recorded: Path.is_dir() raises then
-    on Python 3.11 and 3.12, and os.path.isdir() says there is none.
+    gone, so that the dead op stays recorded: os.path.isdir() and
+    Path.is_dir() say there is none then.
     """
     git_dir = repo_path / ".git"
     complete = True
@@ -2341,11 +2340,10 @@ async def _run_git(
     # sh's pipes are this module's own, not ones asyncio makes. Cancelled
     # before it has connected its pipes, asyncio leaves the ends it made
     # open (sh's stdin, which the watchdog reads: it would wait for good),
-    # and, from Python 3.12, its give-up waits for every pipe it goes on
-    # connecting to close: sh's stderr too, which git holds until the
-    # watchdog ends it, which it does only once this process closes sh's
-    # stdin after that give-up. With no pipe of asyncio's, the give-up
-    # waits for sh alone.
+    # and its give-up waits for every pipe it goes on connecting to close:
+    # sh's stderr too, which git holds until the watchdog ends it, which it
+    # does only once this process closes sh's stdin after that give-up. With
+    # no pipe of asyncio's, the give-up waits for sh alone.
     fds: List[int] = []
     try:
         for _ in range(3):

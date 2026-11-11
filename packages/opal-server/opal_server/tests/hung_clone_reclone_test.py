@@ -647,40 +647,58 @@ async def test_markers_are_cleared_even_with_the_setting_off(tmp_path):
     )  # cleared on its own thread
 
 
-def test_clear_hung_markers_retries_when_an_entry_vanishes_mid_walk(
-    tmp_path, monkeypatch
+def _other_markers_gone_first(monkeypatch) -> None:
+    """os.unlink as when other processes' ops return meanwhile: by the first
+    marker a removal gets to, the other markers, which it has listed, are
+    gone."""
+    real_unlink = os.unlink
+    first: list = []
+
+    def _unlink(path, *, dir_fd=None):
+        name = os.path.basename(path)
+        if name.startswith("op-") and not first:
+            first.append(name)
+            where = dir_fd if dir_fd is not None else os.path.dirname(path)
+            for other in os.listdir(where):
+                if other.startswith("op-") and other != name:
+                    if dir_fd is None:
+                        other = os.path.join(where, other)
+                    real_unlink(other, dir_fd=dir_fd)
+        real_unlink(path, dir_fd=dir_fd)
+
+    monkeypatch.setattr(os, "unlink", _unlink)
+
+
+def test_clear_hung_markers_removes_all_when_an_entry_vanishes_mid_walk(
+    tmp_path, monkeypatch, warnings_logged
 ):
-    """On Python 3.11 and 3.12 rmtree stops with FileNotFoundError when an
-    entry it listed is removed first, leaving the rest."""
+    """Another process's op returning removes its own marker while this walk
+    has it listed: the markers go all the same, quietly."""
     clone = _clone_dir(tmp_path, _sid(1), hung=True)
-    real = git_fetcher_module.shutil.rmtree
-    calls = []
+    markers = hung_marker_dir(clone)
+    for i in range(3):
+        (markers / f"op-{i}").write_text("x")
+    _other_markers_gone_first(monkeypatch)
 
-    def _vanishing(path, *a, **k):
-        calls.append(path)
-        if len(calls) == 1:
-            raise FileNotFoundError(2, "No such file", str(Path(path) / "gone"))
-        return real(path, *a, **k)
+    clear_hung_markers(markers)
 
-    monkeypatch.setattr(git_fetcher_module.shutil, "rmtree", _vanishing)
-    clear_hung_markers(hung_marker_dir(clone))
-    assert len(calls) == 2 and not hung_marker_dir(clone).exists()
+    assert not markers.exists()
+    assert warnings_logged == []
 
 
-def test_clear_hung_markers_warns_when_the_retry_fails_too(
+def test_clear_hung_markers_warns_when_rmtree_fails(
     tmp_path, monkeypatch, warnings_logged
 ):
     clone = _clone_dir(tmp_path, _sid(1), hung=True)
-
     calls = []
 
-    def _vanishing(path, *a, **k):
+    def _denied(path, *a, **k):
         calls.append(path)
-        raise FileNotFoundError(2, "No such file", str(Path(path) / "gone"))
+        raise PermissionError(13, "Permission denied", str(path))
 
-    monkeypatch.setattr(git_fetcher_module.shutil, "rmtree", _vanishing)
+    monkeypatch.setattr(git_fetcher_module.shutil, "rmtree", _denied)
     clear_hung_markers(hung_marker_dir(clone))
-    assert len(calls) == 2  # one retry, no more
+    assert len(calls) == 1  # one attempt, no retry
     assert any("Could not remove hung-op markers" in m for m in warnings_logged)
 
 

@@ -27,8 +27,8 @@ run_redis_roundtrip.sh     orchestrates both directions in one command
 Related, outside this directory:
 `opal-client/opal_client/tests/opa_argv_real_binary_test.py` hands the argv
 OPAL generates to the **real** `opa` binary. CI installs a pinned `opa` in the
-unit job, so those assertions run on every leg of the 3.11/3.12/3.13 matrix —
-which is what makes them able to catch a version-gated regression. Without a
+unit job, so those assertions run on every leg of its Python matrix — which
+is what makes them able to catch a version-gated regression. Without a
 binary on `PATH` they SKIP rather than pass.
 
 ## What each case asserts
