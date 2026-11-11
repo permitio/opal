@@ -163,6 +163,7 @@ class FakeRedis:
         return self
 
     async def __aexit__(self, *exc) -> None:
+        await broadcast_redis.close_shared_pools()
         await self.stop()
 
     async def _serve(self, reader, writer) -> None:
@@ -917,3 +918,238 @@ def test_turning_tls_verification_off_is_a_startup_warning(query, warned):
 def test_unusable_tls_settings_are_refused_at_startup(query, problem):
     with pytest.raises(ValueError, match=problem):
         check_redis_url(f"rediss://localhost:6380?{query}")
+
+
+@pytest.mark.asyncio
+async def test_publishes_reuse_one_connection():
+    async with FakeRedis(users={"default": "secret"}) as fake:
+        for number in range(10):
+            async with EndOnLossBroadcast(fake.url(":secret")) as broadcast:
+                await broadcast.publish("EventNotifier", str(number))
+    assert len(fake.published) == 10
+    assert fake.accepts == 1
+    assert fake.count("AUTH") == 1
+
+
+@pytest.mark.asyncio
+async def test_concurrent_publishes_open_at_most_the_pool_size():
+    async def publish(number: int) -> None:
+        async with EndOnLossBroadcast(fake.url()) as broadcast:
+            await broadcast.publish("EventNotifier", str(number))
+
+    async with FakeRedis() as fake:
+        await asyncio.gather(*(publish(number) for number in range(30)))
+    assert sorted(int(message) for _, message in fake.published) == list(range(30))
+    assert fake.accepts <= broadcast_redis.POOL_MAX_CONNECTIONS
+
+
+@pytest.mark.asyncio
+async def test_the_reader_and_the_publishes_share_the_pool():
+    async with FakeRedis() as fake:
+        async with EndOnLossBroadcast(fake.url()) as reader:
+            async with reader.subscribe("EventNotifier") as subscriber:
+                for number in range(5):
+                    async with EndOnLossBroadcast(fake.url()) as writer:
+                        await writer.publish("EventNotifier", str(number))
+                    await asyncio.wait_for(subscriber.get(), 2)
+    assert fake.accepts == 2
+
+
+@pytest.mark.asyncio
+async def test_a_publish_after_redis_closed_the_idle_connection_succeeds():
+    async with FakeRedis() as fake:
+        broadcaster = _reconnecting(fake.url())
+        await broadcaster.__broadcast_notifications__(
+            _Subscription("policy_data"), {"x": 1}
+        )
+        fake.drop()
+        await _wait_for(lambda: not fake.sessions)
+        await broadcaster.__broadcast_notifications__(
+            _Subscription("policy_data"), {"x": 2}
+        )
+        assert list(broadcaster._outbound_buffer) == []
+    assert len(fake.published) == 2
+    assert fake.accepts == 2
+
+
+@pytest.mark.asyncio
+async def test_each_url_has_its_own_pool():
+    async with FakeRedis(users={"opal": "one", "other": "two"}) as fake:
+        for userinfo in ("opal:one", "other:two", "opal:one"):
+            async with EndOnLossBroadcast(fake.url(userinfo)) as broadcast:
+                await broadcast.publish("EventNotifier", userinfo)
+    assert fake.accepts == 2
+    assert fake.count("AUTH") == 2
+
+
+@pytest.mark.asyncio
+async def test_a_connection_whose_auth_timed_out_is_not_reused(short_timeouts):
+    """A pooled connection cut off in the middle of AUTH must not go back to
+    the pool as if it were authenticated."""
+    async with FakeRedis(users={"default": "secret"}) as fake:
+        fake.mute.add("AUTH")
+        with pytest.raises(RedisTimeoutError, match="did not connect"):
+            async with EndOnLossBroadcast(fake.url(":secret")):
+                pass
+        fake.mute.clear()
+        async with EndOnLossBroadcast(fake.url(":secret")) as broadcast:
+            await broadcast.publish("EventNotifier", "hello")
+    assert fake.published == [("EventNotifier", "hello")]
+    assert fake.count("PUBLISH") == 1
+
+
+class _FreezingProxy:
+    """A TCP proxy in front of a Redis stand-in.
+
+    ``freeze`` stops forwarding on the connections open at the time, in
+    both directions, without closing them: a network path that went silent.
+    """
+
+    def __init__(self, target_port: int):
+        self.target_port = target_port
+        self.port = 0
+        self._frozen: List[asyncio.Event] = []
+        self._server: Optional[asyncio.AbstractServer] = None
+        self._writers: List[asyncio.StreamWriter] = []
+
+    async def start(self) -> None:
+        self._server = await asyncio.start_server(self._handle, "127.0.0.1", 0)
+        self.port = self._server.sockets[0].getsockname()[1]
+
+    async def stop(self) -> None:
+        for writer in self._writers:
+            writer.close()
+        self._server.close()
+        await self._server.wait_closed()
+
+    def freeze(self) -> None:
+        for frozen in self._frozen:
+            frozen.set()
+
+    async def _handle(self, client_reader, client_writer) -> None:
+        server_reader, server_writer = await asyncio.open_connection(
+            "127.0.0.1", self.target_port
+        )
+        self._writers += [client_writer, server_writer]
+        frozen = asyncio.Event()
+        self._frozen.append(frozen)
+
+        async def pipe(reader, writer):
+            with suppress(ConnectionError):
+                while data := await reader.read(65536):
+                    if frozen.is_set():
+                        await asyncio.Future()
+                    writer.write(data)
+                    await writer.drain()
+
+        with suppress(asyncio.CancelledError):
+            await asyncio.gather(
+                pipe(client_reader, server_writer), pipe(server_reader, client_writer)
+            )
+
+
+@pytest.mark.asyncio
+async def test_rediss_subscribers_lost_to_silence_return_their_connections(
+    tls_cert, short_timeouts, monkeypatch
+):
+    """Closing a TLS connection to a silent peer would wait for its answer; the
+    subscriber's connection must go back to the shared pool anyway, or the pool
+    runs dry while Redis is healthy."""
+    monkeypatch.setattr(broadcast_redis, "POOL_MAX_CONNECTIONS", 2)
+    async with FakeRedis(tls=tls_cert.context) as fake:
+        proxy = _FreezingProxy(fake.port)
+        await proxy.start()
+        url = f"rediss://127.0.0.1:{proxy.port}?ssl_ca_certs={tls_cert.path}"
+        try:
+            for _ in range(3):
+                backend = RedisBroadcastBackend(url)
+                await backend.connect()
+                await backend.subscribe("EventNotifier")
+                proxy.freeze()
+                assert await asyncio.wait_for(backend.next_published(), 5) is None
+                await backend.disconnect()
+            async with EndOnLossBroadcast(url) as broadcast:
+                await broadcast.publish("EventNotifier", "after")
+        finally:
+            await broadcast_redis.close_shared_pools()
+            await proxy.stop()
+    assert fake.published == [("EventNotifier", "after")]
+
+
+@pytest.mark.asyncio
+async def test_cancelled_subscriber_closes_return_their_connections(
+    short_timeouts, monkeypatch
+):
+    monkeypatch.setattr(broadcast_redis, "POOL_MAX_CONNECTIONS", 2)
+    async with FakeRedis() as fake:
+        for _ in range(3):
+            backend = RedisBroadcastBackend(fake.url())
+            await backend.connect()
+            await backend.subscribe("EventNotifier")
+            closing = asyncio.ensure_future(backend.disconnect())
+            await asyncio.sleep(0)
+            closing.cancel()
+            with suppress(asyncio.CancelledError):
+                await closing
+        async with EndOnLossBroadcast(fake.url()) as broadcast:
+            await broadcast.publish("EventNotifier", "after")
+    assert fake.published == [("EventNotifier", "after")]
+
+
+def test_a_url_parameter_that_clashes_with_the_pool_is_refused_at_startup():
+    with pytest.raises(ValueError, match="timeout"):
+        check_redis_url("redis://localhost:6379?timeout=5")
+
+
+@pytest.mark.asyncio
+async def test_a_max_connections_url_parameter_does_not_change_the_pool():
+    url_options = "?max_connections=50"
+
+    async def publish(number: int) -> None:
+        async with EndOnLossBroadcast(fake.url() + url_options) as broadcast:
+            await broadcast.publish("EventNotifier", str(number))
+
+    async with FakeRedis() as fake:
+        check_redis_url(fake.url() + url_options)
+        await asyncio.gather(*(publish(number) for number in range(30)))
+    assert len(fake.published) == 30
+    assert fake.accepts <= broadcast_redis.POOL_MAX_CONNECTIONS
+
+
+@pytest.mark.asyncio
+async def test_a_pooled_connection_is_replaced_once_it_reaches_its_age(monkeypatch):
+    """After a failover that leaves old connections open, a pooled connection
+    could keep publishing to the demoted node; replacing it by age makes the
+    next publish connect (and resolve the host) again."""
+    monkeypatch.setattr(broadcast_redis, "POOL_CONNECTION_MAX_AGE_SECONDS", 0.3)
+    async with FakeRedis() as fake:
+        async with EndOnLossBroadcast(fake.url()) as broadcast:
+            await broadcast.publish("EventNotifier", "first")
+        async with EndOnLossBroadcast(fake.url()) as broadcast:
+            await broadcast.publish("EventNotifier", "young")
+        assert fake.accepts == 1
+        await asyncio.sleep(0.4)
+        async with EndOnLossBroadcast(fake.url()) as broadcast:
+            await broadcast.publish("EventNotifier", "old")
+        await _wait_for(lambda: fake.closed_sessions)
+    assert [message for _, message in fake.published] == ["first", "young", "old"]
+    assert fake.accepts == 2
+
+
+@pytest.mark.asyncio
+async def test_the_subscriber_connection_is_not_replaced_by_age(monkeypatch):
+    monkeypatch.setattr(broadcast_redis, "POOL_CONNECTION_MAX_AGE_SECONDS", 0.2)
+    resyncs = []
+    notifier = _Notifier()
+    async with FakeRedis() as fake:
+        broadcaster = _reconnecting(fake.url(), notifier=notifier)
+        broadcaster.set_reconnect_callback(lambda: _record(resyncs))
+        async with broadcaster.get_listening_context():
+            await _wait_for(lambda: fake.subscribes == 1 and fake.sessions)
+            for number in range(4):
+                await asyncio.sleep(0.15)
+                async with EndOnLossBroadcast(fake.url()) as broadcast:
+                    await broadcast.publish("EventNotifier", _notification(number))
+            await _wait_for(lambda: len(notifier.notified) == 4)
+    assert fake.subscribes == 1
+    assert resyncs == []

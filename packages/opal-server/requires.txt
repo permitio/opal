@@ -6,4 +6,4 @@ slowapi>=0.1.5,<1
 # slowapi is stuck on and old `redis`, so fix that and switch from aioredis to redis
 pygit2==1.21.0
 asgiref>=3.5.2,<4
-redis>=4.4.4,<5 # below 4.4.4: CVE-2023-28858, CVE-2023-28859
+redis>=4.6.0,<5 # below 4.4.4: CVE-2023-28858, CVE-2023-28859; 4.4.4 can put a connection cut off during AUTH back in the pool unauthenticated
