@@ -29,13 +29,22 @@ REQUIRED_CHECKS = {"tests.yml": "CI", "pre-commit.yml": "pre-commit"}
 CI_NEEDS = {
     "build",
     "e2e-tests",
-    "e2e-tests-alpine",
     "binary-stages",
     "secrets",
     "dependency-review",
     "vuln",
 }
 CI_PULL_REQUEST_JOBS = {"dependency-review", "vuln"}
+
+# The images the release publishes: (Docker Hub repository, docker/Dockerfile target). Every image
+# builds on Wolfi, in one variant.
+RELEASE_IMAGES = {
+    ("permitio/opal-client", "client"),
+    ("permitio/opal-client-standalone", "client-standalone"),
+    ("permitio/opal-client-cedar", "client-cedar"),
+    ("permitio/opal-client-eopa", "client-eopa"),
+    ("permitio/opal-server", "server"),
+}
 
 # Every write permission a job has: (workflow, job, scope).
 WRITE_PERMISSIONS = {
@@ -280,6 +289,12 @@ class TestRelease:
     )
     def test_the_publish_jobs_set_up_python_3_14(self, jobs, job_id):
         assert setup_python_versions(jobs[job_id]) == [PACKAGES_PYTHON]
+
+    def test_publishes_the_wolfi_images_only(self, jobs):
+        legs = jobs["publish_docker_images"]["strategy"]["matrix"]["include"]
+
+        assert {(leg["repository"], leg["target"]) for leg in legs} == RELEASE_IMAGES
+        assert len(legs) == len(RELEASE_IMAGES)
 
     def test_the_package_build_installs_a_pinned_setuptools(self, jobs):
         """Python 3.14 ships no setuptools, which each setup.py imports."""

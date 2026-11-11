@@ -2,12 +2,31 @@
 # The syntax line must stay first. COPY --exclude below needs dockerfile frontend 1.19 or later
 # (1.17 and 1.18 reject the flag). The digest pins the frontend that builds every image; when
 # you change the tag, update the digest with it (docker buildx imagetools inspect <tag>).
-# Python 3.14 in every image (all four FROM lines, and the site-packages paths below): the one
-# Python the packages' python_requires admits.
+# Every image builds on Wolfi, with Wolfi's own Python package: PYTHON_VERSION, the one Python
+# the packages' python_requires admits, is declared once here for the whole file.
+ARG PYTHON_VERSION=3.14
+
+# WOLFI BASE ----------------------------------------
+# The one base of every stage below. wolfi-base publishes :latest only and rebuilds it daily, so
+# it is pinned by digest; Dependabot proposes digest bumps. Its /etc/apk/world pins each of its
+# own packages (glibc, openssl, busybox, ...) to the version it ships, so apk upgrade cannot move
+# them: a fix to one of them comes with a new digest.
+# ---------------------------------------------------
+FROM cgr.dev/chainguard/wolfi-base:latest@sha256:94fa13e26d449f7d78dbcd02d12ea37a0da80d24fcc3e1f17b95d515dec607a7 AS wolfi-base
+
+# PYTHON BASE ---------------------------------------
+# ---------------------------------------------------
+FROM wolfi-base AS python-base
+ARG PYTHON_VERSION
+# The ca-certificates floor (20261020-r0) drops the root of the compromised eMudhra CAs; declared
+# to apk, so a stale index fails here with apk's own version error.
+RUN apk add --no-cache "python-${PYTHON_VERSION}" bash 'ca-certificates-bundle>=20261020-r0'
+
 # BUILD STAGE ---------------------------------------
 # split this stage to save time and reduce image size
 # ---------------------------------------------------
-FROM python:3.14-bookworm AS build-stage
+FROM python-base AS build-stage
+ARG PYTHON_VERSION
 # from now on, work in the /app directory
 WORKDIR /app/
 # Layer dependency install (for caching)
@@ -15,23 +34,30 @@ COPY ./packages/requires.txt ./base_requires.txt
 COPY ./packages/opal-common/requires.txt ./common_requires.txt
 COPY ./packages/opal-client/requires.txt ./client_requires.txt
 COPY ./packages/opal-server/requires.txt ./server_requires.txt
+# OPAL and its dependencies go into a venv, apart from the packages apk owns.
+# --system-site-packages keeps the user site on sys.path, so `pip install --user` in an image
+# built FROM these (the documented way to add a fetch provider) keeps working.
+RUN "python${PYTHON_VERSION}" -m venv --system-site-packages /opt/venv
+ENV PATH=/opt/venv/bin:$PATH
 # install python deps. setuptools is installed explicitly, at packages/requires.txt's floor or
-# newer, since the python:3.14 base images ship none. Capped at the major: the images still
-# install OPAL with the deprecated `setup.py install`, so a new setuptools major could break an
-# unchanged rebuild (82 already dropped pkg_resources).
+# newer, since a new venv holds none. Capped at the major: the images still install OPAL with the
+# deprecated `setup.py install`, so a new setuptools major could break an unchanged rebuild (82
+# already dropped pkg_resources).
 RUN pip install --no-cache-dir --upgrade pip 'setuptools>=84.1.0,<85' && pip install --no-cache-dir -r ./base_requires.txt -r ./common_requires.txt -r ./client_requires.txt -r ./server_requires.txt
 
 # COMMON IMAGE --------------------------------------
 # ---------------------------------------------------
-FROM python:3.14-slim-bookworm AS common
+FROM python-base AS common
 
-# copy libraries from build stage (This won't copy redundant libraries we used in build-stage)
-# also remove the default python site-packages that has older versions of packages that won't be overridden
-RUN rm -r /usr/local/lib/python3.14/site-packages
-COPY --from=build-stage /usr/local /usr/local
+# copy the venv from the build stage (without the tools only the build needed)
+COPY --from=build-stage /opt/venv /opt/venv
+# The venv's bin before /usr/bin, so `python` and `pip` are the venv's (docker exec too), and
+# /opal/.local/bin for what `pip install --user` adds in an image built FROM these.
+ENV PATH=/opal:/opal/.local/bin:/opt/venv/bin:$PATH
 
-# Add non-root user (with home dir at /opal)
-RUN useradd -m -b / -s /bin/bash opal
+# Add the non-root user opal: uid and gid 1000, home /opal. Its /etc/passwd entry is what ssh
+# needs to fetch a policy repo over SSH; under a uid with no entry, ssh refuses to run.
+RUN addgroup -g 1000 opal && adduser -D -u 1000 -G opal -h /opal -s /bin/bash opal
 WORKDIR /opal
 
 # copy wait-for script (create link at old path to maintain backward compatibility)
@@ -40,18 +66,11 @@ RUN chmod +x ./wait-for.sh
 RUN ln -s /opal/wait-for.sh /usr/wait-for.sh
 
 # netcat (nc) is used by the wait-for.sh script.
-# ca-certificates is listed to UPGRADE it: the base image's copy trusts the compromised
-# eMudhra CAs (CVE-2026-111943), fixed in 20250419~deb12u2 from bookworm-security. apt
-# cannot express a floor, so the version is checked right after the install: a mirror or
-# sources list without bookworm-security fails here, naming the cause.
-# check_trust_store.py fails the build if this or certifi's bundle still trusts them; it runs
-# after every step that installs OS packages, and stays in the image for re-checking it.
+# check_trust_store.py fails the build if the system bundle or certifi's still trusts the
+# compromised eMudhra CAs; it runs after every step that installs OS packages, and stays in the
+# image for re-checking it.
 COPY scripts/check_trust_store.py .
-# apt-get upgrade picks up Debian security updates the base image predates (openssl, for one)
-RUN apt-get update && apt-get upgrade -y && apt-get install -y netcat-traditional jq wget ca-certificates && apt-get clean && \
-  v="$(dpkg-query -W -f='${Version}' ca-certificates)" && \
-  { dpkg --compare-versions "$v" ge '20250419~deb12u2' || \
-    { echo "ca-certificates $v is below 20250419~deb12u2 (CVE-2026-111943): is bookworm-security reachable?" >&2; exit 1; }; } && \
+RUN apk add --no-cache netcat-openbsd jq wget && \
   python check_trust_store.py
 
 # copy startup script (create link at old path to maintain backward compatibility)
@@ -70,8 +89,6 @@ COPY ./README.md .
 COPY --exclude=**/tests/*.pem ./packages ./packages/
 # install the opal-common package
 RUN cd ./packages/opal-common && python setup.py install
-# Make sure scripts in .local are usable:
-ENV PATH=/opal:/root/.local/bin:$PATH
 # With OPAL_ENABLE_DATADOG_APM, start.sh runs gunicorn under ddtrace-run. ddtrace 4 traces every
 # websocket message by default (3.x did not), which would turn each pub/sub update into spans.
 # Keep the 3.x behaviour; set it to true to opt in. configure_apm applies the same default.
@@ -109,10 +126,11 @@ VOLUME /opal/backup
 
 # IMAGE to extract OPA from official image ----------
 # ---------------------------------------------------
-FROM alpine:latest AS opa-extractor
+FROM wolfi-base AS opa-extractor
 USER root
 
-RUN apk update && apk add skopeo tar
+# busybox's tar and find lack the flags the copy below uses
+RUN apk add --no-cache skopeo gnutar findutils
 WORKDIR /opal
 
 # copy opa from official docker image. `opa_image` / `opa_tag` are documented build
@@ -165,7 +183,7 @@ USER opal
 
 # EOPA BINARY DOWNLOAD STAGE ------------------------
 # ---------------------------------------------------
-FROM alpine:latest AS eopa-extractor
+FROM wolfi-base AS eopa-extractor
 USER root
 
 # Install download dependencies
@@ -247,9 +265,9 @@ USER opal
 # ---------------------------------------------------
 FROM common AS server
 
-RUN apt-get update && apt-get install -y openssh-client git && apt-get clean && \
+# git and ssh run the git command-line fetch backend; ssh-keyscan fills known_hosts below.
+RUN apk add --no-cache git openssh-client openssh-keyscan && \
   python check_trust_store.py
-RUN git config --global core.symlinks false # Mitigate CVE-2024-32002
 
 USER opal
 
@@ -301,159 +319,5 @@ ENV OPAL_ALL_DATA_URL=http://host.docker.internal:7002/policy-data
 ENV OPAL_POLICY_REPO_REUSE_CLONE_PATH=true
 
 # expose opal server port
-EXPOSE 7002
-USER opal
-
-# ===================== ALPINE VARIANTS =====================
-# BUILD STAGE (ALPINE) --------------------------------------
-# -----------------------------------------------------------
-FROM python:3.14-alpine AS build-stage-alpine
-ARG LIBGIT2_VERSION=1.7.2
-WORKDIR /app/
-RUN apk add --no-cache \
-  bash \
-  build-base \
-  musl-dev \
-  libffi-dev \
-  openssl-dev \
-  pkgconfig \
-  cmake \
-  libssh2-dev \
-  http-parser-dev \
-  linux-headers \
-  git \
-  openssh-client \
-  jq \
-  wget
-RUN wget -O /tmp/libgit2.tar.gz https://github.com/libgit2/libgit2/archive/refs/tags/v${LIBGIT2_VERSION}.tar.gz && \
-  tar -xzf /tmp/libgit2.tar.gz -C /tmp && \
-  cd /tmp/libgit2-${LIBGIT2_VERSION} && \
-  cmake -S . -B build \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_INSTALL_PREFIX=/usr/local \
-    -DBUILD_SHARED_LIBS=ON \
-    -DBUILD_TESTS=OFF \
-    -DUSE_SSH=ON && \
-  cmake --build build --config Release --target install && \
-  rm -rf /tmp/libgit2*
-COPY ./packages/requires.txt ./base_requires.txt
-COPY ./packages/opal-common/requires.txt ./common_requires.txt
-COPY ./packages/opal-client/requires.txt ./client_requires.txt
-COPY ./packages/opal-server/requires.txt ./server_requires.txt
-# setuptools installed explicitly, as in build-stage above
-RUN pip install --no-cache-dir --upgrade pip 'setuptools>=84.1.0,<85' && pip install --no-cache-dir -r ./base_requires.txt -r ./common_requires.txt -r ./client_requires.txt -r ./server_requires.txt
-
-# COMMON IMAGE (ALPINE) -------------------------------------
-# -----------------------------------------------------------
-FROM python:3.14-alpine AS common-alpine
-RUN rm -r /usr/local/lib/python3.14/site-packages || true
-COPY --from=build-stage-alpine /usr/local /usr/local
-# apk upgrade picks up Alpine security updates the base image predates (zlib, for one)
-RUN apk upgrade --no-cache
-RUN adduser -D -h /opal -s /bin/bash opal && apk add --no-cache bash netcat-openbsd jq wget
-RUN apk add --no-cache libssh2 http-parser
-WORKDIR /opal
-# Floors ca-certificates and ca-certificates-bundle at 20261020-r0, which drops the root of the
-# compromised eMudhra CAs (CVE-2026-111943). Declared to apk, so a stale index fails here with
-# apk's own version error, and /etc/apk/world keeps the floor for any later `apk add`. Both
-# packages are named: `apk add --upgrade ca-certificates` alone leaves -bundle behind.
-# check_trust_store.py fails the build if they or certifi's bundle still trust the CAs.
-COPY scripts/check_trust_store.py .
-RUN apk add --no-cache 'ca-certificates>=20261020-r0' 'ca-certificates-bundle>=20261020-r0' && \
-  python check_trust_store.py
-COPY scripts/wait-for.sh .
-RUN chmod +x ./wait-for.sh
-RUN ln -s /opal/wait-for.sh /usr/wait-for.sh
-COPY ./scripts/start.sh .
-RUN chmod +x ./start.sh
-RUN ln -s /opal/start.sh /start.sh
-COPY ./scripts/gunicorn_conf.py .
-COPY ./README.md .
-# --exclude as well as .dockerignore: a build from a Git context (docker build <git-url>)
-# skips .dockerignore. The trust-store test's fixture holds the compromised eMudhra
-# certificates, and a search of the image's files for them would report it, even though
-# nothing trusts it.
-COPY --exclude=**/tests/*.pem ./packages ./packages/
-RUN cd ./packages/opal-common && python setup.py install
-ENV PATH=/opal:/root/.local/bin:$PATH
-# With OPAL_ENABLE_DATADOG_APM, start.sh runs gunicorn under ddtrace-run. ddtrace 4 traces every
-# websocket message by default (3.x did not), which would turn each pub/sub update into spans.
-# Keep the 3.x behaviour; set it to true to opt in. configure_apm applies the same default.
-ENV DD_TRACE_WEBSOCKET_MESSAGES_ENABLED=false
-CMD ["./start.sh"]
-
-
-# STANDALONE IMAGE (ALPINE) ---------------------------------
-# -----------------------------------------------------------
-FROM common-alpine AS client-standalone-alpine
-RUN cd ./packages/opal-client && python setup.py install
-ENV UVICORN_NUM_WORKERS=1
-ENV UVICORN_ASGI_APP=opal_client.main:app
-ENV UVICORN_PORT=7000
-ENV OPAL_INLINE_OPA_ENABLED=false
-EXPOSE 7000
-USER opal
-RUN mkdir -p /opal/backup
-VOLUME /opal/backup
-
-
-# OPA CLIENT IMAGE (ALPINE) -------------------------
-# Using standalone image as base --------------------
-# ---------------------------------------------------
-FROM client-standalone-alpine AS client-alpine
-USER root
-COPY --from=opa-extractor /opal/opa ./opa
-ENV OPAL_INLINE_OPA_ENABLED=true
-ENV OPAL_INLINE_OPA_EXEC_PATH=/opal/opa
-
-
-# EOPA CLIENT IMAGE (ALPINE) ------------------------
-# Using standalone image as base --------------------
-# ---------------------------------------------------
-FROM client-standalone-alpine AS client-eopa-alpine
-USER root
-COPY --from=eopa-extractor /download/eopa ./eopa
-ENV OPAL_POLICY_STORE_TYPE=OPA
-ENV OPAL_INLINE_OPA_ENABLED=true
-ENV OPAL_INLINE_OPA_EXEC_PATH=/opal/eopa
-EXPOSE 8181
-USER opal
-
-
-# CEDAR CLIENT IMAGE (ALPINE) -----------------------
-# Using standalone image as base --------------------
-# ---------------------------------------------------
-FROM client-standalone-alpine AS client-cedar-alpine
-USER root
-COPY --from=cedar-extractor /agent/cedar-agent /bin/cedar-agent
-RUN chmod +x /bin/cedar-agent
-ENV OPAL_POLICY_STORE_TYPE=CEDAR
-ENV OPAL_INLINE_CEDAR_ENABLED=true
-ENV OPAL_INLINE_CEDAR_EXEC_PATH=/bin/cedar-agent
-ENV OPAL_INLINE_CEDAR_CONFIG='{"addr": "0.0.0.0:8180"}'
-ENV OPAL_POLICY_STORE_URL=http://localhost:8180
-EXPOSE 8180
-USER opal
-
-
-# SERVER IMAGE (ALPINE) -----------------------------
-# ---------------------------------------------------
-FROM common-alpine AS server-alpine
-RUN apk add --no-cache openssh-client git libssh2 && python check_trust_store.py
-RUN git config --global core.symlinks false
-USER opal
-ARG TRUST_POLICY_REPO_HOST_SSH_FINGERPRINT="true"
-ARG POLICY_REPO_HOST="github.com"
-RUN if [ "$TRUST_POLICY_REPO_HOST_SSH_FINGERPRINT" = "true" ] ; then \
-  mkdir -p ~/.ssh && \
-  chmod 0700 ~/.ssh && \
-  ssh-keyscan -t ed25519,ecdsa,rsa ${POLICY_REPO_HOST} >> ~/.ssh/known_hosts ; fi
-USER root
-RUN cd ./packages/opal-server && python setup.py install
-ENV UVICORN_NUM_WORKERS=1
-ENV UVICORN_ASGI_APP=opal_server.main:app
-ENV UVICORN_PORT=7002
-ENV OPAL_ALL_DATA_URL=http://host.docker.internal:7002/policy-data
-ENV OPAL_POLICY_REPO_REUSE_CLONE_PATH=true
 EXPOSE 7002
 USER opal

@@ -1843,9 +1843,9 @@ def _repack_under_locks(
     # a credential prompt either (and with its own session it has no tty).
     env["GIT_TERMINAL_PROMPT"] = "0"
     # Resolved here rather than by exec: when no PATH entry has git, exec
-    # reports the FIRST non-ENOENT error, and the official image's PATH lists
-    # /root/.local/bin, which the opal user cannot search, so a missing git
-    # would surface as PermissionError. Callers rely on GitNotFoundError.
+    # reports the FIRST non-ENOENT error, so a PATH entry the server's user
+    # cannot search (another user's home, say) would surface a missing git
+    # as PermissionError. Callers rely on GitNotFoundError.
     git = shutil.which("git", path=env.get("PATH"))
     if git is None:
         raise GitNotFoundError(errno.ENOENT, "git not found on PATH", "git")

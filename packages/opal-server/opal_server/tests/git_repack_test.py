@@ -1019,10 +1019,9 @@ def test_repack_runs_git_with_expected_args_and_minimal_env(tmp_path, monkeypatc
 def test_missing_git_raises_git_not_found(tmp_path, monkeypatch, kind):
     """No git on PATH is GitNotFoundError, whatever else PATH holds.
 
-    "unsearchable-dir" is the official image's case: its PATH lists
-    /root/.local/bin, which the opal user cannot search, and a bare exec
-    lookup then reports the EACCES from that entry (PermissionError)
-    instead of "not found".
+    "unsearchable-dir" is a PATH entry the server's user cannot search
+    (another user's home, say): a bare exec lookup then reports the
+    EACCES from that entry (PermissionError) instead of "not found".
     """
     empty = tmp_path / "empty-bin"
     empty.mkdir()

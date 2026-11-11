@@ -11,22 +11,21 @@ read holds a certificate for one of those intermediates' keys or for a root
 they chain to:
 
 * certifi's bundle - requests and httpx verify against it by default.
-* the system bundle and certificate directory (from Debian's or Alpine's
-  ca-certificates) - aiohttp, websockets and the stdlib ssl module through
-  OpenSSL; pygit2, which hands libgit2 the stdlib's default paths (its wheel's
-  own OpenSSL directory does not exist in the image); git's HTTPS transport
-  through libcurl (GnuTLS on Debian, OpenSSL on Alpine); and the bundled
-  OPA/EOPA through Go's crypto/x509.
+* the system bundle and certificate directory (from Wolfi's
+  ca-certificates-bundle) - aiohttp, websockets and the stdlib ssl module
+  through OpenSSL; pygit2, which hands libgit2 the stdlib's default paths (its
+  wheel's own OpenSSL directory does not exist in the image); git's HTTPS
+  transport through libcurl and OpenSSL; and the bundled OPA/EOPA through Go's
+  crypto/x509.
 
 The fix is certifi >= 2026.10.19 (floored in opal-common's requires.txt) and
-the patched ca-certificates the Dockerfile requires (floored in `apk add`,
-version-checked after `apt-get install`). This check is what
-notices when either is missing, e.g. a base image or package mirror without the
-fix. A layer taken from the build cache does not re-run it, but was checked
-when it was built: the check is part of the RUN that installs the packages.
-The image keeps it at /opal/check_trust_store.py, so a built image can be
-re-checked with `docker run --entrypoint python <image>
-/opal/check_trust_store.py`.
+the patched ca-certificates-bundle the Dockerfile requires (floored in `apk
+add`). This check is what notices when either is missing, e.g. a base image or
+package mirror without the fix. A layer taken from the build cache does not
+re-run it, but was checked when it was built: the check is part of the RUN
+that installs the packages. The image keeps it at /opal/check_trust_store.py,
+so a built image can be re-checked with `docker run --entrypoint python
+<image> /opal/check_trust_store.py`.
 packages/opal-common/opal_common/tests/docker_trust_store_check_test.py covers
 it.
 """
@@ -47,7 +46,7 @@ import certifi
 # root, or a cross-sign, carries the same key under a different certificate hash.
 DISTRUSTED_KEYS = {
     # The roots the eight intermediates and their Sectigo cross-signs chain to. Only the first
-    # two were ever in Mozilla's store, which certifi and Alpine follow; the emSign Root TLS/CS
+    # two were ever in Mozilla's store, which certifi and Wolfi follow; the emSign Root TLS/CS
     # CA - G3 roots are only in Microsoft's.
     "8d417db2dd8bf5e3084d1e3f196d583849d81bdd4c00c70b9d39369e96b8c782": "emSign ECC Root CA - G3",
     "bd153ed7b0434f6886b17bce8bbe84ed340c7132d702a8f4fa318f756ecbd6f3": "AAA Certificate Services",
@@ -79,13 +78,10 @@ CONTEXT_TAG_0 = 0xA0  # TBSCertificate's optional [0] version
 TBS_FIELDS_BEFORE_SPKI = 5  # serialNumber, signature, issuer, validity, subject
 CERTIFI_FIX = "certifi must be >= 2026.10.19: check the floor in packages/opal-common/requires.txt"
 SYSTEM_FIX = (
-    "the Dockerfile requires the fixed ca-certificates (Debian >= 20250419~deb12u2, "
-    "Alpine >= 20261020-r0), so the key comes from elsewhere: a ca-certificates release "
-    "that still ships it, or a file another package or step added. `dpkg -S <path>` or "
-    "`apk info --who-owns <path>` names the owner of a packaged file; the generated "
-    "ca-certificates.crt is rebuilt from the /usr/share/ca-certificates entries "
-    "enabled in /etc/ca-certificates.conf plus every certificate in "
-    "/usr/local/share/ca-certificates, so check those"
+    "the Dockerfile requires the fixed ca-certificates-bundle (>= 20261020-r0), so the key "
+    "comes from elsewhere: a ca-certificates-bundle release that still ships it, or a file "
+    "another package or step added. `apk info --who-owns <path>` names the owner of a "
+    "packaged file"
 )
 
 

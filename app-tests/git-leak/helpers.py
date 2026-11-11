@@ -411,7 +411,7 @@ def worker_pids(service: str = "opal_server") -> set:
     this set across a transient bounce is how the broadcaster test tells an
     in-place reconnect apart from a worker respawn.
 
-    Implemented over ``/proc`` (no ``ps`` in the slim image): every gunicorn
+    Implemented over ``/proc``, which needs no ``ps`` in the image: every gunicorn
     process' ``cmdline`` contains "gunicorn", and the master is the lowest PID
     (it exists before it forks any worker), so the workers are the rest. The
     match is done **host-side in Python**, not with ``grep gunicorn`` in the

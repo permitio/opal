@@ -295,7 +295,7 @@ class OpalServerConfig(Confi):
         "server holds, the longer that takes. Needs git 2.32 or later on PATH, "
         "/bin/sh (git runs under it, which reports git's exit status), and "
         "ssh for SSH sources; the official "
-        "images, Debian and Alpine, have all three, and the server does not "
+        "images have all three, and the server does not "
         "start without git 2.32 or /bin/sh. "
         "Unlike libgit2, ssh needs the server's uid to have an entry in the "
         "user database (/etc/passwd): under a uid with none, an arbitrary one "

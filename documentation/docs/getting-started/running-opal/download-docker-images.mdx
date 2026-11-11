@@ -18,8 +18,7 @@
         <a href="https://hub.docker.com/r/permitio/opal-server">OPAL Server</a>
       </td>
       <td valign="top">
-        <code>docker pull permitio/opal-server</code><br />
-        <code>docker pull permitio/opal-server:latest-alpine</code>
+        <code>docker pull permitio/opal-server</code>
       </td>
       <td valign="top">
         <ul>
@@ -39,8 +38,7 @@
         <a href="https://hub.docker.com/r/permitio/opal-client">OPAL Client</a>
       </td>
       <td valign="top">
-        <code>docker pull permitio/opal-client</code><br />
-        <code>docker pull permitio/opal-client:latest-alpine</code>
+        <code>docker pull permitio/opal-client</code>
       </td>
       <td valign="top">
         <ul>
@@ -67,8 +65,7 @@
         </a>
       </td>
       <td valign="top">
-        <code>docker pull permitio/opal-client-standalone</code><br />
-        <code>docker pull permitio/opal-client-standalone:latest-alpine</code>
+        <code>docker pull permitio/opal-client-standalone</code>
       </td>
       <td valign="top">
         <ul>
@@ -85,3 +82,9 @@
     </tr>
   </tbody>
 </table>
+
+The images are built on [Wolfi](https://github.com/wolfi-dev/os), with Python 3.14 in a venv at
+`/opt/venv`, and run as the user `opal` (uid and gid 1000, home `/opal`). An image built `FROM`
+them adds OS packages with `apk` and Python packages with `pip install --user`. From 0.10.0 on,
+no `-alpine` tags are published and the default tags are no longer built on Debian; 0.9.x and
+the 0.10.0 release candidates keep both.

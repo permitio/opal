@@ -153,8 +153,8 @@ jobs:
         # works alone; pin it, since a build that skips .dockerignore (docker build <git-url>)
         # has only --exclude.
         run: |
-          if [ "$(grep -cF -- 'COPY --exclude=**/tests/*.pem ./packages ./packages/' docker/Dockerfile)" -ne 2 ]; then
-            echo "::error::docker/Dockerfile must keep COPY --exclude=**/tests/*.pem in both stages, for builds that skip .dockerignore"
+          if [ "$(grep -cF -- 'COPY --exclude=**/tests/*.pem ./packages ./packages/' docker/Dockerfile)" -ne 1 ]; then
+            echo "::error::docker/Dockerfile must keep COPY --exclude=**/tests/*.pem in the common stage, for builds that skip .dockerignore"
             exit 1
           fi
           for image in permitio/opal-client:test permitio/opal-server:test; do
@@ -171,6 +171,43 @@ jobs:
             fi
             echo "$image: no .pem among $tests test files"
           done
+
+      - name: Check the images' base, Python and user
+        # Wolfi, Python 3.14 from the venv at /opt/venv, and the opal user (uid and gid 1000,
+        # home /opal) with an /etc/passwd entry, which ssh needs to fetch a policy repo over SSH.
+        run: |
+          # shellcheck disable=SC2016 # the script runs in the image, which expands it
+          check='
+            . /etc/os-release
+            [ "$ID" = wolfi ] || { echo "the base is $ID, not wolfi"; exit 1; }
+            [ "$(command -v python)" = /opt/venv/bin/python ] ||
+              { echo "python is $(command -v python), not /opt/venv/bin/python"; exit 1; }
+            python -c "import sys; assert sys.version_info[:2] == (3, 14), sys.version"
+            [ "$(id -u):$(id -g)" = 1000:1000 ] || { echo "the user is $(id -u):$(id -g)"; exit 1; }
+            python -c "import pwd; home = pwd.getpwuid(1000).pw_dir; assert home == \"/opal\", home"
+          '
+          for image in permitio/opal-client:test permitio/opal-server:test; do
+            if ! docker run --rm --entrypoint sh "$image" -c "$check"; then
+              echo "::error::$image is not Wolfi with Python 3.14 in /opt/venv and opal 1000:1000 at /opal"
+              exit 1
+            fi
+            echo "$image: Wolfi, Python 3.14 in /opt/venv, opal 1000:1000 with home /opal"
+          done
+
+      - name: Check that an image built FROM the client adds a package with pip install --user
+        # The docs add a custom fetch provider this way. The venv keeps the user site for it. The
+        # default builder is the one that sees the image loaded above.
+        run: |
+          dir=$RUNNER_TEMP/derived
+          mkdir -p "$dir/opal_fetcher_ci"
+          echo 'OK = 1' >"$dir/opal_fetcher_ci/__init__.py"
+          printf '%s\n' '[project]' 'name = "opal-fetcher-ci"' 'version = "0"' \
+            '[build-system]' 'requires = ["setuptools"]' 'build-backend = "setuptools.build_meta"' \
+            >"$dir/pyproject.toml"
+          printf '%s\n' 'FROM permitio/opal-client:test' 'COPY --chown=opal . /tmp/fetcher' \
+            'RUN pip install --user --no-build-isolation /tmp/fetcher' >"$dir/Dockerfile"
+          docker buildx build --builder default --load -t opal-client:derived "$dir"
+          docker run --rm --entrypoint python opal-client:derived -c 'import opal_fetcher_ci'
 
       - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
@@ -200,90 +237,6 @@ jobs:
           git config --global user.email "<>"
 
           ./run.sh
-
-  e2e-tests-alpine:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    name: E2E Tests (Alpine)
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1  # v4.4.0
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
-
-      - name: Build client (alpine)
-        id: build_client_alpine
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
-        with:
-          context: .
-          file: docker/Dockerfile
-          push: false
-          target: client-alpine
-          cache-from: type=registry,ref=permitio/opal-client:latest-alpine
-          cache-to: type=inline
-          load: true
-          tags: |
-            permitio/opal-client:test-alpine
-
-      - name: Build server (alpine)
-        id: build_server_alpine
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
-        with:
-          context: .
-          file: docker/Dockerfile
-          push: false
-          target: server-alpine
-          cache-from: type=registry,ref=permitio/opal-server:latest-alpine
-          cache-to: type=inline
-          load: true
-          tags: |
-            permitio/opal-server:test-alpine
-
-      - name: Check that no test certificate fixture is in the images
-        # .dockerignore and docker/Dockerfile's COPY --exclude both keep them out. This fails if
-        # one slips back in. These builds read .dockerignore, so they can't show that --exclude
-        # works alone; pin it, since a build that skips .dockerignore (docker build <git-url>)
-        # has only --exclude.
-        run: |
-          if [ "$(grep -cF -- 'COPY --exclude=**/tests/*.pem ./packages ./packages/' docker/Dockerfile)" -ne 2 ]; then
-            echo "::error::docker/Dockerfile must keep COPY --exclude=**/tests/*.pem in both stages, for builds that skip .dockerignore"
-            exit 1
-          fi
-          for image in permitio/opal-client:test-alpine permitio/opal-server:test-alpine; do
-            tests=$(docker run --rm --entrypoint sh "$image" -c 'find /opal/packages -path "*/tests/*" -name "*.py" | wc -l')
-            found=$(docker run --rm --entrypoint sh "$image" -c 'find /opal/packages -name "*.pem"')
-            if [ "$tests" -eq 0 ]; then
-              echo "::error::$image: no test modules under /opal/packages, so this check saw nothing"
-              exit 1
-            fi
-            if [ -n "$found" ]; then
-              echo "::error::$image carries certificate fixtures:"
-              echo "$found"
-              exit 1
-            fi
-            echo "$image: no .pem among $tests test files"
-          done
-
-      - name: Create alpine docker compose file
-        run: sed 's/:latest-alpine/:test-alpine/g' docker/docker-compose-example-alpine.yml > docker/docker-compose-test-alpine.yml
-
-      - name: Bring up alpine stack
-        run: docker compose -f docker/docker-compose-test-alpine.yml up -d
-
-      - name: Check if inline OPA is healthy (alpine)
-        run: ./scripts/wait-for.sh -t 60 http://localhost:8181/v1/data/users -- sleep 10 && curl -s "http://localhost:8181/v1/data/users" | jq '.result.bob.location.country == "US"'
-
-      - name: Output container logs (alpine)
-        run: docker compose -f docker/docker-compose-test-alpine.yml logs
 
   binary-stages:
     # The OPA and EOPA extraction stages, for both release architectures. The jobs above
@@ -396,7 +349,7 @@ jobs:
     # fail, when a needed job fails or is cancelled.
     name: CI
     if: always()
-    needs: [build, e2e-tests, e2e-tests-alpine, binary-stages, secrets, dependency-review, vuln]
+    needs: [build, e2e-tests, binary-stages, secrets, dependency-review, vuln]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -429,6 +382,6 @@ jobs:
         env:
           NEEDS: ${{ toJSON(needs) }}
           EVENT: ${{ github.event_name }}
-          EXPECTED_JOBS: 7
+          EXPECTED_JOBS: 6
           PULL_REQUEST_JOBS: dependency-review vuln
         run: .github/scripts/ci-aggregate.sh

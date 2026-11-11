@@ -126,43 +126,18 @@ jobs:
           - name: client
             repository: permitio/opal-client
             target: client
-            version_suffix: ""
-          - name: client-alpine
-            repository: permitio/opal-client
-            target: client-alpine
-            version_suffix: "-alpine"
           - name: client-standalone
             repository: permitio/opal-client-standalone
             target: client-standalone
-            version_suffix: ""
-          - name: client-standalone-alpine
-            repository: permitio/opal-client-standalone
-            target: client-standalone-alpine
-            version_suffix: "-alpine"
           - name: client-cedar
             repository: permitio/opal-client-cedar
             target: client-cedar
-            version_suffix: ""
-          - name: client-cedar-alpine
-            repository: permitio/opal-client-cedar
-            target: client-cedar-alpine
-            version_suffix: "-alpine"
           - name: client-eopa
             repository: permitio/opal-client-eopa
             target: client-eopa
-            version_suffix: ""
-          - name: client-eopa-alpine
-            repository: permitio/opal-client-eopa
-            target: client-eopa-alpine
-            version_suffix: "-alpine"
           - name: server
             repository: permitio/opal-server
             target: server
-            version_suffix: ""
-          - name: server-alpine
-            repository: permitio/opal-server
-            target: server-alpine
-            version_suffix: "-alpine"
     steps:
       - name: Checkout
         uses: actions/checkout@0717577d45739eb3c851188b29f50ed6c0b2194e  # v2.8.0
@@ -188,15 +163,10 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           IS_PRERELEASE: ${{ github.event.release.prerelease }}
           REPOSITORY: ${{ matrix.repository }}
-          VERSION_SUFFIX: ${{ matrix.version_suffix }}
         run: |
-          version_tag="$RELEASE_TAG"
-          repo="$REPOSITORY"
-          suffix="$VERSION_SUFFIX"
-          latest_tag="latest${suffix}"
-          tags="${repo}:${version_tag}${suffix}"
+          tags="${REPOSITORY}:${RELEASE_TAG}"
           if [ "$IS_PRERELEASE" != "true" ]; then
-            tags="${repo}:${latest_tag}"$'\n'"${tags}"
+            tags="${REPOSITORY}:latest"$'\n'"${tags}"
           fi
           {
             echo "tags<<EOF"

@@ -83,10 +83,9 @@ updates:
 
   # The published images. Dependabot reads FROM lines only, so it cannot see the OPA image
   # (copied by skopeo from ARG opa_tag/opa_digest) or the EOPA binary (a wget URL checked against
-  # ARG checksums); bump those by hand. It does not update the two `alpine:latest` stages either.
-  # The python bases are two-part tags without a digest (python:3.14-bookworm), so Dependabot has
-  # nothing to offer inside 3.14, and the ignore below holds the minor: no python base pull
-  # requests come from this entry. Today it tracks permitio/cedar-agent.
+  # ARG checksums); bump those by hand. It tracks the digest of wolfi-base:latest, the one base of
+  # every stage and the only way its own packages (glibc, openssl, ...) move, and
+  # permitio/cedar-agent. Python is Wolfi's python-3.14 package, newest at each build.
   - package-ecosystem: docker
     directory: /docker
     schedule:
@@ -102,16 +101,8 @@ updates:
         applies-to: version-updates
         patterns: ["*"]
         update-types: [minor, patch]
-    ignore:
-      # The packages' python_requires stops below 3.15, and the Dockerfile hard-codes the
-      # python3.14 site-packages path, so a python minor bump here would only be a red pull
-      # request. Remove this when the packages support the next minor and the Dockerfile moves
-      # with it.
-      - dependency-name: python
-        update-types: [version-update:semver-minor, version-update:semver-major]
 
-  # The test-only image of app-tests/git-leak. Its python base is not tied to opal-server's range,
-  # so nothing is held here.
+  # The test-only image of app-tests/git-leak, on the same wolfi-base digest.
   - package-ecosystem: docker
     directory: /app-tests/git-leak/seed
     schedule:
