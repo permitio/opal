@@ -181,9 +181,12 @@ jobs:
           platforms: linux/amd64,linux/arm64
           target: ${{ matrix.target }}
           outputs: type=oci,dest=${{ runner.temp }}/image.tar
-          # buildx's default provenance holds the triggering event, which on a dry run is the
-          # pull request's title and body: none for a dry run, whose archive is an artifact.
-          provenance: ${{ github.event_name == 'release' && 'mode=min' || 'false' }}
+          # On a release, BuildKit attaches an SLSA provenance (max: the build's full
+          # definition, with this repository and commit as its source) and an SPDX SBOM to
+          # each platform's image; the archive carries them to Docker Hub. A dry run attaches
+          # none: buildx would put the pull request's event in the provenance.
+          provenance: ${{ github.event_name == 'release' && 'mode=max' || 'false' }}
+          sbom: ${{ github.event_name == 'release' }}
 
       - name: Keep the archive for the jobs that test and publish it
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
@@ -454,6 +457,15 @@ jobs:
             fi
             echo "$REPOSITORY:$tag is sha256:$built, the image that was tested"
           done
+          echo "sha256:$built" >"$RUNNER_TEMP/digest"
+
+      - name: Keep the pushed digest for verify
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: digest-${{ matrix.name }}
+          path: ${{ runner.temp }}/digest
+          if-no-files-found: error
+          retention-days: 3
 
   # On a release only, once every image and package passed: the tested sdists and wheels go to
   # the release's assets (release-assets) and to PyPI (publish-packages).
@@ -526,3 +538,51 @@ jobs:
           packages-dir: packages/opal-server/dist/
           skip-existing: true
           verbose: true
+
+  # On a release only, after both publish jobs: what Docker Hub and PyPI now serve must carry its
+  # attestations. Each image index is read by the digest publish-images pushed, which is the
+  # tested archive's, so a tag moved since cannot change what is checked: it holds exactly the
+  # linux/amd64 and linux/arm64 images, each with an SLSA provenance that names this repository,
+  # the release commit and the image's Dockerfile target, and an SPDX SBOM that lists
+  # opal-common. Each package file on PyPI has an attestation published by this workflow in the
+  # pypi environment.
+  verify:
+    if: github.event_name == 'release'
+    needs: [version, publish-images, publish-packages]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fetch the pushed digests
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          pattern: digest-*
+          path: ${{ runner.temp }}/digests
+
+      - name: Check each image's platforms, provenance and SBOM
+        env:
+          DIGESTS: ${{ runner.temp }}/digests
+          COMMIT: ${{ github.sha }}
+        run: |
+          code=0
+          for name in client client-standalone client-cedar client-eopa server; do
+            digest=$(cat -- "$DIGESTS/digest-$name/digest")
+            digest=${digest#sha256:}
+            .github/scripts/verify_release.py image "permitio/opal-$name@sha256:$digest" \
+              --target "$name" --commit "$COMMIT" --repository "$GITHUB_REPOSITORY" || code=1
+          done
+          exit "$code"
+
+      - name: Check each package file's PyPI attestation
+        env:
+          PYPI_VERSION: ${{ needs.version.outputs.pypi }}
+        run: >-
+          .github/scripts/verify_release.py packages "$PYPI_VERSION"
+          --project opal-common --project opal-client --project opal-server
+          --repository "$GITHUB_REPOSITORY" --workflow on_release.yml --environment pypi

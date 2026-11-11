@@ -314,6 +314,7 @@ class TestRelease:
     published from protected environments; a dry run on pull requests."""
 
     PUBLISH_JOBS = {"publish-images": "docker-hub", "publish-packages": "pypi"}
+    RELEASE_ONLY = {"publish-images", "release-assets", "publish-packages", "verify"}
 
     @pytest.fixture
     def workflow(self):
@@ -396,6 +397,55 @@ class TestRelease:
             step.get("uses", "").startswith("docker/build-push-action@")
             for step in steps
         )
+
+    def test_only_the_publish_and_verify_jobs_skip_a_dry_run(self, jobs):
+        release_only = {
+            job_id
+            for job_id, job in jobs.items()
+            if job.get("if") == "github.event_name == 'release'"
+        }
+
+        assert release_only == self.RELEASE_ONLY
+
+    def test_release_images_carry_provenance_and_an_sbom(self, jobs):
+        (build,) = [
+            step
+            for step in steps_of(jobs["build-images"])
+            if step.get("uses", "").startswith("docker/build-push-action@")
+        ]
+
+        assert build["with"]["provenance"] == (
+            "${{ github.event_name == 'release' && 'mode=max' || 'false' }}"
+        )
+        assert build["with"]["sbom"] == "${{ github.event_name == 'release' }}"
+
+    def test_verifies_what_was_published(self, jobs):
+        job = jobs["verify"]
+        runs = "\n".join(step.get("run", "") for step in steps_of(job))
+
+        assert {"publish-images", "publish-packages"} <= set(job["needs"])
+        assert 'verify_release.py image "permitio/opal-$name@sha256:$digest"' in runs
+        for _, target in RELEASE_IMAGES:
+            assert target in runs
+        assert "verify_release.py packages" in runs
+        for project in ("opal-common", "opal-client", "opal-server"):
+            assert f"--project {project}" in runs
+
+    def test_the_digest_each_image_was_pushed_as_reaches_verify(self, jobs):
+        publish = steps_of(jobs["publish-images"])
+        (upload,) = [
+            step
+            for step in publish
+            if step.get("uses", "").startswith("actions/upload-artifact@")
+        ]
+        (download,) = [
+            step
+            for step in steps_of(jobs["verify"])
+            if step.get("uses", "").startswith("actions/download-artifact@")
+        ]
+
+        assert upload["with"]["name"] == "digest-${{ matrix.name }}"
+        assert download["with"]["pattern"] == "digest-*"
 
     def test_runs_as_a_dry_run_on_pull_requests(self, workflow):
         # PyYAML reads the key on: as True.
