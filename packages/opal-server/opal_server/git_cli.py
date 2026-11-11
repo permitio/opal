@@ -310,11 +310,6 @@ _SSH_HOST_KEY_ADDED = re.compile(
 )
 _HTTP_SCHEMES = ("http", "https")
 _SSH_SCHEMES = ("ssh", "git+ssh", "ssh+git")
-# Query string or fragment parameters that carry a credential: those OPAL's own
-# redaction masks, and GitLab's private_token. git would hand them to its
-# remote helper on its command line, send them on every request and print
-# them in its errors, so such a URL is refused.
-_QUERY_CREDENTIALS = SENSITIVE_QUERY_PARAMS | {"private_token"}
 # The password of GitHub's https://<token>:x-oauth-basic@... URLs, whose user
 # is the token.
 _PASSWORD_OF_A_TOKEN_USER = "x-oauth-basic"
@@ -1767,11 +1762,16 @@ def _stands_alone(text: str, start: int, end: int) -> bool:
 
 def _carries_a_credential(component: str) -> bool:
     """Whether a URL's query string or fragment has a parameter with a value
-    whose name (decoded, any case) is one of _QUERY_CREDENTIALS; parameters are
-    split on ``&`` and ``;``, as OPAL's redaction splits them."""
+    whose name (decoded, any case) is one OPAL's redaction masks
+    (SENSITIVE_QUERY_PARAMS, GitLab's private_token included).
+
+    git would hand such a value to its remote helper on its command line,
+    send it on every request and print it in its errors. Parameters are
+    split on ``&`` and ``;``, as OPAL's redaction splits them.
+    """
     for pair in re.split(r"[&;]", component):
         name, _, value = pair.partition("=")
-        if value and unquote_plus(name).lower() in _QUERY_CREDENTIALS:
+        if value and unquote_plus(name).lower() in SENSITIVE_QUERY_PARAMS:
             return True
     return False
 

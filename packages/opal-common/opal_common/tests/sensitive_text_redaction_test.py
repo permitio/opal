@@ -3,6 +3,7 @@ the exception rendering used by log lines (``describe_error``)."""
 
 import io
 import json
+import time
 
 import aiohttp
 import pytest
@@ -34,6 +35,55 @@ def _no_global_log_patcher():
     installed)."""
     with without_log_patcher():
         yield
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "fatal: 'https://gl.example/o/r.git?private_token=glpat-S3CR3T' not found",
+        "Cloning repo at 'git:pw-S3CR3T@github.com:org/repo.git' to '/x'",
+        "Could not clone repo at deploy:p@ss-S3CR3T@10.0.0.5:org/r.git: refused",
+        "url=git:p:w-S3CR3T@[::1]:org/r.git",
+        "source key=git:pw-S3CR3T@h.example:org/r.git",
+        "source git:S3CR3T@h_x.example:o/r",
+        "(git:pw-S3CR3T@github.com:org/repo.git)",
+        "fetching\ngit:pw-S3CR3T@github.com:org/repo.git",
+    ],
+)
+def test_free_text_masks_private_token_and_scp_passwords(text):
+    out = redact_sensitive_text(text)
+    assert "S3CR3T" not in out and "***" in out
+    assert redact_sensitive_text(out) == out
+
+
+def test_free_text_with_many_colons_and_no_at_is_redacted_in_linear_time():
+    """Every log record goes through this: 48 KB of ``=a:`` took two seconds
+    when an scp password could run to the end of the text."""
+    text = "=a:" * 16000
+    started = time.perf_counter()
+    assert redact_sensitive_text(text) == text
+    assert time.perf_counter() - started < 1.0
+
+
+def test_free_text_keeps_what_comes_before_an_scp_url():
+    text = "source key=git:pw-S3CR3T@h.example:org/r.git"
+    assert redact_sensitive_text(text) == "source key=***@h.example:org/r.git"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "user@host:path",
+        "git@github.com:org/repo.git",
+        "[::1]:8080",
+        "at 12:30 on host:8080",
+        "ssh://***@h:22/r",
+        "opal_server.git_fetcher:_clone:4073 - Cloning repo",
+        "a:b@c, not a host",
+    ],
+)
+def test_free_text_without_an_scp_password_is_unchanged(text):
+    assert redact_sensitive_text(text) == text
 
 
 @pytest.mark.parametrize(
