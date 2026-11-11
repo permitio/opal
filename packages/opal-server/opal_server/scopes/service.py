@@ -173,8 +173,13 @@ class ScopesService:
         notify_all: bool = False,
         *,
         expected_source_id: Optional[str] = None,
+        fresh_within: Optional[float] = None,
     ) -> Optional[str]:
         """Sync one scope's policy source.
+
+        ``fresh_within`` is set by the sync a policy bundle request with no
+        base_hash asks for, to that request's wait in seconds (see
+        GitPolicyFetcher.fetch_and_notify_on_changes).
 
         ``notify_all`` is set by a repoint (PUT /scopes that changes the source
         or its branch): once the sync has the head, the scope's clients are told
@@ -264,6 +269,7 @@ class ScopesService:
                     force_fetch=force_fetch,
                     req_time=req_time,
                     honor_backoff=honor_backoff,
+                    fresh_within=fresh_within,
                 )
             except GitConcurrencyLimitExceeded as e:
                 # Expected backpressure, not a fault: the zombie cap

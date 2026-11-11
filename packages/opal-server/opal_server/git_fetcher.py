@@ -2909,6 +2909,49 @@ def _tidy_fetch_marks(marks: Path, all_at: float) -> None:
                 Path(entry.path).unlink(missing_ok=True)
 
 
+# The longest fresh_within a sync takes (the bundle route's wait ceiling).
+_FRESH_WITHIN_MAX_SECONDS = 55.0
+
+
+def _bounded_fresh_within(seconds: object) -> Optional[float]:
+    """A published fresh_within as a number of seconds in (0, 55], or None (not
+    the sync of a client with no policy)."""
+    try:
+        value = float(seconds)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(value) or value <= 0:
+        return None
+    return min(value, _FRESH_WITHIN_MAX_SECONDS)
+
+
+def fetch_mark_after(repo_path: Path, branch: str, t: float) -> Optional[bool]:
+    """Whether a git command-line fetch of the clone at ``repo_path`` that
+    started after ``t`` (epoch seconds) brought ``branch``, as its fetch marks
+    say: any process can read them.
+
+    Returns:
+        True when the branch's mark or ALL (a clone, or a fetch of every
+        branch) is dated after ``t``; else False when the branch's failed
+        mark is (a fetch that asked for it failed at the remote), or FAILED
+        (a fetch of every branch failed, or a sync gave up on fetching the
+        clone); else None. A mark that cannot be read counts as none.
+    """
+    marks = repo_path / ".git" / _FETCH_MARKS_DIR
+
+    def dated_after(name: str) -> bool:
+        try:
+            return os.stat(marks / name).st_mtime > t
+        except OSError:
+            return False
+
+    if dated_after(_fetch_mark_name(branch)) or dated_after(_FETCH_MARK_ALL):
+        return True
+    if dated_after(_fetch_failed_mark_name(branch)) or dated_after(_FETCH_MARK_FAILED):
+        return False
+    return None
+
+
 # source_id -> time.monotonic() when _log_cooldown_once last logged it.
 _repack_cooldown_logged_at: Dict[str, float] = {}
 
@@ -3663,6 +3706,18 @@ class GitPolicyFetcher(PolicyFetcher):
                 err=repr(e),
             )
 
+    async def _mark_sync_skipped(self) -> None:
+        """A sync outside a pass that will not fetch the clone (the source in
+        backoff, a git op still running on it) writes the FAILED mark, git
+        command line only: a bundle request waiting for this server's fetch
+        of the branch (SCOPES_POLICY_FRESH_FETCH_WAIT_SECONDS) stops waiting
+        at once. Not on a clone that is not there."""
+        if not git_cli_enabled() or _running_sync_pass() is not None:
+            return
+        if not await run_sync(os.path.isdir, self._repo_path / ".git"):
+            return
+        await self._write_fetch_marks([_FETCH_MARK_FAILED], datetime.datetime.now())
+
     @staticmethod
     def forget_fetches(source_id: str) -> None:
         """Forget what this process knows of a source's fetches: when it was
@@ -3679,6 +3734,7 @@ class GitPolicyFetcher(PolicyFetcher):
         req_time: datetime.datetime = None,
         *,
         honor_backoff: bool = False,
+        fresh_within: Optional[float] = None,
     ):
         """Makes sure the repo is already fetched and is up to date.
 
@@ -3710,9 +3766,23 @@ class GitPolicyFetcher(PolicyFetcher):
         sync's fetch stood in for, which reached the remote and failed,
         fetches once more when the source's backoff allows
         (_sync_after_failed_stand_in).
+
+        With the git command line, a sync outside a pass that skips its
+        source for the backoff, or gives up on a git op still running on
+        the clone, writes the clone's FAILED fetch mark (_mark_sync_skipped).
+
+        ``fresh_within`` (seconds, the wait of the policy bundle request with
+        no base_hash that asked for this sync) marks such a sync. It fetches
+        as any forced sync does: only a fetch that started after
+        ``req_time`` stands in for its own, for a fetch from before the
+        request may predate a branch or a commit pushed since.
         """
         skipped = await self._sync_once(
-            hinted_hash, force_fetch, req_time, honor_backoff=honor_backoff
+            hinted_hash,
+            force_fetch,
+            req_time,
+            honor_backoff=honor_backoff,
+            fresh_within=_bounded_fresh_within(fresh_within),
         )
         if not skipped or _running_sync_pass() is not None:
             return
@@ -3725,6 +3795,7 @@ class GitPolicyFetcher(PolicyFetcher):
         if timeout is None:
             timeout = opal_server_config.SCOPES_GIT_FETCH_TIMEOUT
         if not (math.isfinite(timeout) and timeout > 0):
+            await self._mark_sync_skipped()
             return
         if not await wait_for_git_op_gone(self._source_id, timeout):
             logger.warning(
@@ -3734,6 +3805,7 @@ class GitPolicyFetcher(PolicyFetcher):
                 scope=self._scope_id,
                 timeout=timeout,
             )
+            await self._mark_sync_skipped()
             return
         logger.info(
             "The previous git operation on {url} ended; syncing scope {scope} now",
@@ -3798,6 +3870,7 @@ class GitPolicyFetcher(PolicyFetcher):
         req_time: Optional[datetime.datetime],
         *,
         honor_backoff: bool,
+        fresh_within: Optional[float] = None,
     ) -> Union[bool, _SyncAgain]:
         """One sync of the clone: see fetch_and_notify_on_changes.
 
@@ -3831,13 +3904,18 @@ class GitPolicyFetcher(PolicyFetcher):
                     n=entry.consecutive_failures,
                     err=entry.last_error,
                 )
+                await self._mark_sync_skipped()
                 return False
         # Into the clone's batch before waiting for its lock: a fetch that
         # starts meanwhile, this sync's own or another's, asks for it.
         batch = self._join_batch()
         try:
             return await self._sync_under_lock(
-                hinted_hash, force_fetch, req_time, honor_backoff=honor_backoff
+                hinted_hash,
+                force_fetch,
+                req_time,
+                honor_backoff=honor_backoff,
+                fresh_within=fresh_within,
             )
         finally:
             self._leave_batch(batch)
@@ -3849,6 +3927,7 @@ class GitPolicyFetcher(PolicyFetcher):
         req_time: Optional[datetime.datetime],
         *,
         honor_backoff: bool,
+        fresh_within: Optional[float] = None,
     ) -> Union[bool, _SyncAgain]:
         """_sync_once's part under the clone's lock_source."""
         async with GitPolicyFetcher.lock_source(self._source_id):
@@ -3873,6 +3952,7 @@ class GitPolicyFetcher(PolicyFetcher):
                         n=entry.consecutive_failures,
                         err=entry.last_error,
                     )
+                    await self._mark_sync_skipped()
                     return False
             if git_op_in_flight(self._source_id):
                 # A previous git op for this repo exceeded its timeout and is

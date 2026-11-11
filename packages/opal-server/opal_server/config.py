@@ -817,11 +817,15 @@ class OpalServerConfig(Confi):
         "SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT",
         64,
         description="Maximum number of requests one worker process may hold at "
-        "once inside the SCOPES_POLICY_CLONE_WAIT_SECONDS wait. Requests beyond "
+        "once inside the SCOPES_POLICY_CLONE_WAIT_SECONDS wait, and the "
+        "SCOPES_POLICY_FRESH_FETCH_WAIT_SECONDS one. Requests beyond "
         "the cap get the immediate answer they would have got before the wait "
         "existed (503 + Retry-After 30 for a clone in progress, 409 for a missing "
-        "branch), so the cap can never make things worse than "
-        "not waiting. It exists because polling is cheap but RELEASING is not: "
+        "branch; a request without base_hash shed from the "
+        "SCOPES_POLICY_FRESH_FETCH_WAIT_SECONDS wait gets that 409 only when a "
+        "fetch of the branch on this server succeeded within that wait before it, "
+        "else a 503 with Retry-After 5), so the cap can never make things worse "
+        "than not waiting. It exists because polling is cheap but RELEASING is not: "
         "when the clone lands, every held request builds a full bundle on the "
         "loop's DEFAULT executor: about min(32, cpu+4) threads shared by every "
         "off-loop call this process makes, in front of an unbounded queue. "
@@ -897,7 +901,53 @@ class OpalServerConfig(Confi):
         "disables it (409 or 503 immediately, as before); nan, inf and "
         "-inf are treated as disabled too. Requires "
         "SCOPES_POLICY_CLONE_WAIT_SECONDS > 0: with that wait disabled, no sync is "
-        "requested either.",
+        "requested either. A request without base_hash that waited for this "
+        "server's fetch of the branch (SCOPES_POLICY_FRESH_FETCH_WAIT_SECONDS) is "
+        "not held again for it, nor is one that wait shed at the in-flight cap.",
+    )
+    SCOPES_POLICY_FRESH_FETCH_WAIT_SECONDS = confi.float(
+        "SCOPES_POLICY_FRESH_FETCH_WAIT_SECONDS",
+        10.0,
+        description="With SCOPES_GIT_FETCH_WITH_CLI on: how long GET "
+        "/scopes/:scope_id/policy without base_hash (a client that holds no policy "
+        "yet) waits for this server's fetch of the scope's branch before it builds "
+        "the bundle. A git command-line fetch asks only for the branches its syncs "
+        "need, so a server that missed a refresh of the scope is not caught up by "
+        "the fetches of other scopes, and would serve such a client its old head. "
+        "The request asks every server to fetch the scope's branch, honouring the "
+        "source's failure backoff, and only a fetch that started after it asked "
+        "counts: a clone or a fetch that started before, however recent, may "
+        "predate a branch or a commit pushed since. One worker asks once per "
+        "scope until the fetch it asked for has ended (or this wait has passed), "
+        "and the requests meanwhile wait for that fetch; the first request after "
+        "it asks again. A server answers such a request from a fetch of the "
+        "branch that started after the request reached it, without fetching "
+        "again: during a storm of clients starting each server fetches the "
+        "branch one fetch after another. A fetch of the branch on this server "
+        "that failed within this many seconds before the request answers it at "
+        "once, without asking (the source is in its failure backoff, which the "
+        "fetch asked for would honour). The bundle is built as soon as such a "
+        "fetch of the branch on this server has succeeded or failed (read from "
+        "the clone's fetch marks, see SCOPES_GIT_FETCH_WITH_CLI), or when the "
+        "wait is over, from what the clone holds then. A branch the clone does not "
+        "have then is a 503 with Retry-After 5 after a fetch that failed or did not "
+        "end in time, and the 409 after one that succeeded (the remote has no such "
+        "branch), without the hold of SCOPES_POLICY_BRANCH_REFRESH_INTERVAL. Only "
+        "for a clone that has landed (SCOPES_POLICY_CLONE_WAIT_SECONDS covers one "
+        "that has not) and a branch that can be a git ref. A waiting request holds "
+        "a slot of SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT; with none free it is "
+        "served without waiting, nor held by the branch wait, and a branch the "
+        "clone does not have is the 409 only when a fetch of it on this server "
+        "succeeded within this many seconds before the request, else a 503 with "
+        "Retry-After 5. Any client allowed to read the scope's policy can "
+        "make every server fetch its branch this way, one fetch after another "
+        "while such requests keep coming (before 0.10 only POST "
+        "/scopes/:scope_id/refresh, a datasource token's, forced a fetch). A "
+        "request usually waits about one fetch (two when one is already running) "
+        "and a broadcast round trip. 0, a negative value, nan and inf: no wait; "
+        "above 55 it is clamped to 55, as the clone wait is, and the clone wait a "
+        "request holds after this one gets what is left of 55 seconds. Requests "
+        "with base_hash never wait, nor any with SCOPES_GIT_FETCH_WITH_CLI off.",
     )
     LEADER_LOCK_FILE_PATH = confi.str(
         "LEADER_LOCK_FILE_PATH",

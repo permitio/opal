@@ -2,6 +2,7 @@ import asyncio
 import math
 import os
 import pathlib
+import time
 from collections import OrderedDict
 from functools import partial
 from typing import Awaitable, Callable, List, Optional, Set, Tuple, cast
@@ -52,6 +53,9 @@ from opal_server.git_fetcher import (
     BranchHeadObjectMissingError,
     CloneNotPopulatedError,
     GitPolicyFetcher,
+    clone_landed,
+    fetch_mark_after,
+    git_cli_enabled,
 )
 from opal_server.scopes.purge import ScopePurgeCommand
 from opal_server.scopes.scope_repository import ScopeNotFoundError, ScopeRepository
@@ -117,6 +121,24 @@ _CLONE_WAIT_METRIC = "opal_server.scopes.policy_clone_wait"
 _BRANCH_REFRESH_METRIC = "opal_server.scopes.policy_branch_refresh"
 _CLONE_WAIT_INFLIGHT_METRIC = "opal_server.scopes.policy_clone_wait_inflight"
 _CLONE_WAIT_SECONDS_METRIC = "opal_server.scopes.policy_clone_wait_seconds"
+_FRESH_FETCH_METRIC = "opal_server.scopes.policy_fresh_fetch"
+_FRESH_FETCH_SECONDS_METRIC = "opal_server.scopes.policy_fresh_fetch_seconds"
+
+# How often a request with no base_hash reads its clone's fetch marks while it
+# waits for this server's fetch of the scope's branch (_fresh_fetch_wait): a
+# stat of up to three files.
+_FRESH_FETCH_POLL_SECONDS = 0.2
+# How a fresh-fetch wait can end that the bundle follows without the branch
+# wait: one that held its request (the wait stood in for it), and a request
+# shed at the in-flight cap, which is served without waiting even when a slot
+# is free again by the time its bundle is built.
+_FRESH_FETCH_NO_BRANCH_WAIT = frozenset({"fetched", "failed", "timeout", "shed"})
+_fresh_fetch_clamp_logged = False
+# When this worker last asked every server to fetch a scope's branch for a
+# client with no policy (scope id -> loop time), for _fresh_fetch_wait: a
+# request while it is younger than the wait rides it. Bounded as the branch
+# claims are, apart from them so that neither pushes the other's out.
+_fresh_fetch_claims: "OrderedDict[str, float]" = OrderedDict()
 
 
 def _bounded_clone_wait() -> float:
@@ -147,6 +169,34 @@ def _bounded_clone_wait() -> float:
             _clone_wait_clamp_logged = True
             logger.warning(
                 "SCOPES_POLICY_CLONE_WAIT_SECONDS={configured}s exceeds the "
+                "{ceiling}s ceiling and is clamped: a hold longer than the load "
+                "balancer's idle timeout is served as a 504, not as a bundle",
+                configured=wait,
+                ceiling=_CLONE_WAIT_MAX_SECONDS,
+            )
+        return _CLONE_WAIT_MAX_SECONDS
+    return wait
+
+
+def _bounded_fresh_fetch_wait() -> float:
+    """SCOPES_POLICY_FRESH_FETCH_WAIT_SECONDS, validated and clamped as the
+    clone wait is (_bounded_clone_wait).
+
+    0.0 means "do not wait".
+    """
+    global _fresh_fetch_clamp_logged
+
+    try:
+        wait = float(opal_server_config.SCOPES_POLICY_FRESH_FETCH_WAIT_SECONDS)
+    except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(wait) or wait <= 0:
+        return 0.0
+    if wait > _CLONE_WAIT_MAX_SECONDS:
+        if not _fresh_fetch_clamp_logged:
+            _fresh_fetch_clamp_logged = True
+            logger.warning(
+                "SCOPES_POLICY_FRESH_FETCH_WAIT_SECONDS={configured}s exceeds the "
                 "{ceiling}s ceiling and is clamped: a hold longer than the load "
                 "balancer's idle timeout is served as a 504, not as a bundle",
                 configured=wait,
@@ -443,6 +493,221 @@ async def _request_clone_repair(
     )
 
 
+def _record_fresh_claim(scope_id: str, now: float) -> None:
+    _fresh_fetch_claims[scope_id] = now
+    _fresh_fetch_claims.move_to_end(scope_id)
+    while len(_fresh_fetch_claims) > _BRANCH_REFRESH_TRACKED_MAX:
+        _fresh_fetch_claims.popitem(last=False)
+
+
+def _fresh_publish_failed(scope_id: str, claim: float, exc: BaseException) -> None:
+    """A fresh-fetch sync request did not go out: drop its claim, unless a
+    newer request replaced it, so that the next request asks again, and the
+    requests riding it stop waiting."""
+    if _fresh_fetch_claims.get(scope_id) == claim:
+        del _fresh_fetch_claims[scope_id]
+    logger.warning(
+        "Could not ask the servers to fetch the branch of scope {scope_id} for a "
+        "client with no policy: {exc}",
+        scope_id=scope_id,
+        exc=redact_url_in_text(repr(exc)),
+    )
+
+
+def _abandoned_fresh_publish_done(
+    scope_id: str, claim: float, publish: "asyncio.Future[None]"
+) -> None:
+    """A fresh-fetch publish nobody is waiting for any more ended."""
+    error = _publish_error(publish)
+    if error is not None:
+        _fresh_publish_failed(scope_id, claim, error)
+
+
+def _claim_wall_time(claim: float) -> float:
+    """A fresh-fetch claim's loop time as epoch seconds, which fetch marks are
+    dated in."""
+    return time.time() - (asyncio.get_running_loop().time() - claim)
+
+
+async def _fresh_fetch_claim(
+    scope_id: str,
+    request_fetch: Callable[[], Awaitable[None]],
+    now: float,
+    wait: float,
+    *,
+    repo_path: pathlib.Path,
+    branch: str,
+) -> Tuple[float, Optional[str]]:
+    """The sync request a fresh-fetch wait holds for: this worker's claim for
+    the scope while it is younger than ``wait`` and no fetch of ``branch``
+    that started after it has ended (the fetch it asked for is still to
+    come, or running: the request takes it, though it may have started
+    before this request), else a new one, published now and bounded by the
+    wait.
+
+    Returns:
+        The claim's loop time, and the outcome that ends the wait at once:
+        ``shed`` (too many publishes pending), ``published_failed`` (the
+        publish raised; the claim is given back) or ``timeout`` (the
+        publish was still running when the wait ended; a later failure
+        gives the claim back); None while the wait goes on.
+    """
+    claim = _fresh_fetch_claims.get(scope_id)
+    while claim is not None and now - claim < wait:
+        ended = await run_sync(
+            fetch_mark_after, repo_path, branch, _claim_wall_time(claim)
+        )
+        current = _fresh_fetch_claims.get(scope_id)
+        if current != claim:
+            # Replaced, or given back, while the marks were read.
+            claim = current
+            continue
+        if ended is None:
+            return claim, None
+        break
+    if len(_branch_refresh_publishes) >= _BRANCH_REFRESH_PUBLISHES_MAX:
+        return now, "shed"
+    _record_fresh_claim(scope_id, now)
+    publish = asyncio.ensure_future(request_fetch())
+    _branch_refresh_publishes.add(publish)
+    publish.add_done_callback(_branch_refresh_publishes.discard)
+    abandoned = partial(_abandoned_fresh_publish_done, scope_id, now)
+    try:
+        done, _ = await asyncio.wait({publish}, timeout=wait)
+    except asyncio.CancelledError:
+        publish.add_done_callback(abandoned)
+        raise
+    if not done:
+        publish.add_done_callback(abandoned)
+        return now, "timeout"
+    error = _publish_error(publish)
+    if error is not None:
+        _fresh_publish_failed(scope_id, now, error)
+        return now, "published_failed"
+    return now, None
+
+
+def _count_fresh_fetch(outcome: str, waited: float, scope_id: str) -> None:
+    metrics.increment(_FRESH_FETCH_METRIC, tags={"outcome": outcome})
+    metrics.gauge(_FRESH_FETCH_SECONDS_METRIC, waited, tags={"outcome": outcome})
+    logger.info(
+        "Scope {scope_id}: a client with no policy waited {waited:.1f}s for "
+        "this server's fetch of the scope's branch ({outcome})",
+        scope_id=scope_id,
+        waited=waited,
+        outcome=outcome,
+    )
+
+
+async def _fresh_fetch_wait(
+    fetcher: GitPolicyFetcher,
+    repo_path: pathlib.Path,
+    scope_id: str,
+    request: Optional[Request],
+    request_fetch: Callable[[], Awaitable[None]],
+) -> Optional[str]:
+    """For a bundle request with no base_hash (a client that holds no policy
+    yet): ask every server to fetch the scope's branch, and wait up to
+    SCOPES_POLICY_FRESH_FETCH_WAIT_SECONDS for this server's fetch.
+
+    With the git command line a fetch asks only for the branches its syncs
+    need, so a server that missed a refresh of the scope is not caught up by
+    the fetches of other scopes. Only with the git command line, the wait
+    above 0, a clone that has landed (the clone wait covers one that has
+    not; ``repo_path``) and a branch that can be a ref.
+
+    This server's fetches are read from the clone's fetch marks
+    (fetch_mark_after). Only a fetch (a clone, a fetch of every branch)
+    that started after the sync request the wait holds for counts: one
+    that started before may predate a branch or a commit pushed since.
+    One sync request per scope on this worker while it is younger than the
+    wait and the fetch it asked for has not ended (_fresh_fetch_claim: the
+    requests meanwhile ride it), and the marks are polled every
+    _FRESH_FETCH_POLL_SECONDS for a fetch that started after it (the
+    leader fetches unless such a fetch stands in). A fetch of the branch
+    that failed within the wait before the request answers it at once,
+    with nothing published: the source is in its failure backoff, which
+    the sync asked for would honour. A request whose claim was given back
+    (its publish failed) stops waiting. The request holds a slot of
+    SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT for the whole wait, the publish
+    included; with none free it does not wait.
+
+    One ``policy_fresh_fetch`` count per request the wait applies to, tagged
+    with how it ended, and its duration as ``policy_fresh_fetch_seconds``.
+
+    Returns:
+        How the wait ended: ``fetched`` (such a fetch of the branch
+        succeeded), ``failed`` (one failed at the remote, or this server's
+        sync gave up on fetching), ``timeout``, ``disconnected`` (the
+        client hung up), ``cancelled`` (the request was), ``shed`` (no slot
+        free, or too many publishes pending) or ``published_failed`` (the
+        sync could not be requested); None when the wait does not apply.
+    """
+    global _clone_wait_inflight
+
+    wait = _bounded_fresh_fetch_wait()
+    if wait <= 0 or not git_cli_enabled() or not fetcher.branch_can_be_a_ref():
+        return None
+    if not await run_sync(clone_landed, repo_path / ".git"):
+        return None
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    recent = await run_sync(
+        fetch_mark_after, repo_path, fetcher.branch, time.time() - wait
+    )
+    if recent is False:
+        _count_fresh_fetch("failed", loop.time() - started, scope_id)
+        return "failed"
+    cap = opal_server_config.SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT
+    if 0 < cap <= _clone_wait_inflight:
+        _count_fresh_fetch("shed", 0.0, scope_id)
+        return "shed"
+
+    # None until the wait has ended one of the ways it counts.
+    outcome: Optional[str] = None
+    _clone_wait_inflight += 1
+    try:
+        _publish_clone_wait_inflight()
+        claim, ended = await _fresh_fetch_claim(
+            scope_id,
+            request_fetch,
+            started,
+            wait,
+            repo_path=repo_path,
+            branch=fetcher.branch,
+        )
+        if ended is not None:
+            outcome = ended
+            return outcome
+        since = _claim_wall_time(claim)
+        deadline = claim + wait
+        while True:
+            seen = await run_sync(fetch_mark_after, repo_path, fetcher.branch, since)
+            if seen is not None:
+                outcome = "fetched" if seen else "failed"
+                return outcome
+            current = _fresh_fetch_claims.get(scope_id)
+            if current is None or current < claim:
+                outcome = "published_failed"
+                return outcome
+            remaining = deadline - loop.time()
+            if not (remaining > 0):
+                outcome = "timeout"
+                return outcome
+            await asyncio.sleep(min(_FRESH_FETCH_POLL_SECONDS, remaining))
+            if request is not None and await request.is_disconnected():
+                outcome = "disconnected"
+                return outcome
+    except asyncio.CancelledError:
+        outcome = "cancelled"
+        raise
+    finally:
+        _clone_wait_inflight -= 1
+        _publish_clone_wait_inflight()
+        if outcome is not None:
+            _count_fresh_fetch(outcome, loop.time() - started, scope_id)
+
+
 def _make_bundle(fetcher: GitPolicyFetcher, base_hash: Optional[str]) -> PolicyBundle:
     """``fetcher.make_bundle``, with no clone while a git command-line clone of
     it is under way taken for a clone not populated yet.
@@ -497,6 +762,7 @@ async def _make_bundle_waiting_for_clone(
     scope_id: str,
     request: Optional[Request] = None,
     request_refresh: Optional[Callable[[], Awaitable[None]]] = None,
+    max_wait: float = _CLONE_WAIT_MAX_SECONDS,
 ) -> PolicyBundle:
     """Build the bundle, holding the request while the clone is populated.
 
@@ -561,7 +827,9 @@ async def _make_bundle_waiting_for_clone(
     is not a wait: it holds a slot while it publishes, but is counted only in
     ``policy_branch_refresh``.
     The 503 or 409 the caller shapes carries ``waited_seconds`` and
-    ``client_disconnected``.
+    ``client_disconnected``. ``max_wait`` caps the hold below
+    SCOPES_POLICY_CLONE_WAIT_SECONDS: what is left of the ceiling after an
+    earlier hold of the same request (_fresh_fetch_wait).
     """
     global _clone_wait_inflight
 
@@ -574,12 +842,12 @@ async def _make_bundle_waiting_for_clone(
                 ("commit", scope_id, fetcher.clone_source_id, fetcher.branch),
                 request_refresh,
                 asyncio.get_running_loop().time(),
-                _bounded_clone_wait(),
+                min(_bounded_clone_wait(), max(0.0, max_wait)),
                 scope_id=scope_id,
             )
         raise
     except CloneNotPopulatedError as first_exc:
-        wait = _bounded_clone_wait()
+        wait = min(_bounded_clone_wait(), max(0.0, max_wait))
         if wait <= 0:
             first_exc.waited_seconds = 0.0
             raise
@@ -589,7 +857,7 @@ async def _make_bundle_waiting_for_clone(
         NoSuchPathError,
         InvalidGitRepositoryError,  # a clone just starting; a poll holds for it too
     ) as first_exc:
-        wait = _bounded_clone_wait()
+        wait = min(_bounded_clone_wait(), max(0.0, max_wait))
         if wait <= 0 or request_refresh is None:
             raise
         key = _claim_key(scope_id, fetcher, first_exc)
@@ -1163,6 +1431,23 @@ def init_scope_router(
             cast(GitPolicyScopeSource, scope.policy),
         )
 
+        async def _request_fresh_fetch() -> None:
+            # Every leader fetches the scope's branch (batched with its other
+            # syncs), honouring the source's backoff, unless a fetch of it
+            # that started after this reached it stands in: the requests that
+            # reach a server during one fetch share the next. fresh_within
+            # (the wait) marks the sync as one a client with no policy asked
+            # for.
+            await pubsub_endpoint.publish(
+                opal_server_config.POLICY_REPO_WEBHOOK_TOPIC,
+                {
+                    "scope_id": scope_id,
+                    "force_fetch": True,
+                    "honor_backoff": True,
+                    "fresh_within": _bounded_fresh_fetch_wait(),
+                },
+            )
+
         async def _request_refresh() -> None:
             # Every leader syncs the scope. Not forced: a sync fetches when the
             # branch is missing from its own clone (_should_fetch), so only the
@@ -1175,6 +1460,26 @@ def init_scope_router(
                 {"scope_id": scope_id, "force_fetch": False, "honor_backoff": True},
             )
 
+        repo_path = GitPolicyFetcher.repo_clone_path(
+            pathlib.Path(opal_server_config.BASE_DIR), scope.policy
+        )
+        fresh: Optional[str] = None
+        fresh_started = asyncio.get_running_loop().time()
+        if not base_hash and pubsub_endpoint is not None:
+            fresh = await _fresh_fetch_wait(
+                fetcher,
+                repo_path,
+                scope_id,
+                request,
+                _request_fresh_fetch,
+            )
+        if fresh == "disconnected":
+            # Nobody reads this answer.
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Policy for scope {scope_id} was not built: the client left",
+                headers={"Retry-After": _RETRY_AFTER_CLONE_UNAVAILABLE},
+            )
         try:
             return await _make_bundle_waiting_for_clone(
                 fetcher,
@@ -1183,11 +1488,19 @@ def init_scope_router(
                 request,
                 # No branch wait for a name no fetch can bring: the request
                 # gets its answer at once, and no server is asked to sync it.
+                # Nor after a wait for this server's fetch of the branch,
+                # which asked for the sync already, nor for a request that
+                # wait shed.
                 request_refresh=(
                     _request_refresh
-                    if pubsub_endpoint is not None and fetcher.branch_can_be_a_ref()
+                    if pubsub_endpoint is not None
+                    and fetcher.branch_can_be_a_ref()
+                    and fresh not in _FRESH_FETCH_NO_BRANCH_WAIT
                     else None
                 ),
+                # Both holds together stay within the clone wait's ceiling.
+                max_wait=_CLONE_WAIT_MAX_SECONDS
+                - (asyncio.get_running_loop().time() - fresh_started),
             )
         except CloneNotPopulatedError as exc:
             # The clone has no refs/remotes/<remote>/* at all, or is not there
@@ -1236,6 +1549,38 @@ def init_scope_router(
                 headers={"Retry-After": _RETRY_AFTER_CLONE_IN_PROGRESS},
             )
         except BranchHeadNotFoundError as exc:
+            if fresh in ("failed", "timeout") or (
+                fresh == "shed"
+                and not await run_sync(
+                    fetch_mark_after,
+                    repo_path,
+                    fetcher.branch,
+                    time.time() - _bounded_fresh_fetch_wait(),
+                )
+            ):
+                # This server's fetch of the branch did not succeed in time:
+                # the remote may well have the branch. A request the wait shed
+                # waited for no fetch: the 409 only after a fetch of the branch
+                # that succeeded within the wait before it.
+                logger.info(
+                    "Scope {scope_id} branch is not in this server's clone, and "
+                    "no fetch of it succeeded in time ({outcome}): returning 503",
+                    scope_id=scope_id,
+                    outcome=fresh,
+                )
+                metrics.event(
+                    "ScopePolicyUnavailable",
+                    message=f"Scope {scope_id} policy 503 (branch not fetched yet)",
+                    tags={"scope_id": scope_id, "status": "503", "retryable": "true"},
+                )
+                raise HTTPException(
+                    status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=(
+                        f"Policy branch for scope {scope_id} is not in this "
+                        "server's clone yet, retry shortly"
+                    ),
+                    headers={"Retry-After": _RETRY_AFTER_CLONE_UNAVAILABLE},
+                )
             # Skipped for a caller that hung up during the branch wait, as the
             # 503 arm does: the answer goes nowhere.
             if not exc.client_disconnected:

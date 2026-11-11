@@ -144,7 +144,11 @@ broadcast backbone reconnects, `POST /scopes/refresh`, the periodic one)
 fetches every branch the stored scopes track, in one fetch per clone, or
 every branch of the repository when they are more than
 [`OPAL_SCOPES_GIT_CLI_NARROW_FETCH_MAX_BRANCHES`](/getting-started/configuration#opal_scopes_git_cli_narrow_fetch_max_branches)
-(1,000 by default).
+(1,000 by default). A policy request with no `base_hash` (a client that holds
+no policy yet) first asks every server to fetch the scope's branch, and waits
+up to
+[`OPAL_SCOPES_POLICY_FRESH_FETCH_WAIT_SECONDS`](/getting-started/configuration#opal_scopes_policy_fresh_fetch_wait_seconds)
+(10 seconds by default) for this server's fetch.
 
 libgit2 is the second backend:
 [`OPAL_SCOPES_GIT_FETCH_WITH_CLI`](/getting-started/configuration#opal_scopes_git_fetch_with_cli)`=false`
@@ -208,11 +212,24 @@ that file are accepted, and nothing is recorded.
   there no longer applies), and OpenSSH refuses a git server that offers only
   an `ssh-rsa` host key, which libgit2 accepted.
 - A fetch no longer brings every branch: a clone that missed a refresh of a
-  scope catches up at that scope's next refresh or the next sync pass, not at
-  a fetch for another scope. `FETCH_HEAD`'s age is still that of the clone's
+  scope catches up at that scope's next refresh, the next sync pass, or when a
+  client with no policy starts on that scope, not at a fetch for another
+  scope. `FETCH_HEAD`'s age is still that of the clone's
   last fetch that succeeded, of whatever branches.
   `OPAL_SCOPES_GIT_CLI_NARROW_FETCH_MAX_BRANCHES=0` makes every fetch fetch
   every branch, as 0.9 did.
+- A policy request with no `base_hash` (a client that holds no policy yet)
+  now waits up to `OPAL_SCOPES_POLICY_FRESH_FETCH_WAIT_SECONDS` (10 seconds)
+  for this server's fetch of the scope's branch, and asks every server to
+  fetch it; only a fetch that started after the request counts, so while
+  clients keep starting each server fetches the branch one fetch after
+  another. Any client allowed to read the scope's policy can now make the
+  servers fetch. Usually it waits one fetch and a broadcast round trip. When
+  that fetch fails or runs past the wait, or the request finds the server at
+  its in-flight cap before any fetch of the branch succeeded within the wait,
+  a branch the clone does not have is a 503 with Retry-After 5, where 0.9
+  answered 409 at once. `OPAL_SCOPES_POLICY_FRESH_FETCH_WAIT_SECONDS=0` turns
+  the wait off.
 - SSH host keys are trusted on first use with both backends (see above),
   where 0.9 accepted any key unless `OPAL_SCOPES_GIT_SSH_KNOWN_HOSTS` was set
   with the git command line. A host behind a load balancer whose nodes have

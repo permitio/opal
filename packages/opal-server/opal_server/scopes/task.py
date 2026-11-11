@@ -347,6 +347,8 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                     notify_all=bool(data.get("repointed", False)),
                     # A sync a bundle request asked for (its branch was missing).
                     honor_backoff=bool(data.get("honor_backoff", False)),
+                    # The sync a client with no policy asked for: its wait.
+                    fresh_within=data.get("fresh_within"),
                 )
             except KeyError:
                 logger.warning(
