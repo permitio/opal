@@ -428,8 +428,9 @@ def test_only_rediss_urls_use_tls():
     tls = ResilientRedisBackend("rediss://:secret@redis.example")._new_client()
     plain = ResilientRedisBackend("redis://:secret@redis.example")._new_client()
     assert tls.connection_pool.connection_class is SSLConnection
-    # redis-py's default: the server certificate has to verify.
+    # The server certificate has to verify, and to be for the host in the URL.
     assert tls.connection_pool.connection_kwargs["ssl_cert_reqs"] == "required"
+    assert tls.connection_pool.connection_kwargs["ssl_check_hostname"] is True
     assert plain.connection_pool.connection_class is Connection
 
 
@@ -462,6 +463,24 @@ async def test_rediss_url_rejects_a_certificate_it_does_not_trust(tls_cert):
             await backend.connect()
         assert _caused_by(raised.value, ssl.SSLCertVerificationError)
         # Nothing was sent to a server that could not prove who it is.
+        assert server.commands == []
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_rediss_url_rejects_a_trusted_certificate_for_another_host(
+    tls_cert, monkeypatch
+):
+    # The certificate is trusted, but it is issued for 127.0.0.1 only, and the
+    # URL names the same server as "localhost".
+    monkeypatch.setenv("SSL_CERT_FILE", str(tls_cert.path))
+    server = await _start_server(password=PASSWORD, tls=tls_cert.context)
+    backend = ResilientRedisBackend(server.url.replace("127.0.0.1", "localhost"))
+    try:
+        with pytest.raises((RedisError, OSError)) as raised:
+            await backend.connect()
+        assert _caused_by(raised.value, ssl.SSLCertVerificationError)
         assert server.commands == []
     finally:
         await server.stop()

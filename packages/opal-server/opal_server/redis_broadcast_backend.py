@@ -28,8 +28,9 @@ connection, ``AUTH`` first, ``SUBSCRIBE`` after it, followed by the gap
 recovery. Nothing reconnects behind its back.
 
 The connection URL is read the way the stock backend reads it (host, port and
-password), with one difference: a ``rediss://`` URL connects over TLS. The
-stock backend ignores the scheme and connects in plaintext.
+password), with one difference: a ``rediss://`` URL connects over TLS and
+verifies the server certificate and its host name. The stock backend ignores
+the scheme and connects in plaintext.
 """
 import asyncio
 import socket
@@ -129,9 +130,13 @@ class ResilientRedisBackend(BroadcastBackend):
             host=self._host,
             port=self._port,
             password=self._password,
-            # rediss:// means TLS, with redis-py's defaults: the server
-            # certificate is verified against the system trust store.
+            # rediss:// means TLS. The server certificate is verified against
+            # the system trust store (redis-py's default), and it has to be
+            # issued for the host in the URL: redis-py leaves that second check
+            # off unless asked, and without it a trusted certificate for any
+            # other host would be accepted.
             ssl=self._use_tls,
+            ssl_check_hostname=self._use_tls,
             decode_responses=True,
             socket_connect_timeout=CONNECT_TIMEOUT_SECONDS,
             socket_keepalive=True,
