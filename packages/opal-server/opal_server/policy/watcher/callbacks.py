@@ -2,7 +2,9 @@ from functools import partial
 from pathlib import Path
 from typing import List, Optional
 
+from git import Repo
 from git.objects import Commit
+from opal_common.async_utils import run_sync
 from opal_common.git_utils.commit_viewer import (
     CommitViewer,
     FileFilter,
@@ -20,7 +22,7 @@ from opal_common.topics.publisher import TopicPublisher
 from opal_common.topics.utils import policy_topics
 
 
-async def create_update_all_directories_in_repo(
+def create_update_all_directories_in_repo(
     old_commit: Commit,
     new_commit: Commit,
     file_extensions: Optional[List[str]] = None,
@@ -29,7 +31,10 @@ async def create_update_all_directories_in_repo(
 ) -> PolicyUpdateMessageNotification:
     """Publishes policy topics matching all relevant directories in tracked
     repo, prompting the client to ask for *all* contents of these directories
-    (and not just diffs)."""
+    (and not just diffs).
+
+    Blocking: it walks the commit's whole tree through git processes.
+    """
     with CommitViewer(new_commit) as viewer:
         if predicate is None:
             _has_extension = partial(has_extension, extensions=file_extensions)
@@ -53,15 +58,17 @@ async def create_update_all_directories_in_repo(
         return PolicyUpdateMessageNotification(topics=topics, update=message)
 
 
-async def create_policy_update(
+def create_policy_update(
     old_commit: Commit,
     new_commit: Commit,
     file_extensions: Optional[List[str]] = None,
     bundle_ignore: Optional[List[str]] = None,
     predicate: Optional[FileFilter] = None,
 ) -> Optional[PolicyUpdateMessageNotification]:
+    """The notification of what changed between two commits; blocking: it diffs
+    them (or walks the tree, for one commit) through git processes."""
     if new_commit == old_commit:
-        return await create_update_all_directories_in_repo(
+        return create_update_all_directories_in_repo(
             old_commit,
             new_commit,
             file_extensions=file_extensions,
@@ -101,6 +108,21 @@ async def create_policy_update(
         return PolicyUpdateMessageNotification(topics=topics, update=message)
 
 
+def _policy_update_in_a_repo_of_its_own(
+    git_dir: str,
+    old_sha: str,
+    new_sha: str,
+    file_extensions: Optional[List[str]],
+    bundle_ignore: Optional[List[str]],
+) -> Optional[PolicyUpdateMessageNotification]:
+    """create_policy_update on a Repo opened for this call alone, closed once
+    the notification is built."""
+    with Repo(git_dir) as repo:
+        return create_policy_update(
+            repo.commit(old_sha), repo.commit(new_sha), file_extensions, bundle_ignore
+        )
+
+
 async def publish_changed_directories(
     old_commit: Commit,
     new_commit: Commit,
@@ -111,8 +133,17 @@ async def publish_changed_directories(
     """Publishes policy topics matching all relevant directories in tracked
     repo, prompting the client to ask for *all* contents of these directories
     (and not just diffs)."""
-    notification = await create_policy_update(
-        old_commit, new_commit, file_extensions, bundle_ignore
+    # On a thread: it diffs the commits (or walks the tree) through git
+    # processes for as long as the diff or the tree is large. On a Repo of its
+    # own: the watcher's (and its git cat-file processes) stays the loop's,
+    # which a webhook's pull may be using meanwhile.
+    notification = await run_sync(
+        _policy_update_in_a_repo_of_its_own,
+        new_commit.repo.git_dir,
+        old_commit.hexsha,
+        new_commit.hexsha,
+        file_extensions,
+        bundle_ignore,
     )
 
     if notification:

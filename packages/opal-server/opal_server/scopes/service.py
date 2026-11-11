@@ -1,6 +1,8 @@
 import asyncio
 import datetime
+import os
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from pathlib import Path
 from typing import List, Optional, Set, cast
@@ -64,6 +66,45 @@ def is_rego_source_file(
     return f.path.suffix in extensions
 
 
+# Change notifications are built on a pool of their own, of a few threads. On
+# the loop's default executor a pass's builds (SCOPES_GIT_MAX_WORKERS clones at
+# once) queued policy bundle requests behind them and took the GIL from them:
+# in a cold pass of 2,000 scopes, bundles took p50 63-78 ms there against 28
+# ms with the builds on the loop, and 32 ms with 2 threads of their own (62 ms
+# with 20).
+_NOTIFICATION_BUILD_THREADS = 2
+_notification_builds: Optional[ThreadPoolExecutor] = None
+_notification_builds_pid = 0
+
+
+def _notification_build_pool() -> ThreadPoolExecutor:
+    """This process's pool for change notification builds.
+
+    Made on first use in each process: a pool made before a fork has no
+    threads in the child.
+    """
+    global _notification_builds, _notification_builds_pid
+    if _notification_builds is None or _notification_builds_pid != os.getpid():
+        _notification_builds = ThreadPoolExecutor(
+            max_workers=_NOTIFICATION_BUILD_THREADS,
+            thread_name_prefix="scope-notification",
+        )
+        _notification_builds_pid = os.getpid()
+    return _notification_builds
+
+
+async def _wait_out(work: "asyncio.Future") -> None:
+    """Wait until ``work`` (on a thread, which no cancel stops) is done,
+    whatever cancels come meanwhile; what it raised is dropped."""
+    while not work.done():
+        try:
+            await asyncio.wait({work})
+        except asyncio.CancelledError:
+            continue
+    if not work.cancelled():
+        work.exception()
+
+
 class NewCommitsCallbacks(PolicyFetcherCallbacks):
     def __init__(
         self,
@@ -91,11 +132,40 @@ class NewCommitsCallbacks(PolicyFetcherCallbacks):
         logger.debug(
             f"scope '{self._scope_id}': Found new commits: old HEAD was '{previous_head}', new HEAD is '{head}'"
         )
+        # Built on a thread: building it reads the clone through git processes
+        # (a diff of the two heads, or a walk of the head's whole tree) for as
+        # long as the diff or the tree is large, and on the loop that would
+        # stall every request this worker serves. The sync awaiting this holds
+        # the clone's lock_source, which keeps this process's other git work
+        # off the clone meanwhile: a cancel waits for the thread to be done
+        # with the clone before it goes on.
+        build = asyncio.get_running_loop().run_in_executor(
+            _notification_build_pool(),
+            self._build_notification,
+            previous_head,
+            head,
+        )
+        try:
+            notification = await asyncio.shield(build)
+        except asyncio.CancelledError:
+            await _wait_out(build)
+            raise
+        if notification is not None:
+            await self.trigger_notification(notification)
+
+    def _build_notification(
+        self, previous_head: Optional[str], head: str
+    ) -> Optional[PolicyUpdateMessageNotification]:
+        """Build the notification of the scope's change to ``head``; blocking.
+
+        Returns None when there is nothing to publish, or when the clone
+        cannot be read (logged).
+        """
         if not self._scope_repo_dir.exists():
             logger.error(
                 f"on_update({self._scope_id}) was triggered, but repo path is not found: {self._scope_repo_dir}"
             )
-            return
+            return None
 
         try:
             repo = git.Repo(self._scope_repo_dir)
@@ -103,7 +173,7 @@ class NewCommitsCallbacks(PolicyFetcherCallbacks):
             logger.error(
                 f"Got exception for repo in path: {self._scope_repo_dir}, scope_id: {self._scope_id}, error: {exc}"
             )
-            return
+            return None
 
         notification: Optional[PolicyUpdateMessageNotification] = None
         predicate = partial(is_rego_source_file, extensions=self._source.extensions)
@@ -112,7 +182,7 @@ class NewCommitsCallbacks(PolicyFetcherCallbacks):
         # until the garbage collector gets to it, a repack's deleted ones too.
         with repo:
             if previous_head is None or self._notify_all:
-                notification = await create_update_all_directories_in_repo(
+                notification = create_update_all_directories_in_repo(
                     repo.commit(head), repo.commit(head), predicate=predicate
                 )
                 if self._notify_all and not notification.topics:
@@ -128,15 +198,13 @@ class NewCommitsCallbacks(PolicyFetcherCallbacks):
                 # serialized output (OPAL_LOG_SERIALIZE or a serialized file
                 # sink), not in the default plaintext format.
                 with logger.contextualize(scope_id=self._scope_id):
-                    notification = await create_policy_update(
+                    notification = create_policy_update(
                         repo.commit(previous_head),
                         repo.commit(head),
                         self._source.extensions,
                         predicate=predicate,
                     )
-
-        if notification is not None:
-            await self.trigger_notification(notification)
+        return notification
 
     async def trigger_notification(self, notification: PolicyUpdateMessageNotification):
         logger.info(
