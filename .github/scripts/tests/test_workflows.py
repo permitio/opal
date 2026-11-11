@@ -1,6 +1,7 @@
 """Facts about .github/workflows that the repository relies on: permissions,
 pinned actions, checkouts without stored credentials, the jobs the CI check
-needs, the Python that CI and the release run on, and the PyPI environment.
+needs, the Python that CI and the release run on, the release's jobs and
+environments, the Slack notices, and the code owners in .github/CODEOWNERS.
 
 A change that breaks one of them fails here. A deliberate change, such
 as a new job or a new write permission, also edits the fact pinned here.
@@ -590,3 +591,27 @@ def test_a_failed_gate_on_master_or_a_failed_release_reaches_slack(
     # tests.yml and pre-commit.yml: the required check's job; on_release.yml: every job.
     expected = {"tests.yml": {"ci"}, "pre-commit.yml": {"pre-commit"}}
     assert set(notify["needs"]) == expected.get(file_name, set(jobs) - {"notify"})
+
+
+def codeowners_rules() -> list[tuple[str, list[str]]]:
+    """The rules of .github/CODEOWNERS, in order: (pattern, owners)."""
+    text = (WORKFLOWS.parent / "CODEOWNERS").read_text()
+    rules = []
+    for line in text.splitlines():
+        if line.strip() and not line.lstrip().startswith("#"):
+            pattern, *owners = line.split()
+            rules.append((pattern, owners))
+    return rules
+
+
+def test_codeowners_cover_the_repository_and_hold_github_tighter():
+    """The catch-all comes first, since the last matching rule wins; the CI and
+    release automation has a narrower set of owners than the rest."""
+    rules = codeowners_rules()
+    owners = dict(rules)
+
+    assert rules[0] == ("*", ["@permitio/r-d"])
+    for pattern in ("/.github/", "/.pre-commit-config.yaml", "/.gitleaks.toml"):
+        assert owners[pattern], pattern
+        assert "@permitio/r-d" not in owners[pattern], pattern
+    assert all(owner.startswith("@") for _, found in rules for owner in found)

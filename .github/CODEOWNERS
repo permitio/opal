@@ -1,0 +1,11 @@
+# Code owners: GitHub requests their review on every pull request that touches their files. The
+# last matching rule wins, so the narrower rules come after the catch-all.
+
+# Everything: the R&D team.
+*                         @permitio/r-d
+
+# CI, the release and its secrets, and the hooks and secret-scanning rules that CI enforces: the
+# maintainers who own them.
+/.github/                 @EliMoshkovich @zeevmoney
+/.pre-commit-config.yaml  @EliMoshkovich @zeevmoney
+/.gitleaks.toml           @EliMoshkovich @zeevmoney
