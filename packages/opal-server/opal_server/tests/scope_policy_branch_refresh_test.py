@@ -2297,3 +2297,68 @@ async def test_a_failed_publish_restores_the_claim_a_request_is_still_riding(
     timed_out = {"outcome": "timeout", "for": "branch"}
     cancelled = {"outcome": "cancelled", "for": "branch"}
     assert _waits(emitted) == ([cancelled, timed_out] if abandoned else [timed_out])
+
+
+# --- a branch whose commit the clone lost ------------------------------------
+
+
+def _gut_object_store(clone_path):
+    """What a crash mid-gc or a corrupt disk leaves: refs intact, objects gone."""
+    git_dir = Path(clone_path) / ".git"
+    (git_dir / "objects").rename(Path(clone_path).parent / "objects-moved-away")
+    (git_dir / "objects" / "pack").mkdir(parents=True)
+
+
+@pytest.mark.parametrize(
+    "interval, wait",
+    [(60.0, WAIT), (0.0, WAIT), (60.0, 0.0)],
+    ids=["interval-on", "interval-off", "wait-off"],
+)
+@pytest.mark.asyncio
+async def test_a_branch_whose_commit_is_gone_requests_the_sync_that_repairs_it(
+    tmp_path, monkeypatch, emitted, clear_fetcher_caches, interval, wait
+):
+    """The clone has the branch's ref but not the commit it names: the request
+    gets the retryable 503 at once, and, as for a missing branch, asks for one
+    sync of the scope per interval. That sync finds the commit gone, deletes
+    the clone and clones it again, and the next request is served. With the
+    interval or the wait off nothing is asked for, as for the branch wait.
+
+    Mutation: answering the 503 without asking for the sync fails the
+    interval-on case.
+    """
+    monkeypatch.setattr(
+        opal_server_config, "SCOPES_POLICY_BRANCH_REFRESH_INTERVAL", interval
+    )
+    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", wait)
+    origin, url = _shared_bed(tmp_path)
+    scope = _git_scope("live", url, "main")
+    scopes = FakeScopeRepository([scope])
+    pubsub = RecordingPubSub()
+    service = ScopesService(base_dir=tmp_path, scopes=scopes, pubsub_endpoint=pubsub)
+    await service.sync_scope(scope_id="live")
+    pubsub.published.clear()
+    _gut_object_store(GitPolicyFetcher.repo_clone_path(tmp_path, scope.policy))
+    GitPolicyFetcher.reset_caches()
+
+    async with _route_app(scopes, pubsub, service) as client:
+        first = await client.get("/scopes/live/policy")
+        again = await client.get("/scopes/live/policy")
+        requested = pubsub.syncs()
+        for sync in requested:
+            await service.sync_scope(**sync)
+        repaired = await client.get("/scopes/live/policy")
+
+    assert first.status_code == 503, first.text
+    assert first.headers["retry-after"] == "5"
+    assert again.status_code == 503
+    if interval and wait:
+        assert requested == [
+            {"scope_id": "live", "force_fetch": False, "honor_backoff": True}
+        ], "one sync per interval"
+        assert _refreshes(emitted) == ["requested"]
+        assert repaired.status_code == 200, repaired.text
+        assert PolicyBundle(**repaired.json()).hash == origin.head.commit.hexsha
+    else:
+        assert requested == []
+        assert repaired.status_code == 503

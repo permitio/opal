@@ -39,7 +39,7 @@ stop-gap until the fixes land in the upstream libraries (see Phase 2 of the plan
 import asyncio
 import random
 from collections import deque
-from typing import Awaitable, Callable, Optional
+from typing import Awaitable, Callable, List, Optional
 
 from fastapi import WebSocket
 from fastapi_websocket_pubsub import EventBroadcaster, PubSubEndpoint
@@ -51,6 +51,9 @@ from opal_common.logger import logger
 from pydantic import ValidationError
 
 ReconnectCallback = Callable[[], Awaitable[None]]
+
+# 2**62 times any sane minimum is far past any maximum, and fits a float.
+_BACKOFF_MAX_EXPONENT = 62
 
 
 class SafeConnectionManager(ConnectionManager):
@@ -152,6 +155,8 @@ class ReconnectingBroadcaster(EventBroadcaster):
         # so the in-flight recovery loops once more rather than dropping that gap.
         self._recovery_rerun_requested = False
         self._on_reconnect: Optional[ReconnectCallback] = None
+        # Run after it, in the order added; see add_reconnect_listener.
+        self._reconnect_listeners: List[ReconnectCallback] = []
         # Fired once if the reader gives up (exhausts reconnect retries) and returns,
         # so OPAL can graceful-restart the worker even with statistics disabled.
         self._on_give_up: Optional[ReconnectCallback] = None
@@ -176,6 +181,26 @@ class ReconnectingBroadcaster(EventBroadcaster):
         """Register an ``async () -> None`` callback fired once after each gap
         (a reconnect that follows a previously-established connection)."""
         self._on_reconnect = callback
+
+    def add_reconnect_listener(self, listener: ReconnectCallback) -> Callable[[], None]:
+        """Run ``listener``, an ``async () -> None``, after each gap's
+        recovery, once the reconnect callback has run.
+
+        Listeners run in the order added; one that raises is logged and the
+        next still runs. A listener should not wait long: the recovery, and
+        the replay of a gap that comes meanwhile, wait for it.
+
+        Returns:
+            A function that removes the listener; calling it again does
+            nothing.
+        """
+        self._reconnect_listeners.append(listener)
+
+        def _remove() -> None:
+            if listener in self._reconnect_listeners:
+                self._reconnect_listeners.remove(listener)
+
+        return _remove
 
     def set_give_up_callback(self, callback: Optional[ReconnectCallback]):
         """Register an ``async () -> None`` callback fired once if the reader
@@ -525,14 +550,20 @@ class ReconnectingBroadcaster(EventBroadcaster):
             self._outbound_buffer.extend(refill)
 
     async def _fire_reconnect(self):
-        if self._on_reconnect is None:
-            return
-        try:
-            await self._on_reconnect()
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("Broadcaster on_reconnect callback failed")
+        if self._on_reconnect is not None:
+            try:
+                await self._on_reconnect()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Broadcaster on_reconnect callback failed")
+        for listener in list(self._reconnect_listeners):
+            try:
+                await listener()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Broadcaster reconnect listener failed")
 
     async def _fire_give_up(self):
         """Fire the give-up hook so OPAL can graceful-restart the worker.
@@ -610,11 +641,13 @@ class ReconnectingBroadcaster(EventBroadcaster):
                 logger.debug("Error while disconnecting broadcast channel; ignoring")
 
     def _backoff_seconds(self, attempt: int) -> float:
-        if attempt <= 0:
-            base = self._reconnect_backoff_min
-        else:
-            base = self._reconnect_backoff_min * (2 ** (attempt - 1))
-        base = min(base, self._reconnect_backoff_max)
+        # The exponent is capped: with max retries 0 the attempts grow for as
+        # long as the backbone stays down, and past 1024 of them the power no
+        # longer fits a float: the OverflowError would end the reader.
+        exponent = min(max(attempt - 1, 0), _BACKOFF_MAX_EXPONENT)
+        base = min(
+            self._reconnect_backoff_min * (2**exponent), self._reconnect_backoff_max
+        )
         # Equal jitter, so a fleet of pods does not reconnect to the backbone in lockstep.
         return base / 2 + random.uniform(0, base / 2)
 

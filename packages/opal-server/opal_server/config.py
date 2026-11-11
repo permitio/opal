@@ -90,7 +90,9 @@ class OpalServerConfig(Confi):
         True,
         description="After a backbone gap that may have lost updates, force this "
         "worker's connected clients to reconnect so they re-fetch full policy + data "
-        "state (guarantees cross-instance consistency).",
+        "state (guarantees cross-instance consistency). With scopes on, the "
+        "leader also runs one sync pass of every scope, so a refresh published "
+        "during the gap is not lost (a source in backoff waits for its delay).",
     )
     BROADCAST_RESYNC_SETTLE_SECONDS = confi.float(
         "BROADCAST_RESYNC_SETTLE_SECONDS",
@@ -238,7 +240,14 @@ class OpalServerConfig(Confi):
         "that thread — and the source's in-flight marker — alive for the life "
         "of the process (that source is then skipped until it recovers or the "
         "process restarts); SCOPES_GIT_MAX_ZOMBIES bounds how many such threads "
-        "accumulate.",
+        "accumulate. A sync that is not part of a sync pass (a refresh, a PUT "
+        "/scopes, the sync a policy bundle request asks for) and finds a git op "
+        "of this process still running on its clone (a libgit2 op past its "
+        "timeout, or a git command-line op until git has been stopped) waits up "
+        "to that op's own timeout for it to end (this one for a fetch, "
+        "SCOPES_GIT_CLONE_TIMEOUT for a git command-line clone), then syncs once "
+        "more (with 0, it does not wait); a pass's sync skips that clone, and the "
+        "next pass syncs it.",
     )
     SCOPES_GIT_CLONE_TIMEOUT = confi.float(
         "SCOPES_GIT_CLONE_TIMEOUT",
@@ -533,7 +542,8 @@ class OpalServerConfig(Confi):
         "nothing else records a failure: without it every pass re-attempts every "
         "dead repo, and so does every duplicate scope sharing that repo — a "
         "handful of dead repositories can account for thousands of clone attempts "
-        "per hour. The periodic pass and the boot preload honour it (in "
+        "per hour. The periodic pass, the pass after a backbone gap and the boot "
+        "preload honour it (in "
         "both phases, and re-checked under the source lock, so duplicates of a "
         "source that fails in a pass cost one attempt, not one per scope), and so "
         "does the sync GET /scopes/:scope_id/policy requests for a scope whose "
@@ -730,7 +740,10 @@ class OpalServerConfig(Confi):
         "under the 60s ALB idle timeout (a longer hold surfaces as a 504, which "
         "the client cannot tell apart from a dead server) and far under the "
         "client's 300s aiohttp total timeout. Readiness is derived from DISK (the "
-        "clone still has no remote-tracking refs), never from an in-process "
+        "clone still has no remote-tracking refs, or has not finished its first "
+        "clone or fetch: libgit2 clones in place and writes those refs one at a "
+        "time, so until then a missing branch may be one it has not written "
+        "yet), never from an in-process "
         "marker, so every worker answers alike: the clone runs in the leader "
         "while this route is served by any worker. The wait covers a git "
         "command-line clone in progress too (SCOPES_GIT_FETCH_WITH_CLI): git "
@@ -803,7 +816,11 @@ class OpalServerConfig(Confi):
         "misses on that worker while its request is younger than the "
         "clone wait are held too, without asking again, until the first hold's "
         "deadline; after that, for the rest of the interval, a miss gets the "
-        "immediate 409 (503 with no clone) it got before. A request shed at the "
+        "immediate 409 (503 with no clone) it got before. A clone that has the "
+        "scope's branch ref but not the commit it names (an object store gutted "
+        "under it) gets the retryable 503 at once, and the worker asks for one "
+        "sync of the scope per this many seconds, which deletes the clone and "
+        "clones it again. A request shed at the "
         "in-flight cap requests nothing; a request that requests the sync holds "
         "its slot while it does. So a branch that really does not "
         "exist costs, per interval, at most one clone-wait budget of held requests "

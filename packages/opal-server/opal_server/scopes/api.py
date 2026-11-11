@@ -49,6 +49,7 @@ from opal_server.data.data_update_publisher import DataUpdatePublisher
 from opal_server.git_cli import clone_under_way, drop_clone_lock, take_clone_lock
 from opal_server.git_fetcher import (
     BranchHeadNotFoundError,
+    BranchHeadObjectMissingError,
     CloneNotPopulatedError,
     GitPolicyFetcher,
 )
@@ -202,7 +203,11 @@ def _claim_key(
 
 
 # What a claim's log lines say is missing, by its key's first element.
-_MISSING = {"branch": "branch in its clone", "clone": "clone"}
+_MISSING = {
+    "branch": "branch in its clone",
+    "clone": "clone",
+    "commit": "commit its branch names in its clone",
+}
 
 
 def _branch_hold(
@@ -387,6 +392,57 @@ async def _branch_wait_claim(
     return claim
 
 
+async def _request_clone_repair(
+    key: Tuple[str, ...],
+    request_refresh: Callable[[], Awaitable[None]],
+    now: float,
+    wait: float,
+    *,
+    scope_id: str,
+) -> None:
+    """The clone has the scope's branch ref but not the commit it names: ask
+    for a sync of the scope, which finds the commit gone, deletes the clone and
+    clones it again. The request itself is answered at once (a 503).
+
+    Asked as the branch wait asks (_branch_wait_claim): once per ``key`` and
+    SCOPES_POLICY_BRANCH_REFRESH_INTERVAL on this worker, never with the
+    interval or the wait off, and the publish bounded by ``wait``. A publish
+    that fails gives its claim back.
+    """
+    if wait <= 0:
+        return
+    hold = _branch_hold(key, now, wait)
+    if hold is None or not hold[1]:
+        return
+    if len(_branch_refresh_publishes) >= _BRANCH_REFRESH_PUBLISHES_MAX:
+        metrics.increment(_BRANCH_REFRESH_METRIC, tags={"outcome": "publish_backlog"})
+        return
+    previous = _record_branch_refresh(key, now)
+    publish = asyncio.ensure_future(request_refresh())
+    _branch_refresh_publishes.add(publish)
+    publish.add_done_callback(_branch_refresh_publishes.discard)
+    abandoned = partial(_abandoned_publish_done, key, now, previous, scope_id=scope_id)
+    try:
+        done, _ = await asyncio.wait({publish}, timeout=wait)
+    except asyncio.CancelledError:
+        publish.add_done_callback(abandoned)
+        raise
+    if not done:
+        publish.add_done_callback(abandoned)
+        metrics.increment(_BRANCH_REFRESH_METRIC, tags={"outcome": "publish_timeout"})
+        return
+    error = _publish_error(publish)
+    if error is not None:
+        _branch_refresh_failed(key, now, previous, error, scope_id=scope_id)
+        return
+    metrics.increment(_BRANCH_REFRESH_METRIC, tags={"outcome": "requested"})
+    logger.info(
+        "Scope {scope_id}'s clone lacks the commit its branch names; requested "
+        "a sync, which clones it again",
+        scope_id=scope_id,
+    )
+
+
 def _make_bundle(fetcher: GitPolicyFetcher, base_hash: Optional[str]) -> PolicyBundle:
     """``fetcher.make_bundle``, with no clone while a git command-line clone of
     it is under way taken for a clone not populated yet.
@@ -512,6 +568,16 @@ async def _make_bundle_waiting_for_clone(
     waiting_for = "clone"
     try:
         return await run_sync(_make_bundle, fetcher, base_hash)
+    except BranchHeadObjectMissingError:
+        if request_refresh is not None:
+            await _request_clone_repair(
+                ("commit", scope_id, fetcher.clone_source_id, fetcher.branch),
+                request_refresh,
+                asyncio.get_running_loop().time(),
+                _bounded_clone_wait(),
+                scope_id=scope_id,
+            )
+        raise
     except CloneNotPopulatedError as first_exc:
         wait = _bounded_clone_wait()
         if wait <= 0:

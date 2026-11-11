@@ -60,6 +60,7 @@ def _bare_task(events, fail_sync=False):
 
 def _with_passes(t):
     t._passes = _SyncPassQueue(t._run_pass)
+    t._remove_gap_listener = None
     return t
 
 
@@ -118,6 +119,7 @@ async def test_start_subscribes_leader_purge_handler(monkeypatch):
     class FakeEndpoint:
         def __init__(self):
             self.notifier = FakeNotifier()
+            self.broadcaster = None
 
     class FakePurger:
         async def handle(self, *a, **k):
@@ -159,6 +161,7 @@ async def test_start_subscribes_leader_purge_handler(monkeypatch):
 class _FakeEndpoint:
     def __init__(self):
         self.notifier = FakeNotifier()
+        self.broadcaster = None
 
 
 def _purge_cmd(sid, confirmed):
@@ -614,3 +617,161 @@ async def test_stop_cancels_a_pass_holding_a_clone_lock_before_draining_purges(
     assert [
         d for d in pubsub.published if d.get("confirmed")
     ], "the drained purge never completed"
+
+
+# --- The leader's sync pass after a broadcaster backbone gap. ---
+
+
+class _GapBroadcaster:
+    """A ReconnectingBroadcaster whose reconnect listeners the test fires by
+    hand; nothing else of it is used."""
+
+    def __init__(self):
+        from opal_server.pubsub_resilience import ReconnectingBroadcaster
+
+        self.real = ReconnectingBroadcaster("memory://", notifier=None, channel="t")
+
+    @property
+    def listeners(self):
+        return self.real._reconnect_listeners
+
+    async def gap(self):
+        for listener in list(self.listeners):
+            await listener()
+
+
+class _GapEndpoint(_FakeEndpoint):
+    def __init__(self, broadcaster):
+        super().__init__()
+        self.broadcaster = broadcaster
+
+
+def _gap_task(monkeypatch, service, broadcaster, resync=True):
+    from opal_server.config import opal_server_config
+    from opal_server.policy.watcher.task import BasePolicyWatcherTask
+
+    async def _noop_start(self):
+        return None
+
+    monkeypatch.setattr(BasePolicyWatcherTask, "start", _noop_start)
+    monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 0)
+    monkeypatch.setattr(opal_server_config, "BROADCAST_RESYNC_ON_RECONNECT", resync)
+
+    class _Purger:
+        async def handle(self, *a, **k):
+            return None
+
+        def signal_stop(self):
+            return None
+
+        async def stop(self):
+            return None
+
+    t = ScopesPolicyWatcherTask.__new__(ScopesPolicyWatcherTask)
+    t._pubsub_endpoint = _GapEndpoint(broadcaster)
+    t._purger = _Purger()
+    t._service = service
+    t._tasks = []
+    t._webhook_tasks = []
+    t._purger_sub_id = None
+    return _with_passes(t)
+
+
+@pytest.mark.fetch_backend("both")
+@pytest.mark.asyncio
+async def test_leader_runs_a_sync_pass_after_a_backbone_gap(monkeypatch):
+    """A backbone gap can lose a refresh published during it: the leader
+    runs one full pass that honours the backoff once the backbone is back.
+
+    Mutation: not registering the listener in start() must fail here.
+    """
+    service = _BlockingService()
+    service.release.set()
+    broadcaster = _GapBroadcaster()
+    t = _gap_task(monkeypatch, service, broadcaster.real)
+    await t.start()
+    try:
+        await asyncio.wait_for(asyncio.gather(*t._tasks), timeout=5)
+        assert service.flags == [(False, True)]  # the boot pass
+
+        await broadcaster.real._fire_reconnect()
+        await _until(lambda: len(service.flags) == 2)
+        assert service.flags[1] == (False, True)
+    finally:
+        await t.stop()
+
+
+@pytest.mark.fetch_backend("both")
+@pytest.mark.asyncio
+async def test_two_gaps_during_a_pass_make_one_queued_pass(monkeypatch):
+    """The gap resync goes through the pass queue: gaps during a pass join
+    the one pass that starts after it, and the listener does not wait for
+    that pass, so the broadcaster's recovery is not held for it."""
+    service = _BlockingService()
+    broadcaster = _GapBroadcaster()
+    t = _gap_task(monkeypatch, service, broadcaster.real)
+    await t.start()
+    try:
+        await _until(lambda: len(service.flags) == 1)  # the boot pass, blocked
+        await asyncio.wait_for(broadcaster.gap(), timeout=1)
+        await asyncio.wait_for(broadcaster.gap(), timeout=1)
+        for _ in range(50):
+            await asyncio.sleep(0)
+        assert len(service.flags) == 1
+
+        service.release.set()
+        await _until(lambda: len(service.flags) == 2)
+        for _ in range(50):
+            await asyncio.sleep(0)
+        assert service.flags == [(False, True), (False, True)]
+    finally:
+        await t.stop()
+
+
+@pytest.mark.fetch_backend("both")
+@pytest.mark.asyncio
+async def test_no_gap_resync_with_broadcast_resync_off(monkeypatch):
+    service = _BlockingService()
+    service.release.set()
+    broadcaster = _GapBroadcaster()
+    t = _gap_task(monkeypatch, service, broadcaster.real, resync=False)
+    await t.start()
+    try:
+        assert broadcaster.listeners == []
+    finally:
+        await t.stop()
+
+
+@pytest.mark.fetch_backend("both")
+@pytest.mark.asyncio
+async def test_no_gap_resync_without_the_reconnecting_broadcaster(monkeypatch):
+    """The stock broadcaster has no gap signal; a server with no broadcaster
+    has no backbone.
+
+    Neither gets a listener, and start() does not fail.
+    """
+
+    class _StockBroadcaster:
+        pass
+
+    for broadcaster in (_StockBroadcaster(), None):
+        service = _BlockingService()
+        service.release.set()
+        t = _gap_task(monkeypatch, service, broadcaster)
+        await t.start()
+        await t.stop()
+
+
+@pytest.mark.fetch_backend("both")
+@pytest.mark.asyncio
+async def test_stop_removes_the_gap_listener(monkeypatch):
+    service = _BlockingService()
+    service.release.set()
+    broadcaster = _GapBroadcaster()
+    t = _gap_task(monkeypatch, service, broadcaster.real)
+    await t.start()
+    assert len(broadcaster.listeners) == 1
+    await t.stop()
+    assert broadcaster.listeners == []
+    await t.stop()  # a second stop is a no-op
+    assert broadcaster.listeners == []

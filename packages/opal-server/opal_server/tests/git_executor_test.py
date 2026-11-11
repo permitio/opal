@@ -704,6 +704,11 @@ def _guard_fetcher(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_fetch_and_notify_skips_when_git_op_in_flight(tmp_path, monkeypatch):
+    from opal_server.config import opal_server_config
+
+    # A sync outside a pass waits up to the fetch timeout for the op to end
+    # (skipped_sync_retry_test); this one never ends.
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_TIMEOUT", 0.05)
     fetcher = _guard_fetcher(tmp_path, monkeypatch)
     _mark_git_op_started(fetcher._source_id)
     try:

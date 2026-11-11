@@ -26,6 +26,7 @@ from opal_server.git_fetcher import (
 )
 from opal_server.metrics_setup import configure_server_metrics
 from opal_server.policy.watcher.task import BasePolicyWatcherTask
+from opal_server.pubsub_resilience import ReconnectingBroadcaster
 from opal_server.redis_utils import RedisDB
 from opal_server.scopes.purge import LeaderScopePurger
 from opal_server.scopes.scope_repository import ScopeRepository
@@ -91,8 +92,22 @@ class _SyncPassQueue:
         Raises:
             asyncio.CancelledError: stop() cancelled the pass this waits for.
         """
+        done = self.enqueue(
+            only_poll_updates=only_poll_updates, honor_backoff=honor_backoff
+        )
+        if done is not None:
+            await asyncio.shield(done)
+
+    def enqueue(
+        self, *, only_poll_updates: bool, honor_backoff: bool
+    ) -> Optional[asyncio.Future]:
+        """Ask for a sync pass as request() does, without waiting for it.
+
+        Returns:
+            The future the pass resolves once it ended, or None after stop().
+        """
         if self._stopped:
-            return
+            return None
         queued = self._queued
         if queued is None:
             queued = _QueuedPass(
@@ -107,7 +122,7 @@ class _SyncPassQueue:
         queued.requests += 1
         if self._drain_task is None or self._drain_task.done():
             self._drain_task = asyncio.create_task(self._drain())
-        await asyncio.shield(queued.done)
+        return queued.done
 
     async def stop(self) -> None:
         """Cancel the running pass and the queued one; idempotent.
@@ -170,6 +185,8 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             pubsub_endpoint=self._pubsub_endpoint,
         )
         self._passes = _SyncPassQueue(self._run_pass)
+        # Set in start() when the broadcaster reports backbone gaps.
+        self._remove_gap_listener: Optional[Callable[[], None]] = None
 
     async def start(self):
         await super().start()
@@ -205,6 +222,7 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         # recorded anything of its own before that (only leaders sync).
         if opal_server_config.POLICY_REFRESH_INTERVAL <= 0:
             GitPolicyFetcher.source_backoff.clear()
+        self._remove_gap_listener = self._listen_for_backbone_gaps()
         # Honours the backoff: this process may have been forked from a
         # master whose preload already found which repos are unreachable,
         # and attempting all of them again at boot is the storm the backoff
@@ -235,6 +253,9 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             except Exception:
                 logger.exception("Failed to unsubscribe scope purge handler on stop")
         self._purger.signal_stop()
+        if self._remove_gap_listener is not None:
+            remove, self._remove_gap_listener = self._remove_gap_listener, None
+            remove()
 
         # Cancel the passes and our tasks BEFORE draining the purges, not
         # after: a queued purge first waits on GitPolicyFetcher.lock_source,
@@ -266,6 +287,30 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                 timeout=_PURGE_DRAIN_TIMEOUT,
             )
         return result
+
+    def _listen_for_backbone_gaps(self) -> Optional[Callable[[], None]]:
+        """Run a sync pass after each broadcaster backbone gap; returns the
+        function that stops it, or None when there is nothing to listen to.
+
+        A refresh published while this leader's backbone subscription
+        was down never reaches it, and a gap resync only reconnects
+        clients, which then fetch from clones nothing advanced. Only
+        with the reconnecting broadcaster, which reports gaps, and with
+        BROADCAST_RESYNC_ON_RECONNECT on.
+        """
+        broadcaster = self._pubsub_endpoint.broadcaster
+        if not opal_server_config.BROADCAST_RESYNC_ON_RECONNECT or not isinstance(
+            broadcaster, ReconnectingBroadcaster
+        ):
+            return None
+        return broadcaster.add_reconnect_listener(self._resync_after_gap)
+
+    async def _resync_after_gap(self) -> None:
+        # The pass is not waited for: the broadcaster's recovery waits for
+        # its listeners, and must not wait for a whole pass. Gaps during a
+        # pass join the one pass queued after it.
+        logger.info("Broadcaster backbone gap ended; requesting a scope sync pass")
+        self._passes.enqueue(only_poll_updates=False, honor_backoff=True)
 
     async def _run_pass(self, only_poll_updates: bool, honor_backoff: bool):
         # Only through self._passes, which logs what this raises.

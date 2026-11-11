@@ -13,6 +13,7 @@ import secrets
 import shutil
 import signal
 import socket
+import stat
 import subprocess
 import threading
 import time
@@ -87,6 +88,14 @@ from pygit2.enums import CredentialType, FetchPrune
 # ``Repository`` objects are not thread-safe.
 _git_busy: set = set()
 _git_busy_lock = threading.Lock()
+# What waits for a source's git op to leave flight (wait_for_git_op_gone):
+# source id -> (the waiting event loop, the future it awaits). Guarded by
+# _git_busy_lock: a libgit2 op leaves flight on its own thread.
+_op_gone_waiters: Dict[str, List[Tuple[asyncio.AbstractEventLoop, asyncio.Future]]] = {}
+# The timeout each op in flight was started with (busy key -> seconds; 0 or
+# less, or not finite: none), which a sync waiting for it waits up to
+# (fetch_and_notify_on_changes). Guarded by _git_busy_lock.
+_git_op_timeouts: Dict[str, float] = {}
 
 
 class GitConcurrencyLimitExceeded(RuntimeError):
@@ -114,15 +123,17 @@ class HostKeyRefusedError(pygit2.GitError):
 
 
 class CloneNotPopulatedError(ValueError):
-    """The remote-tracking namespace is EMPTY: no refs/remotes/<remote>/* at
-    all, so this clone has not been populated yet.
+    """This clone has not been populated yet: the remote-tracking namespace
+    is EMPTY (no refs/remotes/<remote>/* at all), or its first clone or fetch
+    has not finished (clone_landed).
 
-    Distinct from BranchHeadNotFoundError, which means the namespace has refs
-    but not the configured one: a misconfiguration, or a branch pushed after
+    Distinct from BranchHeadNotFoundError, which means a populated clone
+    lacks the configured branch: a misconfiguration, or a branch pushed after
     the clone's last fetch (see that class). This is transient by
     construction: _clone() rmtree's the destination and libgit2 clones INTO
     the final path, so for the whole duration of a recovery re-clone the dir
-    exists with no remote refs. With SCOPES_GIT_FETCH_WITH_CLI on, git clones
+    exists with no remote refs, and then with some of them, written one at a
+    time, until the clone ends. With SCOPES_GIT_FETCH_WITH_CLI on, git clones
     into a ``.<source id>.clone-*`` directory beside the final path and
     renames it into place once complete, so the final path does not exist
     meanwhile: the bundle route raises this for a missing final path while
@@ -167,6 +178,16 @@ class BranchHeadNotFoundError(ValueError):
 
     waited_seconds: float = 0.0
     client_disconnected: bool = False
+
+
+class BranchHeadObjectMissingError(pygit2.GitError):
+    """The clone has the branch's remote-tracking ref but not the commit it
+    names: an object store gutted under it (a crash mid-gc, a corrupt disk).
+
+    A pygit2.GitError, so the bundle route answers the retryable 503. A sync
+    of the scope finds the commit gone, deletes the clone and clones it
+    again, which the route asks for (scopes/api.py).
+    """
 
 
 class GitRepackError(RuntimeError):
@@ -347,6 +368,9 @@ def _reset_git_executor_after_fork() -> None:
         _git_busy_lock = threading.Lock()
     _live_ops_semaphores.clear()
     _git_busy.clear()
+    _git_op_timeouts.clear()
+    # Their loops are the parent's.
+    _op_gone_waiters.clear()
     # A repack running in the parent has no thread here to release it.
     _repack_lock = threading.Lock()
     # Nor does a pass the parent was running continue here.
@@ -388,9 +412,11 @@ def _emit_git_ops_in_flight(count: int) -> None:
     )
 
 
-def _mark_git_op_started(key: str) -> None:
+def _mark_git_op_started(key: str, timeout: Optional[float] = None) -> None:
     with _git_busy_lock:
         _git_busy.add(key)
+        if timeout is not None:
+            _git_op_timeouts[key] = timeout
         count = len(_git_busy)
     _emit_git_ops_in_flight(count)
 
@@ -399,13 +425,116 @@ def _mark_git_op_done(key: str) -> None:
     global _zombie_cap_logged
     with _git_busy_lock:
         _git_busy.discard(key)
+        _git_op_timeouts.pop(key, None)
         count = len(_git_busy)
+        waiters = _op_gone_waiters.pop(key, [])
         if (
             _zombie_cap_logged
             and len(_git_busy) < opal_server_config.SCOPES_GIT_MAX_ZOMBIES
         ):
             _zombie_cap_logged = False
     _emit_git_ops_in_flight(count)
+    for loop, gone in waiters:
+        try:
+            loop.call_soon_threadsafe(_resolve_op_gone, gone)
+        except RuntimeError:
+            # The waiter's loop has closed, and nothing awaits the future.
+            logger.debug("A waiter for the git op on {key} outlived its loop", key=key)
+
+
+def _resolve_op_gone(gone: asyncio.Future) -> None:
+    if not gone.done():
+        gone.set_result(None)
+
+
+async def wait_for_git_op_gone(key: str, timeout: float) -> bool:
+    """Wait up to ``timeout`` seconds for the git op of ``key`` in flight in
+    this process to leave flight (git_op_in_flight).
+
+    A libgit2 op leaves flight once its call returns on its thread, past
+    its timeout included; a git command-line op once git has been stopped
+    and its clone cleaned up.
+
+    Returns:
+        True at once when no op of ``key`` is in flight, True once it leaves
+        flight, False after ``timeout`` seconds with it still in flight.
+    """
+    loop = asyncio.get_running_loop()
+    gone = loop.create_future()
+    with _git_busy_lock:
+        if key not in _git_busy:
+            return True
+        _op_gone_waiters.setdefault(key, []).append((loop, gone))
+    try:
+        await asyncio.wait({gone}, timeout=timeout)
+        return gone.done()
+    finally:
+        with _git_busy_lock:
+            waiters = _op_gone_waiters.get(key)
+            if waiters is not None:
+                waiters[:] = [w for w in waiters if w[1] is not gone]
+                if not waiters:
+                    del _op_gone_waiters[key]
+        gone.cancel()
+
+
+# Written to a scope clone's config once its clone call returned, on either
+# backend: whatever the clone holds (no branch at all, from an empty remote),
+# it has landed.
+_CLONED_KEY = "opal.cloned"
+
+
+def clone_says_it_landed(git_dir: Path) -> bool:
+    """Whether a scope clone's config records that its clone finished
+    (_CLONED_KEY).
+
+    A config that cannot be read records nothing.
+    """
+    try:
+        config = pygit2.Config(str(git_dir / "config"))
+        return _CLONED_KEY in config and config.get_bool(_CLONED_KEY)
+    except (OSError, pygit2.GitError):
+        return False
+
+
+def clone_landed(git_dir: Path) -> bool:
+    """Whether a scope clone's first clone or fetch has finished, read from
+    disk, so every worker reads the same.
+
+    A clone this server made records it in its config once the clone call
+    returned (clone_says_it_landed). For a clone made before that, what it
+    holds tells: a git clone is put in place complete, with its refs
+    packed; libgit2 clones in place, creating an empty FETCH_HEAD before it
+    writes the first remote-tracking ref, then writing them one at a time,
+    and checks out the branch (writing the index) only once every ref is
+    written; a libgit2 fetch fills FETCH_HEAD once its refs are written.
+    So such a clone has landed once it has an index, a packed-refs file (a
+    git clone, or any clone since its refs were packed) or a FETCH_HEAD
+    with content. A FETCH_HEAD that cannot be read reads as empty.
+
+    Args:
+        git_dir: The clone's git directory (``<clone>/.git``).
+    """
+    if clone_says_it_landed(git_dir):
+        return True
+    try:
+        fetch_head = os.stat(git_dir / "FETCH_HEAD")
+    except OSError:
+        fetched = False
+    else:
+        fetched = stat.S_ISREG(fetch_head.st_mode) and fetch_head.st_size > 0
+    return (
+        fetched
+        or os.path.isfile(git_dir / "index")
+        or os.path.isfile(git_dir / "packed-refs")
+    )
+
+
+def git_op_timeout(key: str) -> Optional[float]:
+    """The timeout the git op of ``key`` in flight in this process was started
+    with; None when none is in flight or it was started without one."""
+    with _git_busy_lock:
+        return _git_op_timeouts.get(key)
 
 
 def git_op_in_flight(key: str) -> bool:
@@ -1034,7 +1163,7 @@ async def run_in_git_executor(
             max_workers=1, thread_name_prefix="opal-git"
         )
         if busy_key is not None:
-            _mark_git_op_started(busy_key)
+            _mark_git_op_started(busy_key, timeout)
         try:
             fut = loop.run_in_executor(executor, _runner)
         except BaseException:
@@ -1231,7 +1360,7 @@ async def run_git_cli_op(
     try:
         if slot_timeout and math.isfinite(slot_timeout) and slot_timeout > 0:
             slot_timer = loop.call_later(slot_timeout, _give_slot_back)
-        _mark_git_op_started(busy_key)
+        _mark_git_op_started(busy_key, timeout)
         timer = (
             loop.call_later(timeout, hung.timed_out)
             if timeout and math.isfinite(timeout) and timeout > 0
@@ -3224,6 +3353,59 @@ class GitPolicyFetcher(PolicyFetcher):
         POST /scopes/{id}/refresh, POST /scopes/refresh, PUT /scopes — attempts
         the source immediately: those are someone asking for this repo, now,
         and the most likely reason they are asking is that they just fixed it.
+
+        A sync that finds a git op of this process still running on the
+        clone (a libgit2 op past its timeout, a git command-line op being
+        stopped) skips it. Outside a sync pass, where nothing else would
+        sync the clone again for this request, it then waits up to that op's
+        own timeout for it to end (a git command-line clone's is
+        SCOPES_GIT_CLONE_TIMEOUT, a fetch's SCOPES_GIT_FETCH_TIMEOUT; with no
+        timeout, it does not wait) and syncs once more. A pass's sync does not
+        wait: the pass would hold every other clone's scopes for it, and the
+        next pass syncs the clone.
+        """
+        if not await self._sync_once(
+            hinted_hash, force_fetch, req_time, honor_backoff=honor_backoff
+        ):
+            return
+        if _running_sync_pass() is not None:
+            return
+        timeout = git_op_timeout(self._source_id)
+        if timeout is None:
+            timeout = opal_server_config.SCOPES_GIT_FETCH_TIMEOUT
+        if not (math.isfinite(timeout) and timeout > 0):
+            return
+        if not await wait_for_git_op_gone(self._source_id, timeout):
+            logger.warning(
+                "Not syncing {url} for scope {scope}: its previous git operation "
+                "is still running {timeout:.0f}s later",
+                url=redact_url(self._source.url),
+                scope=self._scope_id,
+                timeout=timeout,
+            )
+            return
+        logger.info(
+            "The previous git operation on {url} ended; syncing scope {scope} now",
+            url=redact_url(self._source.url),
+            scope=self._scope_id,
+        )
+        await self._sync_once(
+            hinted_hash, force_fetch, req_time, honor_backoff=honor_backoff
+        )
+
+    async def _sync_once(
+        self,
+        hinted_hash: Optional[str],
+        force_fetch: bool,
+        req_time: Optional[datetime.datetime],
+        *,
+        honor_backoff: bool,
+    ) -> bool:
+        """One sync of the clone: see fetch_and_notify_on_changes.
+
+        Returns:
+            True only when it skipped the clone because a git op of this
+            process is still running on it.
         """
         # Checked before lock_source on purpose (and again under it, below).
         # A hung source holds that lock for the whole clone, so a check ONLY
@@ -3248,7 +3430,7 @@ class GitPolicyFetcher(PolicyFetcher):
                     n=entry.consecutive_failures,
                     err=entry.last_error,
                 )
-                return
+                return False
         async with GitPolicyFetcher.lock_source(self._source_id):
             # Re-checked under the lock: N syncs of one source that honour the
             # backoff and arrive together — phase 2 syncs a few of a clone's
@@ -3271,18 +3453,19 @@ class GitPolicyFetcher(PolicyFetcher):
                         n=entry.consecutive_failures,
                         err=entry.last_error,
                     )
-                    return
+                    return False
             if git_op_in_flight(self._source_id):
                 # A previous git op for this repo exceeded its timeout and is
                 # still running on a pool thread. pygit2 Repository objects are
                 # not thread-safe, so skip this cycle rather than touch the same
-                # repo concurrently; the next cycle retries once it finishes.
+                # repo concurrently. Outside a pass fetch_and_notify_on_changes
+                # waits for it and syncs again; a pass leaves it to the next.
                 logger.warning(
                     "Skipping sync for {url}: a previous git operation is still "
                     "running after its timeout.",
                     url=redact_url(self._source.url),
                 )
-                return
+                return True
             with tracer.trace(
                 "git_policy_fetcher.fetch_and_notify_on_changes",
                 resource=self._scope_id,
@@ -3342,7 +3525,7 @@ class GitPolicyFetcher(PolicyFetcher):
                                     url=redact_url(self._source.url),
                                     err=repr(exc),
                                 )
-                                return
+                                return False
                             except (pygit2.GitError, GitCliError) as exc:
                                 # The fast-fail half of the same problem, on a
                                 # source that already has a local copy: revoked
@@ -3401,10 +3584,10 @@ class GitPolicyFetcher(PolicyFetcher):
                                 # clone's, and in a pass this may be the one
                                 # sync that fetched it.
                                 await self._mark_repack_due()
-                        return
+                        return False
                     else:
                         if self._tried_earlier_in_pass("clone"):
-                            return
+                            return False
                         # repo dir exists but invalid -> drop the cached handle
                         # FIRST (it is the thing judging the dir invalid; kept,
                         # it would re-invalidate the fresh clone on every sync
@@ -3431,7 +3614,7 @@ class GitPolicyFetcher(PolicyFetcher):
                         if not removed:
                             self._tried_in_this_pass("clone")
                             self._skip_locked_delete()
-                            return
+                            return False
                 else:
                     logger.info("Repo not found at {path}", path=self._repo_path)
 
@@ -3458,8 +3641,9 @@ class GitPolicyFetcher(PolicyFetcher):
                             "Scope {scope} was deleted mid-sync, skipping clone",
                             scope=self._scope_id,
                         )
-                        return
+                        return False
                 await self._clone()
+                return False
 
     async def _mark_repack_due(self) -> None:
         """Mark this clone due for a repack once its fetch packs pile up, or
@@ -4221,6 +4405,7 @@ class GitPolicyFetcher(PolicyFetcher):
             # Cache the fresh handle so the next sync's _get_repo() reuses it
             # instead of reopening (or hitting a stale predecessor).
             GitPolicyFetcher.repos[str(self._repo_path)] = repo
+            await self._record_clone_landed()
             # A reclone just downloaded current remote state — record it so
             # _was_fetched_after() doesn't force a redundant fetch next cycle.
             GitPolicyFetcher.repos_last_fetched[self._source_id] = clone_started
@@ -4231,6 +4416,27 @@ class GitPolicyFetcher(PolicyFetcher):
                 # marked whether or not this scope's change check succeeded,
                 # as after a fetch.
                 await self._mark_repack_due()
+
+    async def _record_clone_landed(self) -> None:
+        """Record in the new clone's config that its clone finished
+        (clone_says_it_landed).
+
+        Not recorded (logged), a missing branch reads as a clone in
+        progress for as long as what the clone holds says so.
+        """
+        config_path = str(self._repo_path / ".git" / "config")
+
+        def _record() -> None:
+            pygit2.Config(config_path)[_CLONED_KEY] = True
+
+        try:
+            await run_sync(_record)
+        except (OSError, pygit2.GitError) as e:
+            logger.warning(
+                "Could not record in {path} that its clone finished: {err}",
+                path=config_path,
+                err=repr(e),
+            )
 
     def _get_repo(self) -> Repository:
         path = str(self._repo_path)
@@ -4331,7 +4537,9 @@ class GitPolicyFetcher(PolicyFetcher):
             try:
                 _ = repo.revparse_single(hinted_hash)
                 return False  # hinted commit was found, no need to fetch
-            except KeyError:
+            # InvalidSpecError: a hint that is no revision at all, taken for
+            # one the clone does not have.
+            except (KeyError, pygit2.InvalidSpecError):
                 logger.info(
                     "Hinted commit hash was not found in local clone, re-fetching the remote"
                 )
@@ -4441,17 +4649,40 @@ class GitPolicyFetcher(PolicyFetcher):
             #     bundle route's own pygit2.GitError handler turns it into a
             #     retryable 503, instead of telling the client "not retryable"
             #     for a scope that will recover on its own.
+            # pygit2's NotFoundError is both: a KeyError and a GitError, for
+            # a missing ref and for a missing object alike. The ref tells
+            # them apart.
             try:
                 commit, _ = repo.resolve_refish(f"{self._remote}/{self._source.branch}")
                 head_commit_hash = str(commit.id)
             except KeyError:
+                if RepoInterface.has_remote_branch(
+                    repo, self._source.branch, self._remote
+                ):
+                    raise BranchHeadObjectMissingError(
+                        f"{self._remote}/{self._source.branch} names a commit "
+                        f"{self._repo_path} does not have"
+                    ) from None
                 # Split the KeyError by DISK STATE, not by the in-flight marker:
                 # an empty remote-tracking namespace means the clone has not been
                 # populated yet (transient), whereas siblings present but ours
                 # missing means the configured branch is wrong (permanent).
-                if not self._has_remote_tracking_refs(Path(repo.path)):
+                # A libgit2 clone writes its remote-tracking refs one at a
+                # time, in place: until it has landed, a missing branch may
+                # be one it has not written yet.
+                # A clone that records its clone finished has landed, with
+                # or without refs (an empty remote has none).
+                git_dir = Path(repo.path)
+                if not clone_says_it_landed(
+                    git_dir
+                ) and not self._has_remote_tracking_refs(git_dir):
                     raise CloneNotPopulatedError(
                         f"No refs/remotes/{self._remote}/* refs yet at {self._repo_path}"
+                    )
+                if not clone_landed(git_dir):
+                    raise CloneNotPopulatedError(
+                        f"The first clone or fetch of {self._repo_path} has not "
+                        "finished"
                     )
                 head_commit_hash = None
         finally:

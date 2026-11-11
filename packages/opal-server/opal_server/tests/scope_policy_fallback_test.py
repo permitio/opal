@@ -212,7 +212,11 @@ class _FakeRepo:
     """
 
     def __init__(
-        self, resolve, refs=("refs/remotes/origin/some-other-branch",), path=None
+        self,
+        resolve,
+        refs=("refs/remotes/origin/some-other-branch",),
+        path=None,
+        landed=True,
     ):
         self._resolve = resolve
         self.path = path
@@ -220,12 +224,25 @@ class _FakeRepo:
             loose = Path(path) / ref
             loose.parent.mkdir(parents=True, exist_ok=True)
             loose.write_text("0" * 40 + "\n")
+        if landed:
+            # What a fetch that succeeded leaves: a FETCH_HEAD naming what it
+            # fetched.
+            Path(path).mkdir(parents=True, exist_ok=True)
+            (Path(path) / "FETCH_HEAD").write_text(_FETCHED)
 
     def resolve_refish(self, refish):
         return self._resolve()
 
+    def lookup_reference(self, name):
+        if not (Path(self.path) / name).is_file():
+            raise KeyError(name)
+        return name
+
     def free(self):  # _get_current_branch_head free()s the handle in finally
         pass
+
+
+_FETCHED = "0" * 40 + "\tnot-for-merge\tbranch 'some-other-branch' of origin\n"
 
 
 class _FakeCommit:
@@ -261,17 +278,54 @@ def test_branch_head_missing_ref_is_permanent_branchheadnotfound(tmp_path, monke
         _branch_head_fetcher(tmp_path)._get_current_branch_head()
 
 
-def test_branch_head_transient_giterror_propagates(tmp_path, monkeypatch):
-    # resolve_refish raises pygit2.GitError: ref present, object store gutted.
-    # Must propagate (route -> 503), NOT become BranchHeadNotFoundError (409).
-    monkeypatch.setattr(
-        "opal_server.git_fetcher.Repository",
-        lambda path: _FakeRepo(
-            _raise(pygit2.GitError("odb: object not found")), path=tmp_path / "g"
-        ),
+def _gut_object_store(git_dir):
+    """What a crash mid-gc or a corrupt disk leaves: refs intact, objects gone."""
+    (git_dir / "objects").rename(git_dir.parent.parent / "objects-moved-away")
+    (git_dir / "objects" / "pack").mkdir(parents=True)
+
+
+@pytest.mark.fetch_backend("libgit2")
+def test_branch_head_with_its_commit_object_gone_propagates(tmp_path, monkeypatch):
+    """A real clone whose refs/remotes/origin/main is there while the commit
+    it names is gone. pygit2 raises NotFoundError, both a GitError and a
+    KeyError: it must propagate (the route's retryable 503), not become
+    BranchHeadNotFoundError (the 409 for a branch that does not exist).
+
+    Mutation: dropping the ref check from the KeyError arm fails here.
+    """
+    _local_origin(tmp_path / "origin", ["main"])
+    src = GitPolicyScopeSource(
+        source_type="git",
+        url=str(tmp_path / "origin"),
+        branch="main",
+        auth=NoAuthData(auth_type="none"),
     )
+    fetcher = _Fetcher(tmp_path / "base", "s1", src)
+    pygit2.clone_repository(src.url, str(fetcher._repo_path))
+    _gut_object_store(fetcher._repo_path / ".git")
+
     with pytest.raises(pygit2.GitError):
-        _branch_head_fetcher(tmp_path)._get_current_branch_head()
+        fetcher._get_current_branch_head()
+
+
+@pytest.mark.fetch_backend("libgit2")
+def test_route_answers_503_for_a_branch_whose_commit_object_is_gone(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", 0)
+    monkeypatch.setattr(
+        "opal_server.scopes.api.opal_server_config.BASE_DIR", str(tmp_path)
+    )
+    _local_origin(tmp_path / "origin", ["main"])
+    live = _scope("live", str(tmp_path / "origin"), branch="main")
+    clone = GitPolicyFetcher.repo_clone_path(tmp_path, live.policy)
+    pygit2.clone_repository(live.policy.url, str(clone))
+    _gut_object_store(clone / ".git")
+
+    resp = _client(FakeScopeRepository([live]), tmp_path).get("/scopes/live/policy")
+
+    assert resp.status_code == 503, resp.text
+    assert resp.headers["retry-after"] == "5"
 
 
 def test_branch_head_success_returns_hash(tmp_path, monkeypatch):
@@ -396,6 +450,276 @@ def test_packed_remote_refs_count_as_a_populated_clone(tmp_path, monkeypatch):
     )
     with pytest.raises(BranchHeadNotFoundError):
         _branch_head_fetcher(tmp_path)._get_current_branch_head()
+
+
+def test_missing_branch_before_the_first_fetch_lands_is_a_clone_in_progress(
+    tmp_path, monkeypatch
+):
+    """Remote-tracking refs on disk do not make a clone populated: libgit2
+    clones in place and writes them one at a time, so until its first clone
+    or fetch has finished a missing branch is a clone in progress (503),
+    not a misconfiguration (409).
+
+    libgit2 creates FETCH_HEAD, empty, before it writes the first ref, so
+    an empty FETCH_HEAD with no checkout yet is still a clone in progress.
+
+    Mutation: dropping the clone_landed check from the split raises
+    BranchHeadNotFoundError on the first two and fails here.
+    """
+    from opal_server.git_fetcher import CloneNotPopulatedError
+
+    git_dir = tmp_path / "g"
+    monkeypatch.setattr(
+        "opal_server.git_fetcher.Repository",
+        lambda path: _FakeRepo(
+            _raise(KeyError("no such ref")), path=git_dir, landed=False
+        ),
+    )
+    with pytest.raises(CloneNotPopulatedError):
+        _branch_head_fetcher(tmp_path)._get_current_branch_head()
+
+    (git_dir / "FETCH_HEAD").touch()
+    with pytest.raises(CloneNotPopulatedError):
+        _branch_head_fetcher(tmp_path)._get_current_branch_head()
+
+    (git_dir / "FETCH_HEAD").write_text(_FETCHED)
+    with pytest.raises(BranchHeadNotFoundError):
+        _branch_head_fetcher(tmp_path)._get_current_branch_head()
+
+
+@pytest.mark.parametrize("fetch_head", [None, ""], ids=["no-fetch-head", "empty"])
+@pytest.mark.parametrize(
+    "landed_by",
+    ["index", "packed-refs"],
+    ids=["libgit2-clone-checked-out", "git-clone"],
+)
+def test_a_landed_clone_with_an_empty_fetch_head_is_populated(
+    tmp_path, monkeypatch, landed_by, fetch_head
+):
+    """A libgit2 clone leaves FETCH_HEAD empty and checks out its branch last;
+    a git clone has its refs packed, and an empty FETCH_HEAD when the server
+    made it (none when made by hand).
+
+    Either is populated: its
+    missing branch is the 409.
+    """
+    git_dir = tmp_path / "g"
+    monkeypatch.setattr(
+        "opal_server.git_fetcher.Repository",
+        lambda path: _FakeRepo(
+            _raise(KeyError("no such ref")), path=git_dir, landed=False
+        ),
+    )
+    git_dir.mkdir()
+    if fetch_head is not None:
+        (git_dir / "FETCH_HEAD").write_text(fetch_head)
+    (git_dir / landed_by).write_text("")
+    with pytest.raises(BranchHeadNotFoundError):
+        _branch_head_fetcher(tmp_path)._get_current_branch_head()
+
+
+def test_clone_landed_reads_what_it_cannot_read_as_not_landed(tmp_path):
+    from opal_server.git_fetcher import clone_landed
+
+    assert clone_landed(tmp_path / "missing") is False
+    # Directories where the files belong: nothing says the clone finished.
+    for name in ("FETCH_HEAD", "index", "packed-refs"):
+        (tmp_path / name).mkdir()
+    assert clone_landed(tmp_path) is False
+
+
+class _UpdateTipsProbe(pygit2.RemoteCallbacks):
+    """Runs once, at the first remote-tracking ref a libgit2 clone writes:
+
+    records what the route's split says about the branch still missing.
+    """
+
+    def __init__(self, fetcher, branch):
+        super().__init__()
+        self._fetcher = fetcher
+        self._branch = branch
+        self.raised = []
+
+    def update_tips(self, refname, old, new):
+        if self.raised or refname.endswith(f"/{self._branch}"):
+            return
+        try:
+            self._fetcher._get_current_branch_head()
+        except Exception as exc:  # recorded: the test's assertion names it
+            self.raised.append(type(exc))
+        else:
+            self.raised.append(None)
+
+
+def _local_origin(path, branches):
+    origin = pygit2.init_repository(str(path), bare=True)
+    sig = pygit2.Signature("opal-test", "opal-test@example.com")
+    builder = origin.TreeBuilder()
+    builder.insert(
+        "policy.rego", origin.create_blob(b"package p\n"), pygit2.GIT_FILEMODE_BLOB
+    )
+    tree = builder.write()
+    for branch in branches:
+        origin.create_commit(f"refs/heads/{branch}", sig, sig, branch, tree, [])
+    origin.set_head(f"refs/heads/{branches[-1]}")
+    return origin
+
+
+@pytest.mark.fetch_backend("libgit2")
+def test_a_libgit2_clone_writing_its_refs_is_a_clone_in_progress(tmp_path, monkeypatch):
+    """A real libgit2 clone of a local origin with branches aaa and main:
+    while it writes refs/remotes/origin/aaa, main is missing and the split
+    must say the clone is in progress (503), not that main does not exist
+    (409). Pins the order of the pygit2 the server is pinned to."""
+    from opal_server.git_fetcher import CloneNotPopulatedError
+
+    origin = _local_origin(tmp_path / "origin", ["aaa", "main"])
+    src = GitPolicyScopeSource(
+        source_type="git",
+        url=str(tmp_path / "origin"),
+        branch="main",
+        auth=NoAuthData(auth_type="none"),
+    )
+    fetcher = _Fetcher(tmp_path / "base", "s1", src)
+    probe = _UpdateTipsProbe(fetcher, "main")
+
+    pygit2.clone_repository(src.url, str(fetcher._repo_path), callbacks=probe)
+
+    assert probe.raised == [CloneNotPopulatedError]
+    assert fetcher._get_current_branch_head() == str(
+        origin.references["refs/heads/main"].target
+    )
+
+
+def _origin_whose_head_names_no_branch(path):
+    """A bare remote whose HEAD names master while only main and dev were
+    pushed: a libgit2 clone of it checks nothing out."""
+    origin = _local_origin(path, ["dev", "main"])
+    (path / "HEAD").write_text("ref: refs/heads/master\n")
+    return origin
+
+
+@pytest.mark.fetch_backend("both")
+@pytest.mark.parametrize("remote", ["head-names-no-branch", "empty"])
+@pytest.mark.asyncio
+async def test_a_finished_clone_lacking_the_branch_is_the_409(
+    tmp_path, monkeypatch, remote
+):
+    """A clone this server made says so in its config once the clone call
+    returned, whatever it holds: no checkout and an empty FETCH_HEAD (a remote
+    whose HEAD names a branch it does not have), or no refs at all (an empty
+    remote). Its missing branch is the 409, not a clone in progress.
+
+    Mutation: not recording the clone, or not reading the record, gives
+    CloneNotPopulatedError for both remotes on libgit2, and for the empty
+    one with the git command line.
+    """
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_TIMEOUT", 60.0)
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_SSH_KNOWN_HOSTS", None)
+    for name in ("repos", "repos_last_fetched", "repo_locks", "source_backoff"):
+        monkeypatch.setattr(GitPolicyFetcher, name, {})
+    if remote == "empty":
+        pygit2.init_repository(str(tmp_path / "origin"), bare=True)
+    else:
+        _origin_whose_head_names_no_branch(tmp_path / "origin")
+    src = GitPolicyScopeSource(
+        source_type="git",
+        url=str(tmp_path / "origin"),
+        branch="nope",
+        auth=NoAuthData(auth_type="none"),
+    )
+    fetcher = _Fetcher(tmp_path / "base", "s1", src)
+
+    await fetcher.fetch_and_notify_on_changes()
+
+    assert (fetcher._repo_path / ".git").is_dir(), "the clone failed"
+    with pytest.raises(BranchHeadNotFoundError):
+        fetcher._get_current_branch_head()
+
+
+@pytest.mark.fetch_backend("libgit2")
+def test_route_answers_503_for_a_missing_branch_before_the_first_fetch(
+    tmp_path, monkeypatch
+):
+    """End to end on a real libgit2 clone whose origin lacks the scope's
+    branch: before the clone finished (what libgit2 leaves mid-clone: refs,
+    an empty FETCH_HEAD, no checkout) the route answers 503 Retry-After 30;
+    once it finished, the 409."""
+    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", 0)
+    monkeypatch.setattr(
+        "opal_server.scopes.api.opal_server_config.BASE_DIR", str(tmp_path)
+    )
+    _local_origin(tmp_path / "origin", ["aaa"])
+    live = _scope("live", str(tmp_path / "origin"), branch="main")
+    clone = GitPolicyFetcher.repo_clone_path(tmp_path, live.policy)
+    pygit2.clone_repository(live.policy.url, str(clone))
+    git_dir = clone / ".git"
+    assert (git_dir / "FETCH_HEAD").read_text() == ""
+    client = _client(FakeScopeRepository([live]), tmp_path)
+
+    (git_dir / "index").rename(git_dir / "index.away")
+    mid_clone = client.get("/scopes/live/policy")
+    (git_dir / "index.away").rename(git_dir / "index")
+    landed = client.get("/scopes/live/policy")
+
+    assert mid_clone.status_code == 503, mid_clone.text
+    assert mid_clone.headers["retry-after"] == "30"
+    assert landed.status_code == 409, landed.text
+
+
+@pytest.mark.fetch_backend("cli")
+@pytest.mark.asyncio
+async def test_a_cli_clone_in_progress_never_answers_409(
+    tmp_path, monkeypatch, git_http, make_origin
+):
+    """With the git command line the clone is made beside its path and renamed
+    into place complete, so the route polled through a real clone answers only
+    503 (in progress) or 200 (landed)."""
+    import httpx
+
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_TIMEOUT", 60.0)
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_SSH_KNOWN_HOSTS", None)
+    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", 0)
+    monkeypatch.setattr(
+        "opal_server.scopes.api.opal_server_config.BASE_DIR", str(tmp_path)
+    )
+    for name in ("repos", "repos_last_fetched", "repo_locks", "source_backoff"):
+        monkeypatch.setattr(GitPolicyFetcher, name, {})
+    origin = make_origin(git_http.root / "repo.git")
+    origin.commit("master", {"big.bin": b"x" * (512 * 1024)})
+    live = _scope("live", git_http.url("repo.git"), branch="master")
+    store = FakeScopeRepository([live])
+    service = ScopesService(base_dir=tmp_path, scopes=store, pubsub_endpoint=None)
+    app = FastAPI()
+    app.include_router(
+        init_scope_router(store, FakeAuthenticator(), None, service),
+        prefix="/scopes",
+    )
+    git_http.stall_after = 1024
+    statuses = []
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        sync = asyncio.create_task(service.sync_scope(scope_id="live"))
+        for _ in range(500):
+            if git_http.stalled.is_set():
+                break
+            await asyncio.sleep(0.01)
+        assert git_http.stalled.is_set(), "the clone never reached the server"
+        for _ in range(3):
+            statuses.append((await client.get("/scopes/live/policy")).status_code)
+        # The stalled answer is cut short, which fails that clone; the next
+        # sync clones in full.
+        git_http.stall_after = None
+        git_http.release.set()
+        await asyncio.wait_for(sync, 30)
+        statuses.append((await client.get("/scopes/live/policy")).status_code)
+        await asyncio.wait_for(service.sync_scope(scope_id="live"), 30)
+        statuses.append((await client.get("/scopes/live/policy")).status_code)
+
+    assert 409 not in statuses, statuses
+    assert set(statuses[:4]) == {503}, statuses
+    assert statuses[-1] == 200, statuses
 
 
 def test_mid_clone_503_is_identical_on_a_non_leader_worker(tmp_path, monkeypatch):

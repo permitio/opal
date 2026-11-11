@@ -272,3 +272,31 @@ def test_the_branch_check_passes_a_policy_that_is_not_on_git():
     )
 
     assert verify_branch_or_throw(scope) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("hinted_hash", ["a..b", "^{tree}"])
+async def test_a_hinted_hash_that_cannot_be_parsed_counts_as_unknown(
+    tmp_path, hinted_hash
+):
+    """A refresh's hinted_hash comes from whoever calls the refresh. One that
+    is no revision git can parse is taken for a hash the clone does not
+    have: the clone is fetched, as for an unknown one, not failed.
+
+    Mutation: catching KeyError alone around revparse_single in
+    _should_fetch lets InvalidSpecError out of the sync, and fails here.
+    """
+    origin = _origin(tmp_path / "origin")
+    url = origin.working_tree_dir
+    scope = _scope("s1", url)
+    base_dir = tmp_path / "opal"
+    pubsub = _PubSub()
+    svc = ScopesService(
+        base_dir=base_dir, scopes=_Scopes([scope]), pubsub_endpoint=pubsub
+    )
+    await svc.sync_scope(scope_id="s1")
+    _commit(origin, "policy/b.rego", "package b\n")
+
+    await svc.sync_scope(scope_id="s1", hinted_hash=hinted_hash)
+
+    assert _remote_tracking_head(base_dir, scope) == origin.head.commit.hexsha

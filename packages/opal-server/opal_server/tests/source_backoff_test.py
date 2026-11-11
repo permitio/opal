@@ -984,6 +984,7 @@ async def test_without_a_periodic_pass_the_boot_sync_drops_inherited_entries_but
 
     class _Endpoint:
         notifier = _Notifier()
+        broadcaster = None
 
     def _task():
         t = ScopesPolicyWatcherTask.__new__(ScopesPolicyWatcherTask)
