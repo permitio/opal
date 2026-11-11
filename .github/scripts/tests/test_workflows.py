@@ -51,6 +51,7 @@ WRITE_PERMISSIONS = {
     ("tests.yml", "dependency-review", "pull-requests"),
     ("on_release.yml", "release-assets", "contents"),
     ("on_release.yml", "publish-packages", "id-token"),
+    ("on_release.yml", "publish-images", "id-token"),
 }
 
 SHA_PIN = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
@@ -389,7 +390,8 @@ class TestRelease:
         steps = steps_of(jobs["publish-images"])
         runs = "\n".join(step.get("run", "") for step in steps)
 
-        assert 'skopeo copy --all --preserve-digests "oci-archive:$ARCHIVE"' in runs
+        assert "skopeo copy --all --preserve-digests" in runs
+        assert '"oci-archive:$ARCHIVE" "docker://$REPOSITORY:$tag"' in runs
         assert not any(
             step.get("uses", "").startswith("docker/build-push-action@")
             for step in steps
@@ -469,3 +471,34 @@ class TestRelease:
         assert {"test-images", "test-packages"} <= set(job["needs"])
         assert job["permissions"] == {"contents": "write"}
         assert "environment" not in job
+
+
+def test_no_workflow_reads_a_stored_docker_hub_credential():
+    """Docker Hub tokens come from OIDC only; builds and scans pull
+    anonymously."""
+    for path in WORKFLOW_FILES:
+        assert "DOCKERHUB_TOKEN" not in path.read_text(), path.name
+        assert "DOCKERHUB_USERNAME" not in path.read_text(), path.name
+
+
+def test_only_the_image_publish_job_logs_in_to_docker_hub_and_through_oidc():
+    logins = [
+        (path.name, job_id, step)
+        for path, (job_id, job) in (
+            (path, item)
+            for path in WORKFLOW_FILES
+            for item in load(path)["jobs"].items()
+        )
+        for step in steps_of(job)
+        if step.get("uses", "").startswith("docker/login-action@")
+    ]
+
+    assert [(name, job_id) for name, job_id, _ in logins] == [
+        ("on_release.yml", "publish-images")
+    ]
+    (_, _, login) = logins[0]
+    assert "password" not in login["with"]
+    assert login["with"]["username"] == "${{ vars.DOCKERHUB_ORGANIZATION }}"
+    assert login["env"]["DOCKERHUB_OIDC_CONNECTIONID"] == (
+        "${{ vars.DOCKERHUB_OIDC_CONNECTIONID }}"
+    )
