@@ -15,11 +15,19 @@ stock broadcaster (``BROADCAST_RECONNECT_ENABLED`` off), whose reader stops
 for good when its subscription ends: there the backend reconnects and
 subscribes again itself, backing off, and nothing resyncs clients after the
 gap. Both use the library's own backends for every other scheme.
+
+Nothing the backend does waits forever, with fixed limits that the URL
+cannot change: connecting (with AUTH), subscribing and publishing each time
+out, every connection has TCP keepalive, and a subscriber that hears nothing
+for ``PING_INTERVAL_SECONDS`` sends PING and counts no answer within
+``PING_TIMEOUT_SECONDS`` as a lost connection.
 """
 
 import asyncio
 import random
-from typing import Any, Dict, Optional
+import socket
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator, Dict, Optional
 from urllib.parse import urlparse
 
 from broadcaster import Broadcast, Event
@@ -28,8 +36,17 @@ from opal_common.logger import logger
 from redis.asyncio import Redis
 from redis.asyncio.client import PubSub
 from redis.asyncio.connection import ConnectionPool, parse_url
+from redis.exceptions import TimeoutError as RedisTimeoutError
 
 REDIS_SCHEMES = ("redis", "rediss")
+
+CONNECT_TIMEOUT_SECONDS = 10.0
+PUBLISH_TIMEOUT_SECONDS = 10.0
+PING_INTERVAL_SECONDS = 15.0
+PING_TIMEOUT_SECONDS = 10.0
+KEEPALIVE_IDLE_SECONDS = 30
+KEEPALIVE_INTERVAL_SECONDS = 10
+KEEPALIVE_PROBES = 3
 
 RESUBSCRIBE_BACKOFF_MIN_SECONDS = 0.5
 RESUBSCRIBE_BACKOFF_MAX_SECONDS = 30.0
@@ -43,8 +60,9 @@ def connection_options(url: str) -> Dict[str, Any]:
     """The redis-py connection options for a broadcaster URL.
 
     The URL's own options (user, password, database and redis-py's query
-    parameters) are kept. redis-py's retries are always off, whatever the
-    URL says: OPAL makes every reconnect itself.
+    parameters) are kept. Whatever the URL says, redis-py's retries are
+    off (OPAL makes every reconnect itself), and the timeouts and TCP
+    keepalive are the backend's.
     """
     options: Dict[str, Any] = dict(parse_url(url))
     options.update(
@@ -52,8 +70,44 @@ def connection_options(url: str) -> Dict[str, Any]:
         retry=None,
         retry_on_error=[],
         retry_on_timeout=False,
+        socket_connect_timeout=CONNECT_TIMEOUT_SECONDS,
+        socket_timeout=CONNECT_TIMEOUT_SECONDS,
+        socket_keepalive=True,
+        socket_keepalive_options=_keepalive_options(),
+        health_check_interval=0,
     )
     return options
+
+
+def _keepalive_options() -> Dict[int, int]:
+    # macOS names the idle timer TCP_KEEPALIVE.
+    idle = getattr(socket, "TCP_KEEPIDLE", None) or getattr(
+        socket, "TCP_KEEPALIVE", None
+    )
+    options = {}
+    for option, value in (
+        (idle, KEEPALIVE_IDLE_SECONDS),
+        (getattr(socket, "TCP_KEEPINTVL", None), KEEPALIVE_INTERVAL_SECONDS),
+        (getattr(socket, "TCP_KEEPCNT", None), KEEPALIVE_PROBES),
+    ):
+        if option is not None:
+            options[option] = value
+    return options
+
+
+@asynccontextmanager
+async def _time_limit(seconds: float, failure: str) -> AsyncIterator[None]:
+    """Run the block within ``seconds``.
+
+    Raises:
+        redis.exceptions.TimeoutError: the block, or a socket timeout inside
+            it, ran out of time; the message is ``failure`` and the limit.
+    """
+    try:
+        async with asyncio.timeout(seconds):
+            yield
+    except (TimeoutError, RedisTimeoutError):
+        raise RedisTimeoutError(f"{failure} within {seconds:g} s") from None
 
 
 def check_redis_url(url: str) -> None:
@@ -97,8 +151,9 @@ class RedisBroadcastBackend(BroadcastBackend):
     async def connect(self) -> None:
         pool = ConnectionPool(**self._options)
         try:
-            connection = await pool.get_connection("PING")
-            await pool.release(connection)
+            async with _time_limit(CONNECT_TIMEOUT_SECONDS, "Redis did not connect"):
+                connection = await pool.get_connection("PING")
+                await pool.release(connection)
         except BaseException:
             await pool.disconnect()
             raise
@@ -127,13 +182,16 @@ class RedisBroadcastBackend(BroadcastBackend):
         nobody listens to."""
 
     async def publish(self, channel: str, message: Any) -> None:
-        await Redis(connection_pool=self._pool).publish(channel, message)
+        async with _time_limit(
+            PUBLISH_TIMEOUT_SECONDS, "Redis did not complete a PUBLISH"
+        ):
+            await Redis(connection_pool=self._pool).publish(channel, message)
 
     async def next_published(self) -> Optional[Event]:
         await self._subscribed.wait()
         while not self._lost:
             try:
-                message = await self._pubsub.get_message(timeout=None)
+                message = await self._next_message()
             except asyncio.CancelledError:
                 raise
             except Exception as error:
@@ -146,9 +204,31 @@ class RedisBroadcastBackend(BroadcastBackend):
                     return None
                 await self._subscribe_again()
                 continue
-            if message is not None and message["type"] == "message":
+            if message["type"] == "message":
                 return Event(channel=message["channel"], message=message["data"])
         return None
+
+    async def _next_message(self) -> Dict[str, Any]:
+        """The next message on the subscriber connection, PINGing Redis after
+        ``PING_INTERVAL_SECONDS`` of silence.
+
+        Raises:
+            redis.exceptions.TimeoutError: Redis did not answer the PING
+                within ``PING_TIMEOUT_SECONDS``.
+        """
+        message = await self._pubsub.get_message(timeout=PING_INTERVAL_SECONDS)
+        if message is not None:
+            return message
+        async with _time_limit(
+            PING_TIMEOUT_SECONDS, "Sending PING to Redis did not end"
+        ):
+            await self._pubsub.ping()
+        message = await self._pubsub.get_message(timeout=PING_TIMEOUT_SECONDS)
+        if message is None:
+            raise RedisTimeoutError(
+                f"Redis did not answer PING within {PING_TIMEOUT_SECONDS:g} s"
+            )
+        return message
 
     async def _open_subscription(self) -> PubSub:
         """Subscribe to the channel on a pooled connection and read Redis'
@@ -156,8 +236,11 @@ class RedisBroadcastBackend(BroadcastBackend):
         reason."""
         pubsub = PubSub(self._pool)
         try:
-            await pubsub.subscribe(self._channel)
-            await pubsub.get_message(timeout=None)
+            async with _time_limit(
+                CONNECT_TIMEOUT_SECONDS, "Redis did not confirm SUBSCRIBE"
+            ):
+                await pubsub.subscribe(self._channel)
+                await pubsub.get_message(timeout=None)
         except BaseException:
             await _close(pubsub)
             raise

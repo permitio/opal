@@ -3,7 +3,8 @@
 ``FakeRedis`` speaks enough RESP2 for what the backend sends (AUTH, SELECT,
 SUBSCRIBE, UNSUBSCRIBE, PUBLISH, PING), counts the connections it accepts and
 records every command, and can fail the ways a Redis does: refuse, accept then
-close or reset, drop every session, reject a password.
+close or reset, drop every session, reject a password, or leave a command
+unanswered.
 """
 import asyncio
 import socket
@@ -74,12 +75,14 @@ class FakeRedis:
     ``users`` maps a user name to its password (``"default"`` is the user a
     one-argument AUTH names); with no users every command is allowed.
     ``on_accept`` is ``"serve"``, ``"close"`` (close at once) or ``"reset"``
-    (close with an RST).
+    (close with an RST). Commands named in ``mute`` are recorded and never
+    answered.
     """
 
     def __init__(self, users: Optional[Dict[str, str]] = None):
         self.users = users or {}
         self.on_accept = "serve"
+        self.mute: set = set()
         self.accepts = 0
         self.sessions: List[_Session] = []
         self.closed_sessions: List[_Session] = []
@@ -94,6 +97,15 @@ class FakeRedis:
             for session in self.sessions + self.closed_sessions
             for command in session.commands
             if command[0].upper() == "SUBSCRIBE"
+        )
+
+    def count(self, name: str) -> int:
+        """How many commands called ``name`` Redis received."""
+        return sum(
+            1
+            for session in self.sessions + self.closed_sessions
+            for command in session.commands
+            if command[0].upper() == name
         )
 
     def url(self, userinfo: str = "") -> str:
@@ -157,6 +169,8 @@ class FakeRedis:
                 if command is None:
                     break
                 session.commands.append(command)
+                if command[0].upper() in self.mute:
+                    continue
                 writer.write(self._answer(session, command))
                 await writer.drain()
         except (ConnectionError, asyncio.IncompleteReadError):
@@ -230,6 +244,14 @@ class _Notifier:
 
     async def unsubscribe(self, *args, **kwargs):
         pass
+
+
+class _Subscription:
+    """What the broadcaster's sharing callback is handed for a local
+    publish."""
+
+    def __init__(self, topic: str):
+        self.topic = topic
 
 
 def _notification(data, topic="policy_data") -> str:
@@ -587,3 +609,129 @@ def test_a_postgres_server_logs_no_redis_line(monkeypatch):
     with capture_logs() as logs:
         PubSub(signer=object(), broadcaster_uri="postgres://opal@localhost/opal")
     assert "Redis" not in "".join(logs.text)
+
+
+@pytest.fixture
+def short_timeouts(monkeypatch):
+    """The backend's fixed timeouts, shortened so a test waits a fraction of a
+    second instead of 10 to 25."""
+    monkeypatch.setattr(broadcast_redis, "CONNECT_TIMEOUT_SECONDS", 0.3)
+    monkeypatch.setattr(broadcast_redis, "PUBLISH_TIMEOUT_SECONDS", 0.3)
+    monkeypatch.setattr(broadcast_redis, "PING_INTERVAL_SECONDS", 0.3)
+    monkeypatch.setattr(broadcast_redis, "PING_TIMEOUT_SECONDS", 0.2)
+
+
+@pytest.mark.asyncio
+async def test_a_redis_silent_at_auth_is_a_counted_attempt(short_timeouts):
+    gave_up = []
+    async with FakeRedis(users={"default": "secret"}) as fake:
+        fake.mute.add("AUTH")
+        broadcaster = _reconnecting(fake.url(":secret"), reconnect_max_retries=2)
+        broadcaster.set_give_up_callback(lambda: _record(gave_up))
+        with capture_logs() as logs:
+            task = await broadcaster.start_reader_task()
+            await asyncio.wait_for(task, 5)
+    assert gave_up == [True]
+    errors = [line for line in logs.text if "Broadcaster listener error" in line]
+    assert len(errors) == 2
+    assert all("did not connect" in line for line in errors)
+
+
+@pytest.mark.asyncio
+async def test_a_redis_silent_at_subscribe_is_a_counted_attempt(short_timeouts):
+    gave_up = []
+    async with FakeRedis() as fake:
+        fake.mute.add("SUBSCRIBE")
+        broadcaster = _reconnecting(fake.url(), reconnect_max_retries=2)
+        broadcaster.set_give_up_callback(lambda: _record(gave_up))
+        with capture_logs() as logs:
+            task = await broadcaster.start_reader_task()
+            await asyncio.wait_for(task, 5)
+    assert gave_up == [True]
+    errors = [line for line in logs.text if "Broadcaster listener error" in line]
+    assert len(errors) == 2
+    assert all("did not confirm SUBSCRIBE" in line for line in errors)
+
+
+@pytest.mark.asyncio
+async def test_a_quiet_healthy_subscription_is_kept_alive_by_ping(short_timeouts):
+    resyncs = []
+    async with FakeRedis() as fake:
+        broadcaster = _reconnecting(fake.url())
+        broadcaster.set_reconnect_callback(lambda: _record(resyncs))
+        async with broadcaster.get_listening_context():
+            await _wait_for(lambda: fake.subscribes == 1 and fake.sessions)
+            await asyncio.sleep(1.5)
+            pings = fake.count("PING")
+    assert pings >= 2
+    assert resyncs == []
+    assert fake.accepts == 1
+
+
+@pytest.mark.asyncio
+async def test_a_redis_that_goes_silent_mid_session_is_a_gap(short_timeouts):
+    """No answer to PING within the timeout is a lost connection: the
+    reader reconnects and resyncs, as after a dropped session."""
+    resyncs = []
+    async with FakeRedis() as fake:
+        broadcaster = _reconnecting(fake.url())
+        broadcaster.set_reconnect_callback(lambda: _record(resyncs))
+        async with broadcaster.get_listening_context():
+            await _wait_for(lambda: fake.subscribes == 1 and fake.sessions)
+            await _wait_for(lambda: fake.push("EventNotifier", _notification(1)))
+            fake.mute.add("PING")
+            started = asyncio.get_running_loop().time()
+            await _wait_for(lambda: fake.subscribes == 2)
+            lost_after = asyncio.get_running_loop().time() - started
+            fake.mute.discard("PING")
+            await _wait_for(lambda: resyncs == [True])
+    # interval (0.3) + PING timeout (0.2), and less than the 1 s it would
+    # take with no PING at all
+    assert lost_after < 1.0
+
+
+@pytest.mark.asyncio
+async def test_a_publish_that_never_completes_fails_into_the_replay_buffer(
+    short_timeouts, monkeypatch
+):
+    """The publish's own limit fails it, well before the connection's socket
+    timeouts would."""
+    monkeypatch.setattr(broadcast_redis, "CONNECT_TIMEOUT_SECONDS", 5.0)
+    async with FakeRedis() as fake:
+        broadcaster = _reconnecting(fake.url())
+        fake.mute.add("PUBLISH")
+        started = asyncio.get_running_loop().time()
+        with capture_logs() as logs:
+            await broadcaster.__broadcast_notifications__(
+                _Subscription("policy_data"), {"x": 1}
+            )
+        took = asyncio.get_running_loop().time() - started
+        assert list(broadcaster._outbound_buffer) == [("policy_data", {"x": 1})]
+    assert 0.3 <= took < 1.0
+    assert "buffered for replay" in "".join(logs.text)
+
+
+@pytest.mark.asyncio
+async def test_every_redis_connection_has_tcp_keepalive():
+    async with FakeRedis() as fake:
+        async with EndOnLossBroadcast(fake.url()) as broadcast:
+            async with broadcast.subscribe("EventNotifier"):
+                connection = broadcast._backend._pubsub.connection
+                sock = connection._writer.get_extra_info("socket")
+                assert sock.getsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE) != 0
+                idle = getattr(socket, "TCP_KEEPIDLE", None) or socket.TCP_KEEPALIVE
+                assert sock.getsockopt(socket.IPPROTO_TCP, idle) == 30
+                assert sock.getsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL) == 10
+                assert sock.getsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT) == 3
+
+
+def test_the_url_cannot_change_the_timeouts_or_the_keepalive():
+    options = connection_options(
+        "redis://localhost:6379?socket_timeout=600&socket_keepalive=no"
+        "&health_check_interval=1"
+    )
+    connection = ConnectionPool(**options).make_connection()
+    assert connection.socket_timeout == broadcast_redis.CONNECT_TIMEOUT_SECONDS
+    assert connection.socket_connect_timeout == broadcast_redis.CONNECT_TIMEOUT_SECONDS
+    assert connection.socket_keepalive is True
+    assert connection.health_check_interval == 0
