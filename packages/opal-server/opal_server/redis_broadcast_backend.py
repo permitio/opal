@@ -27,8 +27,9 @@ with its retries turned off, and turns a dropped connection into the
 connection, ``AUTH`` first, ``SUBSCRIBE`` after it, followed by the gap
 recovery. Nothing reconnects behind its back.
 
-The connection URL is read the same way the stock backend reads it (host, port
-and password), so an existing ``OPAL_BROADCAST_URI`` keeps its meaning.
+The connection URL is read the way the stock backend reads it (host, port and
+password), with one difference: a ``rediss://`` URL connects over TLS. The
+stock backend ignores the scheme and connects in plaintext.
 """
 import asyncio
 import socket
@@ -44,12 +45,20 @@ from redis.asyncio import Redis
 from redis.asyncio.retry import Retry
 from redis.backoff import NoBackoff
 
-REDIS_SCHEMES = ("redis", "rediss")
+TLS_SCHEME = "rediss"
+REDIS_SCHEMES = ("redis", TLS_SCHEME)
 
 # Give up on a connection attempt that gets no answer, so an unreachable host
 # costs one reconnect attempt instead of blocking the reader on the OS TCP
 # timeout.
 CONNECT_TIMEOUT_SECONDS = 10.0
+
+# Deadline for each step that waits for Redis to answer: opening and
+# authenticating a connection, a SUBSCRIBE up to its confirmation, a PUBLISH.
+# A Redis that accepts the TCP connection but never replies would otherwise
+# hold the step forever, and a reader stuck there still looks healthy. Reads on
+# an established subscription have no deadline: waiting there is normal.
+RESPONSE_TIMEOUT_SECONDS = 10.0
 
 # TCP keepalive on the Redis connections. A subscribed connection is idle by
 # nature; if the peer goes silent without closing the socket (node death,
@@ -86,12 +95,15 @@ class ResilientRedisBackend(BroadcastBackend):
 
     def __init__(self, url: str):
         parsed_url = urlparse(url)
+        self._use_tls = parsed_url.scheme == TLS_SCHEME
         self._host = parsed_url.hostname or "localhost"
         self._port = parsed_url.port or 6379
         self._password = parsed_url.password or None
         self._client: Optional[Redis] = None
         self._pubsub: Any = None
         self._channels: Set[str] = set()
+        # channel -> set once Redis has confirmed the SUBSCRIBE
+        self._confirmations: Dict[str, asyncio.Event] = {}
         self._reader_task: Optional[asyncio.Task] = None
         self._connection_lost = False
         self._queue: asyncio.Queue = asyncio.Queue()
@@ -99,11 +111,27 @@ class ResilientRedisBackend(BroadcastBackend):
     async def connect(self) -> None:
         self._queue = asyncio.Queue()
         self._channels = set()
+        self._confirmations = {}
         self._connection_lost = False
-        self._client = Redis(
+        self._client = self._new_client()
+        try:
+            # Connect and authenticate now, so a backbone that is down (or a
+            # wrong password) fails this connect() instead of a later command.
+            await asyncio.wait_for(
+                self._open_connection(self._client), RESPONSE_TIMEOUT_SECONDS
+            )
+        except BaseException:
+            await self._close_client()
+            raise
+
+    def _new_client(self) -> Redis:
+        return Redis(
             host=self._host,
             port=self._port,
             password=self._password,
+            # rediss:// means TLS, with redis-py's defaults: the server
+            # certificate is verified against the system trust store.
+            ssl=self._use_tls,
             decode_responses=True,
             socket_connect_timeout=CONNECT_TIMEOUT_SECONDS,
             socket_keepalive=True,
@@ -113,13 +141,21 @@ class ResilientRedisBackend(BroadcastBackend):
             retry=Retry(NoBackoff(), 0),
             retry_on_timeout=False,
         )
-        try:
-            # Connects and authenticates now, so a backbone that is down (or a
-            # wrong password) fails this connect() instead of a later command.
-            await self._client.ping()
-        except BaseException:
-            await self._close_client()
-            raise
+
+    @staticmethod
+    async def _open_connection(client: Redis) -> None:
+        """Open one pooled connection, which also authenticates it, and hand it
+        back to the pool for the first command to use.
+
+        No command is sent, so nothing beyond what broadcasting itself
+        needs (AUTH, PUBLISH, SUBSCRIBE, UNSUBSCRIBE) has to be
+        permitted to this Redis user.
+        """
+        pool = client.connection_pool
+        # The pool wants the name of the command the connection is for; it only
+        # matters to cluster pools.
+        connection = await pool.get_connection("PUBLISH")
+        await pool.release(connection)
 
     async def disconnect(self) -> None:
         reader_task, self._reader_task = self._reader_task, None
@@ -132,15 +168,36 @@ class ResilientRedisBackend(BroadcastBackend):
             with suppress(Exception):
                 await pubsub.reset()
         self._channels = set()
+        self._confirmations = {}
         await self._close_client()
 
     async def subscribe(self, channel: str) -> None:
+        """Subscribe, and return once Redis has confirmed the subscription.
+
+        Waiting for the confirmation is what proves the listener is
+        live: without a password nothing else in the setup needs an
+        answer from Redis.
+        """
         if self._pubsub is None:
-            self._pubsub = self._client.pubsub(ignore_subscribe_messages=True)
+            self._pubsub = self._client.pubsub()
+        await asyncio.wait_for(
+            self._subscribe_and_confirm(channel), RESPONSE_TIMEOUT_SECONDS
+        )
+
+    async def _subscribe_and_confirm(self, channel: str) -> None:
+        confirmed = asyncio.Event()
+        self._confirmations[channel] = confirmed
         await self._pubsub.subscribe(channel)
         self._channels.add(channel)
         if self._reader_task is None or self._reader_task.done():
             self._reader_task = asyncio.create_task(self._read_messages(self._pubsub))
+        # The confirmation arrives on the subscription's connection, which
+        # _read_messages() reads.
+        await confirmed.wait()
+        if self._connection_lost:
+            raise ConnectionError(
+                "Lost the Redis connection before the subscription was confirmed"
+            )
 
     async def unsubscribe(self, channel: str) -> None:
         self._channels.discard(channel)
@@ -155,7 +212,9 @@ class ResilientRedisBackend(BroadcastBackend):
             pass
 
     async def publish(self, channel: str, message: Any) -> None:
-        await self._client.publish(channel, message)
+        await asyncio.wait_for(
+            self._client.publish(channel, message), RESPONSE_TIMEOUT_SECONDS
+        )
 
     async def next_published(self) -> Optional[Event]:
         return await self._queue.get()
@@ -169,10 +228,15 @@ class ResilientRedisBackend(BroadcastBackend):
         """
         try:
             async for message in pubsub.listen():
-                if message.get("type") == "message":
+                kind = message.get("type")
+                if kind == "message":
                     await self._queue.put(
                         Event(channel=message["channel"], message=message["data"])
                     )
+                elif kind == "subscribe":
+                    confirmed = self._confirmations.pop(message["channel"], None)
+                    if confirmed is not None:
+                        confirmed.set()
         except asyncio.CancelledError:
             raise
         except Exception as error:
@@ -180,6 +244,10 @@ class ResilientRedisBackend(BroadcastBackend):
             logger.warning(
                 "Lost the Redis broadcast connection: {error!r}", error=error
             )
+            # Release a subscribe() that is still waiting for its confirmation.
+            for confirmed in self._confirmations.values():
+                confirmed.set()
+            self._confirmations = {}
         if self._connection_lost and self._channels:
             await self._queue.put(None)
 

@@ -11,6 +11,7 @@ and must know that there was a gap. The last two tests are negative
 controls: the stock backend, on the same restart, does neither.
 """
 import asyncio
+import ssl
 from contextlib import suppress
 
 import pytest
@@ -20,6 +21,7 @@ from broadcaster._backends.postgres import PostgresBackend
 from fastapi_websocket_pubsub import EventBroadcaster
 from fastapi_websocket_pubsub.event_broadcaster import BroadcastNotification
 from fastapi_websocket_pubsub.util import pydantic_serialize
+from opal_server import redis_broadcast_backend as backend_module
 from opal_server.config import opal_server_config
 from opal_server.pubsub_resilience import ReconnectingBroadcaster
 from opal_server.redis_broadcast_backend import (
@@ -28,6 +30,7 @@ from opal_server.redis_broadcast_backend import (
     tcp_keepalive_options,
 )
 from opal_server.server import OpalServer
+from redis.asyncio.connection import Connection, SSLConnection
 from redis.exceptions import RedisError
 
 CHANNEL = "EventNotifier"
@@ -49,8 +52,12 @@ def _array(*items) -> bytes:
 class FakeRedisServer:
     """A restartable, single-process stand-in for a Redis server."""
 
-    def __init__(self, password=None):
+    def __init__(self, password=None, tls=None, denied=()):
         self.password = password
+        self.tls = tls  # an ssl.SSLContext to serve TLS, as rediss:// expects
+        self.denied = set(denied)  # commands refused with NOPERM, as an ACL does
+        self.stalled = False  # True: keep reading commands, answer none
+        self.commands = []  # the name of every command received
         self.port = None
         self.connections_accepted = 0
         self._server = None
@@ -59,8 +66,9 @@ class FakeRedisServer:
 
     @property
     def url(self) -> str:
+        scheme = "rediss" if self.tls else "redis"
         auth = f":{self.password}@" if self.password else ""
-        return f"redis://{auth}127.0.0.1:{self.port}"
+        return f"{scheme}://{auth}127.0.0.1:{self.port}"
 
     def channels(self) -> set:
         """The channels with at least one subscriber (``PUBSUB CHANNELS``)."""
@@ -69,7 +77,7 @@ class FakeRedisServer:
     async def start(self):
         # The first start picks a free port; a restart binds the same one.
         self._server = await asyncio.start_server(
-            self._serve, "127.0.0.1", self.port or 0
+            self._serve, "127.0.0.1", self.port or 0, ssl=self.tls
         )
         self.port = self._server.sockets[0].getsockname()[1]
 
@@ -111,6 +119,9 @@ class FakeRedisServer:
                 if not args:
                     break
                 command = args[0].upper()
+                self.commands.append(command)
+                if self.stalled:
+                    continue
                 if command == "AUTH":
                     if args[-1] == self.password:
                         authenticated = True
@@ -119,6 +130,8 @@ class FakeRedisServer:
                         writer.write(b"-WRONGPASS invalid username-password pair\r\n")
                 elif not authenticated:
                     writer.write(b"-NOAUTH Authentication required.\r\n")
+                elif command in self.denied:
+                    writer.write(b"-NOPERM this user has no permissions\r\n")
                 elif command == "PING":
                     writer.write(b"+PONG\r\n")
                 elif command == "SUBSCRIBE":
@@ -158,6 +171,15 @@ class RecordingNotifier:
         self.notified.append((list(topics), data))
 
 
+def _caused_by(error, kind) -> bool:
+    """Whether ``error``, or an error it was raised from, is a ``kind``."""
+    while error is not None:
+        if isinstance(error, kind):
+            return True
+        error = error.__cause__ or error.__context__
+    return False
+
+
 async def _wait_for(condition, timeout=5.0):
     """Wait until ``condition()`` is true; fail the test if it never is."""
     deadline = asyncio.get_running_loop().time() + timeout
@@ -168,10 +190,17 @@ async def _wait_for(condition, timeout=5.0):
         await asyncio.sleep(0.01)
 
 
-async def _start_server(password=None) -> FakeRedisServer:
-    server = FakeRedisServer(password=password)
+async def _start_server(**options) -> FakeRedisServer:
+    server = FakeRedisServer(**options)
     await server.start()
     return server
+
+
+@pytest.fixture
+def short_deadline(monkeypatch):
+    """Shorten the wait for an answer from Redis, so a test of a Redis that
+    never answers takes a fraction of a second."""
+    monkeypatch.setattr(backend_module, "RESPONSE_TIMEOUT_SECONDS", 0.2)
 
 
 @pytest_asyncio.fixture
@@ -188,12 +217,13 @@ async def redis_server_with_password():
     await server.stop()
 
 
-def _reconnecting_broadcaster(url, notifier, broadcast_type):
+def _reconnecting_broadcaster(url, notifier, broadcast_type, max_retries=0):
     return ReconnectingBroadcaster(
         url,
         notifier=notifier,
         channel=CHANNEL,
         broadcast_type=broadcast_type,
+        reconnect_max_retries=max_retries,
         reconnect_backoff_min=0.01,
         reconnect_backoff_max=0.05,
         resync_settle_seconds=0,
@@ -290,6 +320,161 @@ def test_keepalive_options_are_ones_this_platform_defines():
     assert options, "expected at least one TCP keepalive option"
     assert all(isinstance(option, int) for option in options)
     assert all(value > 0 for value in options.values())
+
+
+# --- setup needs nothing beyond what broadcasting needs -------------------------
+
+
+@pytest.mark.asyncio
+async def test_works_for_a_user_that_may_not_ping():
+    # An ACL can allow PUBLISH and SUBSCRIBE and nothing else; the stock backend
+    # sends no other command, so this one must not either.
+    server = await _start_server(password=PASSWORD, denied=["PING"])
+    listener = ResilientRedisBackend(server.url)
+    publisher = ResilientRedisBackend(server.url)
+    try:
+        await listener.connect()
+        await publisher.connect()
+        await listener.subscribe(CHANNEL)
+        await publisher.publish(CHANNEL, "hello")
+        event = await asyncio.wait_for(listener.next_published(), timeout=5)
+        assert event.message == "hello"
+        assert set(server.commands) == {"AUTH", "SUBSCRIBE", "PUBLISH"}
+    finally:
+        await listener.disconnect()
+        await publisher.disconnect()
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_subscribe_returns_once_redis_confirmed_it(redis_server):
+    backend = ResilientRedisBackend(redis_server.url)
+    await backend.connect()
+    try:
+        await backend.subscribe(CHANNEL)
+        # No waiting: the subscription exists by the time subscribe() returns.
+        assert CHANNEL in redis_server.channels()
+    finally:
+        await backend.disconnect()
+
+
+# --- a Redis that accepts the connection and never answers ---------------------
+
+
+@pytest.mark.asyncio
+async def test_connect_gives_up_when_authentication_gets_no_answer(
+    redis_server_with_password, short_deadline
+):
+    redis_server_with_password.stalled = True
+    backend = ResilientRedisBackend(redis_server_with_password.url)
+    with pytest.raises(asyncio.TimeoutError):
+        await backend.connect()
+    assert backend._client is None
+
+
+@pytest.mark.asyncio
+async def test_subscribe_gives_up_when_it_is_never_confirmed(
+    redis_server, short_deadline
+):
+    # Without a password nothing in connect() needs an answer, so it is the
+    # missing confirmation of the SUBSCRIBE that exposes a Redis that is not
+    # answering.
+    redis_server.stalled = True
+    backend = ResilientRedisBackend(redis_server.url)
+    await backend.connect()
+    try:
+        with pytest.raises(asyncio.TimeoutError):
+            await backend.subscribe(CHANNEL)
+    finally:
+        await backend.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_publish_gives_up_when_it_gets_no_answer(redis_server, short_deadline):
+    backend = ResilientRedisBackend(redis_server.url)
+    await backend.connect()
+    try:
+        redis_server.stalled = True
+        with pytest.raises(asyncio.TimeoutError):
+            await backend.publish(CHANNEL, "hello")
+    finally:
+        await backend.disconnect()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("password", [PASSWORD, None], ids=["password", "no-password"])
+async def test_reader_spends_its_retry_budget_on_a_redis_that_never_answers(
+    password, short_deadline
+):
+    # Each attempt has to fail in bounded time: only then does the reconnect
+    # loop count attempts, give up after its maximum, and stop looking healthy.
+    server = await _start_server(password=password)
+    server.stalled = True
+    broadcaster = _reconnecting_broadcaster(
+        server.url, RecordingNotifier(), ResilientBroadcast, max_retries=2
+    )
+    try:
+        async with broadcaster.get_listening_context():
+            await asyncio.wait_for(broadcaster.get_reader_task(), timeout=5)
+            assert not broadcaster.is_reader_healthy()
+    finally:
+        await server.stop()
+
+
+# --- TLS for rediss:// ---------------------------------------------------------
+
+
+def test_only_rediss_urls_use_tls():
+    tls = ResilientRedisBackend("rediss://:secret@redis.example")._new_client()
+    plain = ResilientRedisBackend("redis://:secret@redis.example")._new_client()
+    assert tls.connection_pool.connection_class is SSLConnection
+    # redis-py's default: the server certificate has to verify.
+    assert tls.connection_pool.connection_kwargs["ssl_cert_reqs"] == "required"
+    assert plain.connection_pool.connection_class is Connection
+
+
+@pytest.mark.asyncio
+async def test_rediss_url_talks_tls_end_to_end(tls_cert, monkeypatch):
+    # Trust the test certificate the way a deployment trusts a private CA.
+    monkeypatch.setenv("SSL_CERT_FILE", str(tls_cert.path))
+    server = await _start_server(password=PASSWORD, tls=tls_cert.context)
+    listener = ResilientRedisBackend(server.url)
+    publisher = ResilientRedisBackend(server.url)
+    try:
+        await listener.connect()
+        await publisher.connect()
+        await listener.subscribe(CHANNEL)
+        await publisher.publish(CHANNEL, "over tls")
+        event = await asyncio.wait_for(listener.next_published(), timeout=5)
+        assert event.message == "over tls"
+    finally:
+        await listener.disconnect()
+        await publisher.disconnect()
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_rediss_url_rejects_a_certificate_it_does_not_trust(tls_cert):
+    server = await _start_server(password=PASSWORD, tls=tls_cert.context)
+    backend = ResilientRedisBackend(server.url)
+    try:
+        with pytest.raises((RedisError, OSError)) as raised:
+            await backend.connect()
+        assert _caused_by(raised.value, ssl.SSLCertVerificationError)
+        # Nothing was sent to a server that could not prove who it is.
+        assert server.commands == []
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_rediss_url_does_not_fall_back_to_plaintext(redis_server_with_password):
+    # The stock backend ignores the scheme and would send AUTH in the clear here.
+    url = redis_server_with_password.url.replace("redis://", "rediss://")
+    backend = ResilientRedisBackend(url)
+    with pytest.raises((RedisError, OSError)):
+        await backend.connect()
+    assert "AUTH" not in redis_server_with_password.commands
 
 
 # --- which backend a URL gets --------------------------------------------------
