@@ -397,6 +397,10 @@ jobs:
     environment: docker-hub
     permissions:
       id-token: write  # the GitHub ID token Docker Hub exchanges for the short-lived token
+    # Never at the same time as the weekly rebuild's copy of the same repository.
+    concurrency:
+      group: docker-hub-${{ matrix.repository }}
+      cancel-in-progress: false
     strategy:
       fail-fast: false
       matrix:

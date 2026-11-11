@@ -55,6 +55,7 @@ WRITE_PERMISSIONS = {
     ("on_release.yml", "release-assets", "contents"),
     ("on_release.yml", "publish-packages", "id-token"),
     ("on_release.yml", "publish-images", "id-token"),
+    ("rebuild_images.yml", "publish", "id-token"),
 }
 
 SHA_PIN = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
@@ -756,15 +757,16 @@ def test_only_the_image_publish_job_logs_in_to_docker_hub_and_through_oidc():
         if step.get("uses", "").startswith("docker/login-action@")
     ]
 
-    assert [(name, job_id) for name, job_id, _ in logins] == [
-        ("on_release.yml", "publish-images")
-    ]
-    (_, _, login) = logins[0]
-    assert "password" not in login["with"]
-    assert login["with"]["username"] == "${{ vars.DOCKERHUB_ORGANIZATION }}"
-    assert login["env"]["DOCKERHUB_OIDC_CONNECTIONID"] == (
-        "${{ vars.DOCKERHUB_OIDC_CONNECTIONID }}"
-    )
+    assert {(name, job_id) for name, job_id, _ in logins} == {
+        ("on_release.yml", "publish-images"),
+        ("rebuild_images.yml", "publish"),
+    }
+    for _, _, login in logins:
+        assert "password" not in login["with"]
+        assert login["with"]["username"] == "${{ vars.DOCKERHUB_ORGANIZATION }}"
+        assert login["env"]["DOCKERHUB_OIDC_CONNECTIONID"] == (
+            "${{ vars.DOCKERHUB_OIDC_CONNECTIONID }}"
+        )
 
 
 # The jobs that post a failure to Slack, per workflow: the condition they run on. Each runs
@@ -780,6 +782,10 @@ NOTIFY_CONDITIONS = {
     ),
     "on_release.yml": (
         "always() && github.event_name == 'release'"
+        " && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))"
+    ),
+    "rebuild_images.yml": (
+        "always() && !inputs.dry-run"
         " && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))"
     ),
 }
@@ -824,3 +830,95 @@ def test_codeowners_cover_the_repository_and_hold_github_tighter():
         assert owners[pattern], pattern
         assert "@permitio/r-d" not in owners[pattern], pattern
     assert all(owner.startswith("@") for _, found in rules for owner in found)
+
+
+class TestRebuild:
+    """rebuild_images.yml: the latest GA release's images with their Wolfi
+    packages upgraded, through the release's build, gate, publish and verify
+    path."""
+
+    @pytest.fixture
+    def workflow(self):
+        return load(WORKFLOWS / "rebuild_images.yml")
+
+    @pytest.fixture
+    def jobs(self, workflow):
+        return workflow["jobs"]
+
+    def test_runs_weekly_and_by_hand(self, workflow):
+        triggers = workflow[True]
+
+        assert set(triggers) == {"schedule", "workflow_dispatch"}
+        assert set(triggers["workflow_dispatch"]["inputs"]) == {"tag", "dry-run"}
+
+    def test_builds_an_overlay_of_the_release_image_with_attestations(self, jobs):
+        (build,) = [
+            step
+            for step in steps_of(jobs["build"])
+            if step.get("uses", "").startswith("docker/build-push-action@")
+        ]
+
+        assert build["with"]["file"] == ".github/rebuild/Dockerfile"
+        assert build["with"]["target"] == "rebuild"
+        assert build["with"]["no-cache"] is True
+        assert build["with"]["provenance"] == "mode=max"
+        assert build["with"]["sbom"] is True
+        legs = jobs["build"]["strategy"]["matrix"]["include"]
+        assert {leg["repository"] for leg in legs} == {
+            repository for repository, _ in RELEASE_IMAGES
+        }
+
+    def test_every_image_of_both_platforms_passes_the_gate_before_any_is_published(
+        self, jobs
+    ):
+        (gate,) = image_gate_runs(jobs["test"])
+        names = gate.split()
+
+        for repository, _ in RELEASE_IMAGES:
+            assert f"{repository}:test" in names
+            assert f"{repository}:test-arm64" in names
+        report_only = [
+            names[i + 1] for i, word in enumerate(names) if word == "--report-only"
+        ]
+        assert report_only == [
+            "permitio/opal-client-eopa:test",
+            "permitio/opal-client-eopa:test-arm64",
+        ]
+        assert "test" in jobs["publish"]["needs"]
+
+    def test_publishes_like_the_release_never_at_the_same_time(self, jobs):
+        release = load(WORKFLOWS / "on_release.yml")["jobs"]["publish-images"]
+        publish = jobs["publish"]
+
+        assert publish["if"] == "${{ !inputs.dry-run }}"
+        assert environment_name(publish) == "docker-hub"
+        assert publish["concurrency"] == release["concurrency"]
+        assert publish["concurrency"]["cancel-in-progress"] is False
+        runs = "\n".join(step.get("run", "") for step in steps_of(publish))
+        assert 'for tag in "$TAG-$DATE" "$TAG" latest; do' in runs
+        assert "skopeo copy --all --preserve-digests" in runs
+
+    def test_verifies_what_it_published(self, jobs):
+        runs = "\n".join(step.get("run", "") for step in steps_of(jobs["verify"]))
+
+        assert "publish" in jobs["verify"]["needs"]
+        assert 'verify_release.py image "permitio/opal-$name@sha256:$digest"' in runs
+        assert "--target rebuild" in runs
+        (upload,) = [
+            step
+            for step in steps_of(jobs["publish"])
+            if step.get("uses", "").startswith("actions/upload-artifact@")
+        ]
+        assert upload["with"]["name"] == "digest-${{ matrix.name }}"
+
+
+def test_the_overlay_keeps_the_release_and_labels_it():
+    dockerfile = (WORKFLOWS.parent / "rebuild" / "Dockerfile").read_text()
+
+    assert "FROM ${RELEASE_IMAGE} AS rebuild" in dockerfile
+    assert (
+        "RUN sed -i -E 's/[<>~=].*//' /etc/apk/world && apk upgrade --no-cache && \\\n"
+        "  python /opal/check_trust_store.py\n"
+    ) in dockerfile
+    assert 'LABEL ac.opal.rebuilt-from="${RELEASE_IMAGE}"' in dockerfile
+    assert dockerfile.rstrip().endswith("USER opal")
