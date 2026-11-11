@@ -3065,7 +3065,7 @@ def test_no_sweep_while_git_outlives_its_sigkill(tmp_path, monkeypatch):
     )
     real_stop = git_fetcher._stop_repack
 
-    def _stuck(proc, grace):
+    def _stuck(proc, grace, what):
         real_stop(proc, 0.0)  # really stop it, then report git repack stuck
         return "repack" not in proc.args
 
@@ -5009,7 +5009,7 @@ def test_a_repack_whose_git_outlives_its_stop_stays_recorded(
         refs_steps=True,
     )
 
-    def _stop_that_cannot_tell(proc, grace):
+    def _stop_that_cannot_tell(proc, grace, what):
         """Git is gone, but as a stop that timed out waiting reports it."""
         os.killpg(proc.pid, signal.SIGKILL)
         proc.wait()

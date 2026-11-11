@@ -2073,9 +2073,12 @@ def _signal_repack_group(proc: subprocess.Popen[bytes], sig: int) -> None:
         )
 
 
-def _stop_repack(proc: subprocess.Popen[bytes], grace: float) -> bool:
+def _stop_repack(
+    proc: subprocess.Popen[bytes], grace: float, what: str = "git of a scope repack"
+) -> bool:
     """SIGTERM git's process group, then SIGKILL it if still running after
-    ``grace`` seconds (``grace`` <= 0 kills at once).
+    ``grace`` seconds (``grace`` <= 0 kills at once). ``what`` names the git in
+    the INFO line of the stop.
 
     Waits with communicate(), not wait(): it drains stderr (a child
     blocked writing to a full pipe could not exit) and returns only once
@@ -2092,6 +2095,11 @@ def _stop_repack(proc: subprocess.Popen[bytes], grace: float) -> bool:
         _signal_repack_group(proc, signal.SIGTERM)
         try:
             proc.communicate(timeout=grace)
+            logger.info(
+                "Stopped {what} (pid {pid}): SIGTERM was enough",
+                what=what,
+                pid=proc.pid,
+            )
             return True
         except subprocess.TimeoutExpired:
             logger.warning(
@@ -2110,6 +2118,7 @@ def _stop_repack(proc: subprocess.Popen[bytes], grace: float) -> bool:
         if time.monotonic() >= deadline:
             return _outlived_sigkill(proc)
         time.sleep(_REPACK_GROUP_POLL_SECONDS)
+    logger.info("Stopped {what} (pid {pid}) with SIGKILL", what=what, pid=proc.pid)
     return True
 
 
@@ -2472,7 +2481,7 @@ class _RepackStep:
         try:
             _, stderr = proc.communicate(timeout=max(0.0, deadline - time.monotonic()))
         except subprocess.TimeoutExpired:
-            self._stop(proc, self.term_grace, after_stop)
+            self._stop(proc, self.term_grace, after_stop, what)
             if refs_step and self.refs_timeout < self.timeout:
                 limit = (
                     f"the ref steps' {self.refs_timeout:g}s of the repack's "
@@ -2482,7 +2491,7 @@ class _RepackStep:
                 limit = f"the repack's {self.timeout:g}s timeout"
             raise TimeoutError(f"{limit} ran out during {what}") from None
         except BaseException:
-            self._stop(proc, 0.0, after_stop)
+            self._stop(proc, 0.0, after_stop, what)
             raise
         return proc.returncode, stderr
 
@@ -2491,8 +2500,9 @@ class _RepackStep:
         proc: subprocess.Popen[bytes],
         grace: float,
         after_stop: Callable[[], None],
+        what: str,
     ) -> None:
-        if _stop_repack(proc, grace):
+        if _stop_repack(proc, grace, what):
             after_stop()
         else:
             self.outlived = True
@@ -4316,7 +4326,16 @@ class GitPolicyFetcher(PolicyFetcher):
                             # records each branch it asked for, once it reached
                             # the remote (_record_fetch). Taken with the batch,
                             # with no await between.
+                            joined = _syncs_in_batch(self._source_id)
                             requested, taken = self._take_batch()
+                            if pass_started is not None or fresh_within is not None:
+                                _log_rollout_fetch(
+                                    self,
+                                    requested,
+                                    taken,
+                                    joined=joined,
+                                    cold_start=pass_started is None,
+                                )
                             fetch_started = datetime.datetime.now()
                             outcome = _FetchOutcome.NOT_REACHED
                             try:
@@ -6264,3 +6283,62 @@ class GitCallback(RemoteCallbacks):
             return UserPass(username="git", password=auth.token)
 
         return Username(username_from_url)
+
+
+def _syncs_in_batch(source_id: str) -> int:
+    """How many syncs wait in the clone's batch (pending_branches), for the
+    line of the fetch that takes it."""
+    return sum(GitPolicyFetcher.pending_branches.get(source_id, {}).values())
+
+
+def _fetch_asks(
+    fetcher: GitPolicyFetcher,
+    requested: Optional[FrozenSet[str]],
+    taken: FrozenSet[str],
+) -> str:
+    """Which branches a fetch asks for, as its rollout line says it: how many
+    by name, or every branch and why."""
+    if requested is not None:
+        return f"{len(requested)} branches by name"
+    if not git_cli_enabled():
+        return "every branch (libgit2)"
+    most = opal_server_config.SCOPES_GIT_CLI_NARROW_FETCH_MAX_BRANCHES
+    if most <= 0:
+        return "every branch (OPAL_SCOPES_GIT_CLI_NARROW_FETCH_MAX_BRANCHES=0)"
+    names = set(taken) | {fetcher.branch}
+    sync_pass = _running_sync_pass()
+    if sync_pass is not None:
+        names |= set(sync_pass.tracked_branches.get(fetcher.clone_source_id, ()))
+    branches = [name for name in names if _can_be_a_branch(name, fetcher._remote)]
+    if not branches:
+        return "every branch (no tracked branch can be a ref)"
+    return (
+        f"every branch ({len(branches)} tracked, "
+        f"OPAL_SCOPES_GIT_CLI_NARROW_FETCH_MAX_BRANCHES={most})"
+    )
+
+
+def _log_rollout_fetch(
+    fetcher: GitPolicyFetcher,
+    requested: Optional[FrozenSet[str]],
+    taken: FrozenSet[str],
+    *,
+    joined: int,
+    cold_start: bool,
+) -> None:
+    """One INFO line per fetch a sync pass makes, and per fetch the sync of a
+    client with no policy makes (lines for the 0.10 rollout, see the monitoring
+    docs): the source, which branches the fetch asks for, and how many syncs of
+    the clone's batch it fetches for."""
+    logger.info(
+        (
+            "Cold-start fetching {url} ({source_id}) for a client with no policy"
+            if cold_start
+            else "Sync pass fetching {url} ({source_id})"
+        )
+        + ": {asked}, with {joined} syncs from the clone's batch",
+        url=redact_url(fetcher._source.url),
+        source_id=fetcher.clone_source_id,
+        asked=_fetch_asks(fetcher, requested, taken),
+        joined=joined,
+    )

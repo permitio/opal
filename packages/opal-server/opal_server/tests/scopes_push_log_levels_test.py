@@ -225,7 +225,8 @@ async def test_sync_scopes_push_logs_the_pass_line_and_one_info_line(
     tmp_path, clear_fetcher_caches, only_poll_updates
 ):
     """Refresh-all and the periodic poll go through sync_scopes: one per-pass
-    INFO line, then one "Triggering policy update" per pushed scope."""
+    INFO line, the pass's fetch of the clone (a line kept for the 0.10
+    rollout), then one "Triggering policy update" per pushed scope."""
     remote = git.Repo.init(tmp_path / "remote", initial_branch="main")
     _commit(remote, "policy/a.rego", "package a\n")
     source = _source(url=str(tmp_path / "remote"), poll_updates=True)
@@ -243,8 +244,9 @@ async def test_sync_scopes_push_logs_the_pass_line_and_one_info_line(
         await service.sync_scopes(only_poll_updates=only_poll_updates)
 
     assert len(pubsub.published) == 2
-    [pass_line, info] = _opal_records(logs.emitted, "INFO")
+    [pass_line, fetch, info] = _opal_records(logs.emitted, "INFO")
     assert pass_line["message"].startswith("OPAL Scopes: syncing 1 scopes")
+    assert fetch["message"].startswith("Sync pass fetching ")
     assert info["message"].startswith(f"Triggering policy update for scope {SCOPE_ID}")
     assert _opal_records(logs.emitted, "WARNING") == []
     assert _opal_records(logs.emitted, "ERROR") == []

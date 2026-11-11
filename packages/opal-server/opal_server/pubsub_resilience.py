@@ -38,6 +38,7 @@ stop-gap until the fixes land in the upstream libraries (see Phase 2 of the plan
 """
 import asyncio
 import random
+import time
 from collections import deque
 from typing import Awaitable, Callable, List, Optional
 
@@ -176,6 +177,14 @@ class ReconnectingBroadcaster(EventBroadcaster):
         # from the start), where freezing would be wrong: no resync fires on a FIRST
         # connect, so anything frozen before it would be lost, not deferred.
         self._had_backbone_connection = False
+        # For the INFO lines of a gap (lines for the 0.10 rollout, see the
+        # monitoring docs): when the subscription was last lost, how long the
+        # last gap lasted, and how many buffered broadcasts the full replay
+        # buffer dropped since its last replay.
+        self._gap_started_at: Optional[float] = None
+        self._last_gap_seconds: Optional[float] = None
+        self._replay_overflowed = 0
+        self._replay_full_logged = False
 
     def set_reconnect_callback(self, callback: Optional[ReconnectCallback]):
         """Register an ``async () -> None`` callback fired once after each gap
@@ -335,6 +344,9 @@ class ReconnectingBroadcaster(EventBroadcaster):
             # on reconnect still reconciles clients, so the drop only widens the window.
             overflow = len(self._outbound_buffer) >= self._replay_buffer_size
             self._outbound_buffer.append((topic, data))
+            if overflow:
+                self._note_full_buffer()
+                self._replay_overflowed += 1
             logger.warning(
                 f"Broadcast to backbone failed ({error!r}); buffered for replay "
                 f"({len(self._outbound_buffer)}/{self._replay_buffer_size}"
@@ -370,6 +382,7 @@ class ReconnectingBroadcaster(EventBroadcaster):
                     # We are subscribed again; recover concurrently so we keep reading
                     # (and can receive peers' replays) during the settle window.
                     if had_prior_connection:
+                        self._log_reconnect(attempt)
                         self._schedule_gap_recovery()
                     had_prior_connection = True
                     # A connect that ends without sustaining (no read) is a flap, not a
@@ -414,9 +427,25 @@ class ReconnectingBroadcaster(EventBroadcaster):
                 # episodes never span two gaps.
                 if self._backbone_connected:
                     self._gap_generation += 1
+                    self._gap_started_at = time.monotonic()
                 self._backbone_connected = False
                 await self._safe_disconnect_channel()
             await asyncio.sleep(self._backoff_seconds(attempt))
+
+    def _log_reconnect(self, attempt: int) -> None:
+        """The INFO line of a reconnect after a gap: the failed attempts and
+        how long the backbone subscription was lost."""
+        gap = None
+        if self._gap_started_at is not None:
+            gap = time.monotonic() - self._gap_started_at
+        self._last_gap_seconds = gap
+        logger.info(
+            "Broadcaster listener subscribed to channel {channel!r} again after "
+            "{gap} without a subscription and {attempts} failed attempts",
+            channel=self._channel,
+            gap="an unknown time" if gap is None else f"{gap:.1f}s",
+            attempts=attempt,
+        )
 
     def _gave_up(self, attempt: int) -> bool:
         """Return whether ``reconnect_max_retries`` is exhausted (0 = retry
@@ -502,8 +531,12 @@ class ReconnectingBroadcaster(EventBroadcaster):
                 return
             pending = list(self._outbound_buffer)
             self._outbound_buffer.clear()
+            overflowed, self._replay_overflowed = self._replay_overflowed, 0
+            self._replay_full_logged = False
         logger.info(f"Replaying {len(pending)} buffered broadcast(s) after recovery")
         unsent = list(pending)
+        unserializable = 0
+        no_room = 0
         try:
             async with self._broadcast_type(self._broadcast_url) as channel:
                 while unsent:
@@ -520,6 +553,7 @@ class ReconnectingBroadcaster(EventBroadcaster):
                             f"topic '{topic}': {e!r}"
                         )
                         unsent.pop(0)
+                        unserializable += 1
                         continue
                     await channel.publish(self._channel, payload)
                     unsent.pop(0)
@@ -531,23 +565,56 @@ class ReconnectingBroadcaster(EventBroadcaster):
                 f"on next recovery): {e!r}"
             )
             if unsent:
-                await self._requeue_unsent(unsent)
+                no_room = await self._requeue_unsent(unsent)
+        gap = self._last_gap_seconds
+        logger.info(
+            "Replayed {replayed} of {buffered} buffered broadcasts after a backbone "
+            "gap of {gap}: {failed} failed (kept for the next recovery), {dropped} "
+            "dropped ({overflowed} by the full buffer, {no_room} failed with no "
+            "room left to keep them, {unserializable} not serializable)",
+            replayed=len(pending) - unserializable - len(unsent),
+            buffered=len(pending),
+            gap="an unknown time" if gap is None else f"{gap:.1f}s",
+            failed=len(unsent) - no_room,
+            dropped=overflowed + no_room + unserializable,
+            overflowed=overflowed,
+            no_room=no_room,
+            unserializable=unserializable,
+        )
 
-    async def _requeue_unsent(self, unsent: list):
+    async def _requeue_unsent(self, unsent: list) -> int:
         """Re-enqueue the unsent (older) tail ahead of any concurrent refill
-        (newer).
+        (newer); how many of ``unsent`` the full buffer could not keep.
 
         The publish above ran WITHOUT the lock, so concurrent failed broadcasts may have
         refilled the buffer meanwhile. Rebuild under the lock as ``unsent + refill`` and
         rely on the bounded deque dropping from the FRONT (oldest) on overflow — a plain
         ``extendleft`` would instead evict the newest refill, inverting the drop-oldest
-        policy on a deque that is already at ``maxlen``.
+        policy on a deque that is already at ``maxlen``. The refill fits (it was
+        buffered in a deque of the same bound), so only the unsent can be lost.
         """
         async with self._buffer_lock:
             refill = list(self._outbound_buffer)
             self._outbound_buffer.clear()
             self._outbound_buffer.extend(unsent)
             self._outbound_buffer.extend(refill)
+            room = self._outbound_buffer.maxlen
+            no_room = 0 if room is None else max(0, len(unsent) + len(refill) - room)
+            if no_room:
+                self._note_full_buffer()
+        return no_room
+
+    def _note_full_buffer(self) -> None:
+        """The INFO line of a full replay buffer, once until the next replay
+        empties it (a line for the 0.10 rollout, see the monitoring docs)."""
+        if self._replay_full_logged:
+            return
+        self._replay_full_logged = True
+        logger.info(
+            "Broadcast replay buffer full ({size} broadcasts): the oldest are "
+            "dropped until the backbone is back",
+            size=self._replay_buffer_size,
+        )
 
     async def _fire_reconnect(self):
         if self._on_reconnect is not None:

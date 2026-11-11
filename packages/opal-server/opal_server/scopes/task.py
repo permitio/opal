@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 import logging
+import math
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,7 +13,10 @@ from opal_common.logger import configure_logs, logger, logs_configured
 from opal_server import health
 from opal_server.config import opal_server_config
 from opal_server.git_cli import (
+    clone_timeout,
     close_leftover_lock_fds,
+    kill_grace_seconds,
+    known_hosts_file,
     validate_git_cli_settings,
     wait_for_background_ops,
 )
@@ -55,6 +59,48 @@ class _UnknownChildWarningFilter(logging.Filter):
 # take over, and k8s's terminationGracePeriodSeconds (30s by default) would
 # SIGKILL us anyway.
 _PURGE_DRAIN_TIMEOUT = 5.0
+
+
+def _limit(seconds: float) -> str:
+    """A timeout as the settings line shows it: 0 or less, or not finite, is
+    none."""
+    return f"{seconds:g}s" if math.isfinite(seconds) and seconds > 0 else "none"
+
+
+def _log_scope_git_settings() -> None:
+    """One INFO line, at the pre-fork preload, with the settings that decide
+    how scope clones are fetched (a line for the 0.10 rollout, see the
+    monitoring docs)."""
+    if known_hosts_file() is None:
+        host_keys = "trusted on first use"
+    else:
+        host_keys = f"checked against {known_hosts_file()}"
+    fetch_timeout = _limit(float(opal_server_config.SCOPES_GIT_FETCH_TIMEOUT))
+    if not opal_server_config.SCOPES_GIT_FETCH_WITH_CLI:
+        logger.info(
+            "Scope git settings: libgit2 fetches, fetch and clone timeout "
+            "{fetch_timeout}, {shards} clones per repository, SSH host keys "
+            "{host_keys}",
+            fetch_timeout=fetch_timeout,
+            shards=opal_server_config.SCOPES_REPO_CLONES_SHARDS,
+            host_keys=host_keys,
+        )
+        return
+    most = opal_server_config.SCOPES_GIT_CLI_NARROW_FETCH_MAX_BRANCHES
+    narrow = (
+        f"up to {most} branches by name" if most > 0 else "every branch (narrow off)"
+    )
+    logger.info(
+        "Scope git settings: git command-line fetches, fetch timeout "
+        "{fetch_timeout}, clone timeout {clone_timeout}, kill grace "
+        "{grace:g}s, a fetch asks for {narrow}, one clone per repository, SSH "
+        "host keys {host_keys}",
+        fetch_timeout=fetch_timeout,
+        clone_timeout=_limit(clone_timeout()),
+        grace=kill_grace_seconds(),
+        narrow=narrow,
+        host_keys=host_keys,
+    )
 
 
 @dataclass
@@ -427,6 +473,9 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             # dashboards/monitors built on permit.opal.*.
             configure_server_metrics()
             logger.info("Preloading repo clones for scopes")
+            _log_scope_git_settings()
+            preload_started = time.monotonic()
+            sync_seconds = 0.0
 
             redis_db = RedisDB(opal_server_config.REDIS_URL)
             scopes = ScopeRepository(redis_db)
@@ -437,6 +486,7 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             )
 
             async def _preload():
+                nonlocal sync_seconds
                 # Before the sync, while nothing else in this container uses
                 # the clones: delete the ones whose git op was still hung when
                 # its process ended, so the sync clones them fresh, as on a new
@@ -472,9 +522,11 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                 # worker: the preload's fetches only mark their clones due, the
                 # marks are inherited across fork, and the leader's first pass
                 # repacks.
+                sync_started = time.monotonic()
                 await service.sync_scopes(
                     notify_on_changes=False, run_due_repacks=False
                 )
+                sync_seconds = time.monotonic() - sync_started
                 # git command-line ops still being stopped finish on tasks of
                 # this loop; the ones that do not by the end of the loop get
                 # SIGKILL then, and their clones are cleaned up by the next op.
@@ -503,6 +555,11 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                     except Exception as e:
                         logger.warning(
                             "Preload: closing its Redis client failed: {err!r}", err=e
+                        )
+                    else:
+                        logger.info(
+                            "Preload: closed its Redis client, before the workers "
+                            "are forked"
                         )
 
             # The gunicorn master's SIGCHLD handler reaps every child, so
@@ -569,3 +626,9 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                     missing=missing,
                 )
             logger.warning("Finished preloading repo clones for scopes.")
+            logger.info(
+                "Preload took {seconds:.1f}s from its start to the fork, "
+                "{sync:.1f}s of it in the scopes' sync",
+                seconds=time.monotonic() - preload_started,
+                sync=sync_seconds,
+            )

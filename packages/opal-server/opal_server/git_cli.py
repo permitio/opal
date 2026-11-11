@@ -2735,6 +2735,11 @@ async def _stop(group: _Group, what: str, grace: float) -> bool:
     if grace > 0:
         group.signal(signal.SIGTERM)
         if await group.wait(grace):
+            logger.info(
+                "Stopped git {what} (pid {pid}): SIGTERM was enough",
+                what=what,
+                pid=group.pid,
+            )
             return True
         logger.warning(
             "git {what} (pid {pid}) still running {grace}s after SIGTERM; "
@@ -2745,6 +2750,9 @@ async def _stop(group: _Group, what: str, grace: float) -> bool:
         )
     group.signal(signal.SIGKILL)
     if await group.wait(KILL_WAIT_SECONDS):
+        logger.info(
+            "Stopped git {what} (pid {pid}) with SIGKILL", what=what, pid=group.pid
+        )
         return True
     logger.error(
         "git {what} (pid {pid}) still running {secs}s after SIGKILL (stuck in "

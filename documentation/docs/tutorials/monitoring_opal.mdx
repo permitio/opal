@@ -128,6 +128,26 @@ Monitors to start from:
 
 A repository's `repo` tag is the start of the sha256 of its URL: `printf %s '<URL>' | sha256sum | cut -c1-12`.
 
+### INFO lines for the 0.10 rollout
+
+These INFO lines are temporary: they show what 0.10 changed while it rolls out,
+and a later release lowers them to DEBUG or removes them. Do not build monitors
+on them; use the metrics above. Each is logged once per event, and names a
+source by its URL with credentials masked, or by its clone's directory name.
+
+| Line starts with | Logged |
+|---|---|
+| `Scope git settings:` | Once by the pre-fork preload: the fetch backend, the fetch and clone timeouts, the kill grace, how many branches a fetch asks for by name, the clones per repository and how SSH host keys are checked. |
+| `Preload: closed its Redis client` | Once by the pre-fork preload, before the workers are forked. |
+| `Preload took` | Once by the pre-fork preload: its time from its start to the fork, and the share of the scopes' sync. |
+| `Sync pass fetching` | For each fetch a sync pass makes: the source, how many branches it asks for by name, or every branch and why, and how many syncs waiting in the clone's batch it fetches for. |
+| `Cold-start fetching` | For each fetch the leader makes for a client with no policy (see `OPAL_SCOPES_POLICY_FRESH_FETCH_WAIT_SECONDS`), as for `Sync pass fetching`. A sync of such a client for which a fetch that started after it was asked for stands in logs none. The server the client asked logs how its wait ended: `Scope <scope_id>: a client with no policy waited`, as `policy_fresh_fetch` counts it. |
+| `Stopped git` | For each git fetch, clone or repack step stopped past its time, or cancelled (at shutdown, say): SIGTERM was enough, or it got SIGKILL. A git op still being stopped when the pre-fork preload's loop ends gets SIGKILL with no such line: the preload's WARNING (`git command-line ops still being stopped after`) covers them all at once. |
+| `Repacked scope clone`, `Packed the refs`, `Removed the reflogs` | For each repack, already logged before 0.10: packs, refs and reflogs on disk before and after, and its time. |
+| `Broadcaster listener subscribed to channel` | For each reconnect to the broadcast channel after a gap: how long the subscription was lost, and the failed attempts. |
+| `Broadcast replay buffer full` | Once each time the replay buffer fills during a gap. |
+| `Replayed` | For each replay of the buffered broadcasts after a gap: replayed, failed (kept for the next replay), dropped (by the full buffer, failed with no room left to keep them, or not serializable), and the gap's length. |
+
 ## DataDog APM Monitoring
 
 OPAL supports DataDog APM (Application Performance Monitoring) for observing your OPAL deployment's performance and traces.
