@@ -135,6 +135,17 @@ git is stopped at either. The server checks for git and `/bin/sh` at start
 only with `OPAL_SCOPES` on; a policy repository tracked outside scopes mode
 (`OPAL_POLICY_SOURCE_TYPE=GIT`, the default) runs git too.
 
+A fetch asks the remote only for the branches its syncs need, over git's
+protocol v2, so the server lists and sends only those branches. A refresh of
+a scope, a `PUT /scopes`, or a policy request for a branch the clone does not
+have yet fetches that scope's branch; the syncs that wait while a clone is
+being fetched share its next fetch. A sync pass (at start, after the
+broadcast backbone reconnects, `POST /scopes/refresh`, the periodic one)
+fetches every branch the stored scopes track, in one fetch per clone, or
+every branch of the repository when they are more than
+[`OPAL_SCOPES_GIT_CLI_NARROW_FETCH_MAX_BRANCHES`](/getting-started/configuration#opal_scopes_git_cli_narrow_fetch_max_branches)
+(1,000 by default).
+
 libgit2 is the second backend:
 [`OPAL_SCOPES_GIT_FETCH_WITH_CLI`](/getting-started/configuration#opal_scopes_git_fetch_with_cli)`=false`
 selects it, and with it `OPAL_SCOPES_REPO_CLONES_SHARDS` clones per
@@ -196,6 +207,12 @@ that file are accepted, and nothing is recorded.
 - git reads neither the system's nor the user's git config (a `url.insteadOf`
   there no longer applies), and OpenSSH refuses a git server that offers only
   an `ssh-rsa` host key, which libgit2 accepted.
+- A fetch no longer brings every branch: a clone that missed a refresh of a
+  scope catches up at that scope's next refresh or the next sync pass, not at
+  a fetch for another scope. `FETCH_HEAD`'s age is still that of the clone's
+  last fetch that succeeded, of whatever branches.
+  `OPAL_SCOPES_GIT_CLI_NARROW_FETCH_MAX_BRANCHES=0` makes every fetch fetch
+  every branch, as 0.9 did.
 - SSH host keys are trusted on first use with both backends (see above),
   where 0.9 accepted any key unless `OPAL_SCOPES_GIT_SSH_KNOWN_HOSTS` was set
   with the git command line. A host behind a load balancer whose nodes have

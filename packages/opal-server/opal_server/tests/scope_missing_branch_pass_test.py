@@ -698,6 +698,37 @@ async def test_a_scope_repointed_after_the_pass_listed_it_is_left_to_its_repoint
     assert len(skipped) == 1
 
 
+@pytest.mark.asyncio
+async def test_a_scope_moved_to_another_branch_after_the_pass_listed_it_gets_it(
+    tmp_path, git_ops
+):
+    """A pass's fetch asks for the branches the scopes it listed track, and
+    for the branch of the scope it syncs as that scope reads now: a scope a
+    PUT moved to another branch of its clone since the pass read the store is
+    synced on its new branch, which that fetch brings.
+
+    Mutation: leaving the syncing scope's own branch out of a pass's fetch
+    (the git command line) leaves the new branch missing.
+    """
+    origin = _origin(tmp_path / "origin")
+    origin.create_head("old")
+    moved = _scope("s-x", origin, "new")
+    pubsub = _PubSub()
+    svc = ScopesService(
+        base_dir=tmp_path / "opal",
+        scopes=_Scopes([_scope("s-x", origin, "old")], moved={"s-x": moved}),
+        pubsub_endpoint=pubsub,
+    )
+    await svc.sync_scope(scope_id="s-x")
+    origin.create_head("new")
+
+    await svc.sync_scopes()
+
+    assert len(git_ops.fetches) == 1
+    assert GitPolicyFetcher(tmp_path / "opal", "s-x", moved.policy).has_branch_ref()
+    assert "s-x" in pubsub.notified_scopes()
+
+
 # --- the pass context -----------------------------------------------------------
 
 

@@ -65,13 +65,9 @@ def _scope(scope_id, url, branch="main"):
 
 @pytest.fixture(autouse=True)
 def clear_caches():
-    GitPolicyFetcher.repos.clear()
-    GitPolicyFetcher.repos_last_fetched.clear()
-    GitPolicyFetcher.repo_locks.clear()
+    GitPolicyFetcher.reset_caches()
     yield
-    GitPolicyFetcher.repos.clear()
-    GitPolicyFetcher.repos_last_fetched.clear()
-    GitPolicyFetcher.repo_locks.clear()
+    GitPolicyFetcher.reset_caches()
 
 
 async def _drain_floor(svc):
@@ -132,6 +128,8 @@ async def test_delete_reclaims_this_workers_clone_as_a_floor(tmp_path):
     sid = GitPolicyFetcher.source_id(scope.policy)
     GitPolicyFetcher.repos[str(clone)] = object()
     GitPolicyFetcher.repos_last_fetched[sid] = "ts"
+    GitPolicyFetcher.pending_branches[sid] = {"main"}
+    GitPolicyFetcher.branch_attempts[sid] = {"main": ("ts", False)}
     GitPolicyFetcher.repo_locks[sid] = asyncio.Lock()
     svc = ScopesService(
         base_dir=tmp_path,
@@ -145,6 +143,10 @@ async def test_delete_reclaims_this_workers_clone_as_a_floor(tmp_path):
     assert not clone.exists(), "the serving worker's own copy was never reclaimed"
     assert str(clone) not in GitPolicyFetcher.repos
     assert sid not in GitPolicyFetcher.repos_last_fetched
+    # A failed attempt kept would stand in for the first fetch of a scope made
+    # again on the same repository.
+    assert sid not in GitPolicyFetcher.pending_branches
+    assert sid not in GitPolicyFetcher.branch_attempts
     assert sid not in GitPolicyFetcher.repo_locks
 
 

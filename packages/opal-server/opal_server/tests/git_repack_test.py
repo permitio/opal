@@ -3843,8 +3843,13 @@ async def test_libgit2_and_git_fetch_a_housekept_clone(tmp_path, monkeypatch):
     assert "refs/remotes/origin/env2" not in refs
     assert scope.notified[-1][1] == tip
 
-    # git, through the scope fetcher
+    # git, through the scope fetcher, of every branch (as a pass whose scopes
+    # track more branches than SCOPES_GIT_CLI_NARROW_FETCH_MAX_BRANCHES): a
+    # refresh of s1 would ask for its own branch alone.
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", True)
+    monkeypatch.setattr(
+        opal_server_config, "SCOPES_GIT_CLI_NARROW_FETCH_MAX_BRANCHES", 0
+    )
     tip = str(scope.push())
     scope.remote.create_reference("refs/heads/env4", scope.tip)
     scope.remote.references.delete("refs/heads/env3")
@@ -5200,6 +5205,11 @@ async def _clone_whose_pack_refs_was_killed(tmp_path, monkeypatch):
     )
     assert stuck.returncode != 0, "the premise: a pruning fetch fails on the lock"
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_PRUNE", True)
+    # A git fetch of every branch, as the libgit2 one is, so that it prunes env2
+    # (a fetch of the scope's branch alone prunes only that branch's refs).
+    monkeypatch.setattr(
+        opal_server_config, "SCOPES_GIT_CLI_NARROW_FETCH_MAX_BRANCHES", 0
+    )
     return scope, ref_lock
 
 

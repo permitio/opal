@@ -309,7 +309,8 @@ class GitHttpServer(ThreadingHTTPServer):
     request (once authorized) with a git ``ERR`` packet carrying this
     message, which git prints as a remote error. Every request's headers
     are kept in ``requests``, and its scheme (http or https) at the same
-    index in ``schemes``.
+    index in ``schemes``; every POST's body, decompressed, in ``bodies``
+    (a protocol-v2 fetch's ``ref-prefix`` lines are in its ls-refs body).
     """
 
     daemon_threads = True
@@ -327,6 +328,7 @@ class GitHttpServer(ThreadingHTTPServer):
         self.release = threading.Event()
         self.requests: List[Tuple[str, str, Dict[str, str]]] = []
         self.schemes: List[str] = []
+        self.bodies: List[bytes] = []
         threading.Thread(target=self.serve_forever, daemon=True).start()
 
     def url(self, name: str, userinfo: str = "", scheme: str = "http") -> str:
@@ -432,6 +434,8 @@ class _GitHttpHandler(BaseHTTPRequestHandler):
         if self.headers.get("Content-Encoding"):
             env["HTTP_CONTENT_ENCODING"] = self.headers["Content-Encoding"]
             plain = gzip.decompress(body)
+        if self.command == "POST":
+            server.bodies.append(plain)
         out = subprocess.run(
             [_git(), "http-backend"],
             input=body,

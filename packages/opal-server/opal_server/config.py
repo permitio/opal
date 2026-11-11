@@ -308,7 +308,36 @@ class OpalServerConfig(Confi):
         "can be switched either way without cloning again, and bundles are "
         "built from it as before; a clone made by git has no checkout, which "
         "nothing reads. Fetches skip tags and prune when SCOPES_GIT_FETCH_PRUNE "
-        "is on. git reads neither the system's nor the user's git config, which "
+        "is on. A fetch asks the remote only for the branches its syncs need, "
+        "each as one protocol v2 ref prefix, so the server lists and sends only "
+        "those: a refresh, a PUT /scopes that changes a scope's source or branch, "
+        "or a sync for a branch the clone lacks asks for its scope's branch; the "
+        "syncs of a clone that wait for its lock while its fetch runs share the "
+        "next fetch, which asks for the branches of those still waiting; a sync "
+        "pass (at start, after a backbone gap, POST /scopes/refresh, the "
+        "periodic one) asks for every branch the stored scopes track on the "
+        "clone, or for every branch above "
+        "SCOPES_GIT_CLI_NARROW_FETCH_MAX_BRANCHES. A branch is asked for as a "
+        "pattern, `+refs/heads/BRANCH*:refs/remotes/<remote>/BRANCH*`: one the "
+        "remote does not have fails nothing, and the branches whose names start "
+        "with it come too (`release` brings `release-2`). A name that cannot be "
+        "a git ref, or whose `refs/remotes/<remote>/BRANCH` is 1,024 bytes or "
+        "more, is never asked for. A fetch stands in for another sync's fetch of "
+        "a branch only if it asked for that branch, started after that sync was "
+        "asked for, and reached the remote: one that failed there makes each "
+        "sync it stood for, outside a pass, fetch once more when the source's "
+        "backoff allows (if that is within 300 seconds), and one that never "
+        "reached it (the clone busy, a failure on this server's side) stands in "
+        "for none. A clone that missed a refresh of one scope catches up at that "
+        "scope's next refresh or the next sync pass, not at a fetch for another "
+        "scope. FETCH_HEAD's age is that of the clone's last fetch or clone that "
+        "succeeded, whatever branches it asked for; when each branch was last "
+        "fetched is the mtime of a file in the clone's .git/opal-fetched, set to "
+        "the start of the fetch, one for a fetch of it that succeeded and one for "
+        "one that reached the remote and failed (ALL for a clone or a fetch of "
+        "every branch, which also removes the older files, FAILED for a fetch of "
+        "every branch that failed). git "
+        "reads neither the system's nor the user's git config, which "
         "libgit2 does read, so whatever else they set (a url.insteadOf, say) is "
         "lost with this on; only their safe.directory is given to git, which "
         "git 2.38 or later honours. As libgit2 does, git runs no hooks, reads "
@@ -346,6 +375,21 @@ class OpalServerConfig(Confi):
         "dir (TMPDIR); the server does not start when that path holds % or $, "
         "which ssh would expand. "
         "SSH host keys: see SCOPES_GIT_SSH_KNOWN_HOSTS.",
+    )
+    SCOPES_GIT_CLI_NARROW_FETCH_MAX_BRANCHES = confi.int(
+        "SCOPES_GIT_CLI_NARROW_FETCH_MAX_BRANCHES",
+        1000,
+        description="With SCOPES_GIT_FETCH_WITH_CLI on: the most branches a "
+        "scope fetch names (see SCOPES_GIT_FETCH_WITH_CLI); a fetch that needs "
+        "more fetches every branch, the clone's whole refspec, instead. git "
+        "matches each name against every branch the server lists (and, pruning, "
+        "every branch the clone holds): on a repository with 63,000 branches, a "
+        "fetch of 1,000 names took no longer than one of every branch without "
+        "SCOPES_GIT_FETCH_PRUNE, and a longer list took longer. It also bounds "
+        "git's command line, where the names go. 0: every fetch fetches every "
+        "branch, as before 0.10. The server does not start when it is "
+        "negative. Ignored with SCOPES_GIT_FETCH_WITH_CLI off: libgit2 fetches "
+        "every branch.",
     )
     SCOPES_GIT_SSH_KNOWN_HOSTS = confi.str(
         "SCOPES_GIT_SSH_KNOWN_HOSTS",
@@ -421,7 +465,12 @@ class OpalServerConfig(Confi):
         "SCOPES_GIT_REPACK_PACK_LIMIT); a clone whose refs are packed already "
         "(one made with SCOPES_GIT_FETCH_WITH_CLI on) keeps them packed, and its "
         "fetches pay that cost. Only `refs/remotes/<remote>/*` are pruned; the "
-        "scopes' `refs/heads/scopes/*` stay.",
+        "scopes' `refs/heads/scopes/*` stay. A git command-line fetch that asks "
+        "for some branches (see SCOPES_GIT_FETCH_WITH_CLI) prunes only the refs "
+        "of those branches, and of the branches whose names start with one of "
+        "them: a branch deleted on the remote leaves the clone at the next fetch "
+        "that asks for it (its scope's refresh, or a sync pass), and one that no "
+        "scope tracks only at a fetch of every branch.",
     )
     SCOPES_GIT_MAX_WORKERS = confi.int(
         "SCOPES_GIT_MAX_WORKERS",

@@ -312,6 +312,7 @@ jobs:
           packages/opal-server/opal_server/tests/git_cli_isolation_test.py
           packages/opal-server/opal_server/tests/git_cli_lifecycle_test.py
           packages/opal-server/opal_server/tests/git_cli_pass_test.py
+          packages/opal-server/opal_server/tests/git_cli_narrow_fetch_test.py
           packages/opal-server/opal_server/tests/git_config_isolation_test.py
           packages/opal-server/opal_server/tests/git_repack_test.py
           packages/opal-server/opal_server/tests/default_fetch_backend_test.py

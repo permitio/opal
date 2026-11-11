@@ -467,8 +467,8 @@ class ScopesService:
                         )
                         return
                     GitPolicyFetcher.forget_repo(safe_path)
-                    GitPolicyFetcher.repos_last_fetched.pop(deleted_source_id, None)
-                    # Same reason as repos_last_fetched: no live scope on this
+                    GitPolicyFetcher.forget_fetches(deleted_source_id)
+                    # Same reason as the fetches: no live scope on this
                     # worker points at the source any more, so an entry kept
                     # here is counted in the sources_in_backoff gauge for the
                     # life of the process — and would suppress the first sync
@@ -568,6 +568,12 @@ class ScopesService:
                 (scope, GitPolicyFetcher.source_id(scope.policy)) for scope in scopes
             ]
             live_source_ids = {src_id for _, src_id in scopes_with_ids}
+            # Also from before the filter: a git command-line fetch of the pass
+            # asks for every branch the clone's scopes track, so that phase 2,
+            # and the scopes this pass does not poll, find theirs fetched.
+            tracked_branches: dict[str, set[str]] = defaultdict(set)
+            for scope, src_id in scopes_with_ids:
+                tracked_branches[src_id].add(scope.policy.branch)
             # Once per pass as well as on transitions: a DogStatsD gauge is
             # NO DATA between sends, and the steady state the backoff creates
             # (dead sources parked for the cap) has almost no transitions.
@@ -601,7 +607,7 @@ class ScopesService:
             # In flight until both phases are done, so that no repack starts
             # meanwhile (see GitPolicyFetcher.sync_pass), this pass's own
             # included.
-            with GitPolicyFetcher.sync_pass():
+            with GitPolicyFetcher.sync_pass(tracked_branches):
                 # Phase 1 clones/fetches every distinct repo; phase 2 then checks the
                 # duplicates against those now-present repos.
                 #

@@ -139,10 +139,10 @@ def purge_local_memory(source_id: str, clone_path: str) -> None:
     """
     if not git_op_in_flight(source_id):
         GitPolicyFetcher.forget_repo(clone_path)
-    GitPolicyFetcher.repos_last_fetched.pop(source_id, None)
+    GitPolicyFetcher.forget_fetches(source_id)
     # Unconditionally, unlike forget_repo: this holds no handle a lingering
     # pool thread could still be reading, so the in-flight guard does not apply.
-    # Dropped for the same reason as repos_last_fetched — the source has no live
+    # Dropped for the same reason as the fetches above — the source has no live
     # scope on this worker any more, so a kept entry is counted in the
     # sources_in_backoff gauge for the life of the process, and would suppress
     # the first sync of a scope later re-created against the same URL.

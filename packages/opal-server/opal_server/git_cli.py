@@ -57,7 +57,17 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, FrozenSet, Iterator, List, Optional, Set, Tuple
+from typing import (
+    Callable,
+    Dict,
+    FrozenSet,
+    Iterator,
+    List,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+)
 from urllib.parse import unquote, unquote_plus, urlsplit, urlunsplit
 
 import pygit2
@@ -475,6 +485,7 @@ def validate_git_cli_settings() -> None:
             home there as a list, or expand it); or, with it on, there is no
             git on PATH, or one older than 2.32, or no executable /bin/sh;
             SCOPES_GIT_CLI_KILL_GRACE is not a finite number >= 0;
+            SCOPES_GIT_CLI_NARROW_FETCH_MAX_BRANCHES is negative;
             SCOPES_GIT_CLONE_TIMEOUT is below SCOPES_GIT_FETCH_TIMEOUT;
             BASE_DIR's git_sources path, where a clone's recorded host keys
             are, holds what the known_hosts path may not; or the directory
@@ -522,6 +533,12 @@ def validate_git_cli_settings() -> None:
         raise ValueError(
             f"SCOPES_GIT_CLI_KILL_GRACE={grace!r}: must be a finite number of "
             "seconds, 0 or more"
+        )
+    narrow_max = opal_server_config.SCOPES_GIT_CLI_NARROW_FETCH_MAX_BRANCHES
+    if narrow_max < 0:
+        raise ValueError(
+            f"SCOPES_GIT_CLI_NARROW_FETCH_MAX_BRANCHES={narrow_max}: must be 0 "
+            "(every fetch fetches every branch) or more"
         )
     _check_git_version()
     if not os.access(_SH, os.X_OK):
@@ -1015,11 +1032,14 @@ async def cli_fetch(
     prune: bool,
     timeout: float,
     on_gone: Optional[OnGone] = None,
+    refspecs: Optional[Sequence[str]] = None,
+    negotiation_tips: Sequence[str] = (),
 ) -> None:
     """Fetch ``remote`` into the clone at ``repo_path`` with ``git fetch``.
 
-    The remote's URL and refspecs are read from the clone's config, as
-    libgit2 reads them. Tags are not fetched. FETCH_HEAD is rewritten
+    The remote's URL is read from the clone's config, as libgit2 reads
+    it, and so are the refspecs unless ``refspecs`` is given. Tags are
+    not fetched. FETCH_HEAD is rewritten
     (empty) only once git exited 0; a fetch that fails or is
     stopped leaves it as it was. A FETCH_HEAD that cannot be written then (a
     full disk) is logged at ERROR, and the fetch still counts as one that
@@ -1040,6 +1060,11 @@ async def cli_fetch(
             left in the clone removed and the clone's lock released. That
             can be after this returns or raises (a stop under way, a
             process that outlived SIGKILL).
+        refspecs: The refspecs to fetch instead of the configured ones.
+        negotiation_tips: Refs of the clone whose commits alone git tells
+            the remote it has (``--negotiation-tip``); none: every ref. Each
+            must name a ref the clone has: git 2.39 fails the fetch on one
+            that does not, where later versions ignore it.
 
     Raises:
         GitCliTimeoutError: git ran past ``timeout`` and was stopped (SIGTERM
@@ -1048,8 +1073,11 @@ async def cli_fetch(
         GitCliBusyError: another op holds the clone's lock.
         GitCliLocalError: the op failed locally (see that class).
         GitCliError: git exited non-zero.
-        ValueError: ``remote`` cannot be given to git.
+        ValueError: ``remote`` cannot be given to git, or ``refspecs`` is
+            empty (git would fetch no ref).
     """
+    if refspecs is not None and not refspecs:
+        raise ValueError(f"no refspec to fetch into {repo_path}")
     repo_path = Path(repo_path)
     # The pack dir's leftovers as the op starts, under its lock: none of them
     # is this op's to remove.
@@ -1065,7 +1093,7 @@ async def cli_fetch(
     op = _Op(f"fetch of {repo_path}", repo_path, on_gone, clean_up=_clean_up)
     try:
         _check_remote(remote)
-        url, refspecs = await _run_local(_remote_config, repo_path, remote)
+        url, configured = await _run_local(_remote_config, repo_path, remote)
         remote_for_git = _remote_for_git(url, source)
         await op.start()
         pack_leftovers_before = await _run_local(_pack_leftovers, repo_path)
@@ -1078,10 +1106,11 @@ async def cli_fetch(
         *_GIT_CONFIG_ARGS,
         *_FETCH_ARGS,
         "--prune" if prune else "--no-prune",
+        *(f"--negotiation-tip={tip}" for tip in negotiation_tips),
         # Ends git's options: neither the URL nor a refspec can be taken for one.
         "--",
         remote_for_git.url,
-        *refspecs,
+        *(configured if refspecs is None else refspecs),
     ]
     await _run_op(op, args, source, remote_for_git, timeout)
 

@@ -23,6 +23,7 @@ from concurrent.futures import thread as cf_thread
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+from enum import Enum
 from functools import partial
 from pathlib import Path
 from typing import (
@@ -30,9 +31,13 @@ from typing import (
     Awaitable,
     Callable,
     Dict,
+    FrozenSet,
+    Iterable,
     List,
+    Mapping,
     NamedTuple,
     Optional,
+    Set,
     Tuple,
     Union,
     cast,
@@ -2756,6 +2761,10 @@ class _SyncPass:
     # head cannot be read finds the clone invalid after a phase-1 fetch whose
     # own scope read its branch fine, and must still delete and clone it.
     cloned_sources: set[str] = field(default_factory=set)
+    # Source id -> every branch the scopes the pass listed track on that clone,
+    # those it does not poll included: what a git command-line fetch of the
+    # pass asks for (GitPolicyFetcher._requested_branches).
+    tracked_branches: Dict[str, FrozenSet[str]] = field(default_factory=dict)
     # Set when sync_pass() exits. A task the pass started can outlive it with
     # the pass still in its context; an ended pass counts as none.
     ended: bool = False
@@ -2777,6 +2786,127 @@ def _running_sync_pass() -> Optional[_SyncPass]:
     if sync_pass is None or sync_pass.ended:
         return None
     return sync_pass
+
+
+class _FetchOutcome(Enum):
+    """How a git command-line fetch ended, for _record_fetch."""
+
+    SUCCEEDED = "succeeded"
+    # It reached the remote and failed there: a timeout, a git error, a
+    # refused host key.
+    FAILED = "failed"
+    # It never reached the remote: the clone busy, a local failure, the
+    # zombie cap, a cancel.
+    NOT_REACHED = "not_reached"
+
+
+class _SyncAgain(Enum):
+    """Why a sync (GitPolicyFetcher._sync_once) did not fetch and asks to run
+    once more, besides a git op still running on its clone."""
+
+    # The fetch that stood in for this sync's own (it asked for the branch and
+    # started after this sync was asked for) reached the remote and failed.
+    AFTER_FAILED_STAND_IN = "after_failed_stand_in"
+
+
+# The longest a sync whose stand-in fetch failed waits for the source's backoff
+# before it fetches once more: past it, the backoff governs (the next pass, or
+# the scope's next refresh).
+_FAILED_STAND_IN_MAX_WAIT_SECONDS = 300.0
+
+# libgit2 refuses a ref name of this many bytes or more (ValueError), where git
+# check-ref-format takes it.
+_REF_NAME_MAX_BYTES = 1024
+
+
+def _can_be_a_branch(name: str, remote: str) -> bool:
+    """Whether a fetch can ask for the branch ``name``: one that cannot be a
+    ref (``x~1``, an empty name) no fetch brings, nor one whose remote-tracking
+    ref libgit2 cannot look up (_REF_NAME_MAX_BYTES)."""
+    tracking = f"refs/remotes/{remote}/{name}"
+    return (
+        reference_is_valid_name(f"refs/heads/{name}")
+        and len(tracking.encode("utf-8")) < _REF_NAME_MAX_BYTES
+    )
+
+
+# The fetch marks of a clone, written by the git command-line fetch, in this
+# directory of its .git: for each branch a fetch asked for, a file when it
+# succeeded (named by _fetch_mark_name) and one when it reached the remote and
+# failed (_fetch_failed_mark_name); ALL for a clone or a fetch of every branch
+# that succeeded; FAILED for a fetch of every branch that failed, or a sync
+# that gave up on fetching the clone. A mark's mtime is the start of the last
+# such fetch, so that any process can tell whether a fetch that started after
+# a given moment brought a branch.
+_FETCH_MARKS_DIR = "opal-fetched"
+_FETCH_MARK_ALL = "ALL"
+_FETCH_MARK_FAILED = "FAILED"
+# A temp file of the mark writer this old (by its ctime: the writer dates the
+# file) was left by a process that died before it renamed the file into place.
+_FETCH_MARK_TEMP_SECONDS = 60.0
+# The clones whose marks this process could not write: a WARNING once each.
+_fetch_marks_warned: Set[str] = set()
+# (source id, branch) of each branch _narrow_fetch_args left out of a fetch: a
+# WARNING once each.
+_unfetchable_branches_warned: Set[Tuple[str, str]] = set()
+
+
+def _fetch_mark_name(branch: str) -> str:
+    return hashlib.sha256(branch.encode("utf-8")).hexdigest()[:32]
+
+
+def _fetch_failed_mark_name(branch: str) -> str:
+    return f"{_fetch_mark_name(branch)}.failed"
+
+
+def _write_fetch_marks(marks: Path, names: Iterable[str], started: float) -> None:
+    """Date each mark ``started``.
+
+    A new mark is dated before it is renamed into place, so that no
+    reader sees it with the time it was made. With ALL, which answers
+    for every branch from ``started`` on, the marks dated before it go,
+    and so do the temp files of a writer that died (_tidy_fetch_marks).
+    """
+    marks.mkdir(exist_ok=True)
+    names = list(names)
+    for name in names:
+        path = marks / name
+        try:
+            os.utime(path, (started, started))
+            continue
+        except FileNotFoundError:
+            pass
+        new = marks / f".{name}.{secrets.token_hex(4)}"
+        os.close(os.open(new, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644))
+        try:
+            os.utime(new, (started, started))
+            os.replace(new, path)
+        except BaseException:
+            new.unlink(missing_ok=True)
+            raise
+    if _FETCH_MARK_ALL in names:
+        _tidy_fetch_marks(marks, started)
+
+
+def _tidy_fetch_marks(marks: Path, all_at: float) -> None:
+    """Remove every mark dated before ``all_at``, when ALL is dated then: none
+    of them can tell anything ALL does not (fetch_mark_after).
+
+    And the temp files of a writer that died.
+    """
+    stale_temp = time.time() - _FETCH_MARK_TEMP_SECONDS
+    with os.scandir(marks) as entries:
+        for entry in entries:
+            try:
+                info = entry.stat(follow_symlinks=False)
+            except FileNotFoundError:
+                continue
+            if entry.name.startswith("."):
+                stale = info.st_ctime < stale_temp
+            else:
+                stale = entry.name != _FETCH_MARK_ALL and info.st_mtime < all_at
+            if stale:
+                Path(entry.path).unlink(missing_ok=True)
 
 
 # source_id -> time.monotonic() when _log_cooldown_once last logged it.
@@ -3075,9 +3205,10 @@ class RepoInterface:
         try:
             repo.lookup_reference(f"refs/remotes/{remote}/{branch}")
             return True
-        except (KeyError, pygit2.InvalidSpecError):
-            # Nor one that cannot be a ref (an empty name, ``x~1``): no fetch
-            # brings it, so its scope reports a missing branch.
+        except (KeyError, pygit2.InvalidSpecError, ValueError):
+            # Nor one that cannot be a ref (an empty name, ``x~1``, a name
+            # too long for libgit2: ValueError): no fetch brings it, so its
+            # scope reports a missing branch.
             return False
 
     @staticmethod
@@ -3092,8 +3223,9 @@ class RepoInterface:
         try:
             (commit, _) = repo.resolve_refish(f"{remote}/{branch}")
             return str(commit.id)
-        except (pygit2.GitError, KeyError, pygit2.InvalidSpecError):
-            # InvalidSpecError: an empty branch, as for has_remote_branch.
+        except (pygit2.GitError, KeyError, pygit2.InvalidSpecError, ValueError):
+            # InvalidSpecError: an empty branch, as for has_remote_branch, and
+            # ValueError a name too long.
             return None
 
     @staticmethod
@@ -3128,6 +3260,15 @@ class GitPolicyFetcher(PolicyFetcher):
     # the read in fetch_and_notify_on_changes deliberately happens before
     # lock_source so a skipped source costs nothing.
     source_backoff: Dict[str, SourceBackoff] = {}
+    # With the git command line: source id -> branch -> how many syncs that
+    # wait for the clone want it (each adds its own before lock_source, and
+    # takes it out when it ends with it still there); the clone's next fetch
+    # takes them all, replacing the dict, so a sync tells its own entry by the
+    # dict it added it to.
+    pending_branches: Dict[str, Dict[str, int]] = {}
+    # With the git command line: source id -> branch -> (start, succeeded) of
+    # the last fetch that asked for that branch (see _fetched_after).
+    branch_attempts: Dict[str, Dict[str, Tuple[datetime.datetime, bool]]] = {}
 
     def __init__(
         self,
@@ -3147,6 +3288,9 @@ class GitPolicyFetcher(PolicyFetcher):
         self._remote = remote_name
         self._scope_id = scope_id
         self._liveness_probe = liveness_probe
+        # The start of the failed fetch that stood in for this sync's own, as
+        # _should_fetch last found it (_stood_in).
+        self._failed_stand_in_at: Optional[datetime.datetime] = None
         logger.debug(
             f"Initializing git fetcher: scope_id={scope_id}, url={redact_url(source.url)}, branch={self._source.branch}, source_id={self._source_id}"
         )
@@ -3356,11 +3500,177 @@ class GitPolicyFetcher(PolicyFetcher):
         if GitPolicyFetcher.source_backoff.pop(source_id, None) is not None:
             _emit_sources_in_backoff()
 
-    async def _was_fetched_after(self, t: datetime.datetime):
-        last_fetched = GitPolicyFetcher.repos_last_fetched.get(self._source_id, None)
-        if last_fetched is None:
-            return False
-        return last_fetched > t
+    def _fetched_after(self, branch: str, t: datetime.datetime) -> Optional[bool]:
+        """Whether a fetch that started after ``t`` brought ``branch``.
+
+        Returns:
+            True when a clone or a fetch of every branch (repos_last_fetched),
+            or a fetch that asked for ``branch``, started after ``t`` and
+            succeeded; False when the last fetch that asked for it started
+            after ``t`` and failed; None when no such fetch started after
+            ``t``.
+        """
+        attempt = self._attempt_after(branch, t)
+        return None if attempt is None else attempt[1]
+
+    def _attempt_after(
+        self, branch: str, t: datetime.datetime
+    ) -> Optional[Tuple[datetime.datetime, bool]]:
+        """The fetch _fetched_after reads, as (start, succeeded), or None."""
+        last_fetched = GitPolicyFetcher.repos_last_fetched.get(self._source_id)
+        if last_fetched is not None and last_fetched > t:
+            return last_fetched, True
+        attempt = GitPolicyFetcher.branch_attempts.get(self._source_id, {}).get(branch)
+        if attempt is None or attempt[0] <= t:
+            return None
+        return attempt
+
+    def _requested_branches(self) -> Optional[FrozenSet[str]]:
+        """The branches the next git command-line fetch of the clone asks for;
+        None for every branch (the clone's whole refspec).
+
+        This scope's branch and those of the syncs waiting for the clone
+        (pending_branches), and in a sync pass every branch the pass's
+        scopes track on the clone. A name that cannot be a branch is
+        left out. None with libgit2, with
+        SCOPES_GIT_CLI_NARROW_FETCH_MAX_BRANCHES at 0 or below the
+        number of branches, and in a pass with no name left; an empty
+        set, nothing to fetch, outside a pass with none left.
+        """
+        if not git_cli_enabled():
+            return None
+        most = opal_server_config.SCOPES_GIT_CLI_NARROW_FETCH_MAX_BRANCHES
+        if most <= 0:
+            return None
+        names = set(GitPolicyFetcher.pending_branches.get(self._source_id, {}))
+        names.add(self._source.branch)
+        sync_pass = _running_sync_pass()
+        if sync_pass is not None:
+            names.update(sync_pass.tracked_branches.get(self._source_id, ()))
+        branches = frozenset(
+            name for name in names if _can_be_a_branch(name, self._remote)
+        )
+        if len(branches) > most or (not branches and sync_pass is not None):
+            return None
+        return branches
+
+    def _join_batch(self) -> Optional[Dict[str, int]]:
+        """Add this sync's branch to the clone's batch (pending_branches), so
+        that a fetch that starts meanwhile asks for it; the batch it was added
+        to, for _leave_batch.
+
+        Only outside a pass, with the git command line, for a branch a
+        fetch can ask for.
+        """
+        if (
+            not git_cli_enabled()
+            or _running_sync_pass() is not None
+            or not _can_be_a_branch(self._source.branch, self._remote)
+        ):
+            return None
+        batch = GitPolicyFetcher.pending_branches.setdefault(self._source_id, {})
+        batch[self._source.branch] = batch.get(self._source.branch, 0) + 1
+        return batch
+
+    def _leave_batch(self, batch: Optional[Dict[str, int]]) -> None:
+        """Take this sync's branch out of the batch it joined, unless a fetch
+        took that batch: a sync that did not fetch leaves nothing for the
+        clone's next fetch to ask for."""
+        if (
+            batch is None
+            or GitPolicyFetcher.pending_branches.get(self._source_id) is not batch
+        ):
+            return
+        branch = self._source.branch
+        wanted = batch.get(branch, 0) - 1
+        if wanted > 0:
+            batch[branch] = wanted
+        else:
+            batch.pop(branch, None)
+        if not batch:
+            GitPolicyFetcher.pending_branches.pop(self._source_id, None)
+
+    def _take_batch(self) -> Tuple[Optional[FrozenSet[str]], FrozenSet[str]]:
+        """What the fetch about to start asks for (_requested_branches), and
+        the waiting syncs' branches it takes, emptying the clone's batch: in
+        one step, so that no sync adds a branch in between."""
+        requested = self._requested_branches()
+        taken = GitPolicyFetcher.pending_branches.pop(self._source_id, {})
+        return requested, frozenset(taken)
+
+    async def _record_fetch(
+        self,
+        requested: Optional[FrozenSet[str]],
+        taken: FrozenSet[str],
+        started: datetime.datetime,
+        outcome: "_FetchOutcome",
+    ) -> None:
+        """Record how a git command-line fetch that started at ``started`` and
+        asked for ``requested`` (None: every branch) ended.
+
+        A fetch that did not reach the remote (the clone busy, a local
+        failure, the zombie cap, a cancel) records nothing: it stands in
+        for no other sync, each of which fetches for itself. One that
+        reached it gives each branch it asked for its attempt, for
+        _fetched_after (for a fetch of every branch that failed, the
+        branches of its own sync and of the syncs it took from the
+        batch). A fetch of every branch that succeeded answers for every
+        branch through repos_last_fetched, and no earlier attempt can
+        tell anything after it, so the source's attempts go. Then the
+        clone's fetch marks.
+        """
+        if not git_cli_enabled() or outcome is _FetchOutcome.NOT_REACHED:
+            return
+        succeeded = outcome is _FetchOutcome.SUCCEEDED
+        if succeeded and requested is None:
+            GitPolicyFetcher.branch_attempts.pop(self._source_id, None)
+            await self._write_fetch_marks([_FETCH_MARK_ALL], started)
+            return
+        asked = requested
+        if asked is None:
+            asked = frozenset(
+                name
+                for name in taken | {self._source.branch}
+                if _can_be_a_branch(name, self._remote)
+            )
+        attempts = GitPolicyFetcher.branch_attempts.setdefault(self._source_id, {})
+        for branch in asked:
+            attempts[branch] = (started, succeeded)
+        if succeeded:
+            marks = [_fetch_mark_name(branch) for branch in sorted(asked)]
+        elif requested is None:
+            marks = [_FETCH_MARK_FAILED]
+        else:
+            marks = [_fetch_failed_mark_name(branch) for branch in sorted(asked)]
+        await self._write_fetch_marks(marks, started)
+
+    async def _write_fetch_marks(
+        self, marks: List[str], started: datetime.datetime
+    ) -> None:
+        """Write the clone's fetch marks off the event loop; one that cannot be
+        written is a WARNING, once per clone."""
+        path = self._repo_path / ".git" / _FETCH_MARKS_DIR
+        try:
+            await run_sync(_write_fetch_marks, path, marks, started.timestamp())
+        except OSError as e:
+            if self._source_id in _fetch_marks_warned:
+                return
+            _fetch_marks_warned.add(self._source_id)
+            logger.warning(
+                "Could not record when {url} was fetched in {path}: {err}",
+                url=redact_url(self._source.url),
+                path=path,
+                err=repr(e),
+            )
+
+    @staticmethod
+    def forget_fetches(source_id: str) -> None:
+        """Forget what this process knows of a source's fetches: when it was
+        last fetched or cloned whole, the branches waiting for its next fetch,
+        and each branch's last attempt."""
+        GitPolicyFetcher.repos_last_fetched.pop(source_id, None)
+        GitPolicyFetcher.pending_branches.pop(source_id, None)
+        GitPolicyFetcher.branch_attempts.pop(source_id, None)
 
     async def fetch_and_notify_on_changes(
         self,
@@ -3395,12 +3705,21 @@ class GitPolicyFetcher(PolicyFetcher):
         timeout, it does not wait) and syncs once more. A pass's sync does not
         wait: the pass would hold every other clone's scopes for it, and the
         next pass syncs the clone.
+
+        With the git command line, a sync outside a pass whose fetch another
+        sync's fetch stood in for, which reached the remote and failed,
+        fetches once more when the source's backoff allows
+        (_sync_after_failed_stand_in).
         """
-        if not await self._sync_once(
+        skipped = await self._sync_once(
             hinted_hash, force_fetch, req_time, honor_backoff=honor_backoff
-        ):
+        )
+        if not skipped or _running_sync_pass() is not None:
             return
-        if _running_sync_pass() is not None:
+        if skipped is _SyncAgain.AFTER_FAILED_STAND_IN:
+            await self._sync_after_failed_stand_in(
+                hinted_hash, force_fetch, honor_backoff=honor_backoff
+            )
             return
         timeout = git_op_timeout(self._source_id)
         if timeout is None:
@@ -3425,6 +3744,53 @@ class GitPolicyFetcher(PolicyFetcher):
             hinted_hash, force_fetch, req_time, honor_backoff=honor_backoff
         )
 
+    async def _sync_after_failed_stand_in(
+        self, hinted_hash: Optional[str], force_fetch: bool, *, honor_backoff: bool
+    ) -> None:
+        """The fetch that stood in for this sync's own reached the remote and
+        failed: sync once more, fetching unless a fetch that asked for the
+        branch started after that failure, once the source's backoff allows.
+
+        Its own sync is the only one a failed fetch counts for: without this
+        the scope of every other sync it carried would not see its commit
+        until its next refresh. The sync joins the clone's batch before it
+        waits, so the first one of those behind the same failure to fetch
+        asks for all of their branches, and each asks from the failed
+        fetch's start: the others ride that fetch, whatever comes of it, and
+        none fetches a third time. Past _FAILED_STAND_IN_MAX_WAIT_SECONDS of
+        backoff it does not wait: the backoff governs then.
+        """
+        failed_at = self._failed_stand_in_at
+        if failed_at is None:  # set by _should_fetch with the skip
+            return
+        entry = GitPolicyFetcher.source_backoff.get(self._source_id)
+        delay = 0.0 if entry is None else entry.next_attempt_at - time.monotonic()
+        if delay > _FAILED_STAND_IN_MAX_WAIT_SECONDS:
+            logger.info(
+                "Not fetching {url} again for scope {scope}: the fetch it waited "
+                "for failed, and the source is backed off for {delay:.0f}s more",
+                url=redact_url(self._source.url),
+                scope=self._scope_id,
+                delay=delay,
+            )
+            return
+        logger.info(
+            "The fetch of {url} that scope {scope} waited for failed; fetching "
+            "it again in {delay:.1f}s",
+            url=redact_url(self._source.url),
+            scope=self._scope_id,
+            delay=max(0.0, delay),
+        )
+        batch = self._join_batch()
+        try:
+            if delay > 0:
+                await asyncio.sleep(delay)
+            await self._sync_under_lock(
+                hinted_hash, force_fetch, failed_at, honor_backoff=honor_backoff
+            )
+        finally:
+            self._leave_batch(batch)
+
     async def _sync_once(
         self,
         hinted_hash: Optional[str],
@@ -3432,12 +3798,15 @@ class GitPolicyFetcher(PolicyFetcher):
         req_time: Optional[datetime.datetime],
         *,
         honor_backoff: bool,
-    ) -> bool:
+    ) -> Union[bool, _SyncAgain]:
         """One sync of the clone: see fetch_and_notify_on_changes.
 
         Returns:
-            True only when it skipped the clone because a git op of this
-            process is still running on it.
+            True when it skipped the clone because a git op of this process
+            is still running on it; _SyncAgain.AFTER_FAILED_STAND_IN when it
+            did not fetch because another's fetch stood in for its own and
+            failed at the remote (never in a pass, whose syncs carry no
+            request time); else False.
         """
         # Checked before lock_source on purpose (and again under it, below).
         # A hung source holds that lock for the whole clone, so a check ONLY
@@ -3463,6 +3832,25 @@ class GitPolicyFetcher(PolicyFetcher):
                     err=entry.last_error,
                 )
                 return False
+        # Into the clone's batch before waiting for its lock: a fetch that
+        # starts meanwhile, this sync's own or another's, asks for it.
+        batch = self._join_batch()
+        try:
+            return await self._sync_under_lock(
+                hinted_hash, force_fetch, req_time, honor_backoff=honor_backoff
+            )
+        finally:
+            self._leave_batch(batch)
+
+    async def _sync_under_lock(
+        self,
+        hinted_hash: Optional[str],
+        force_fetch: bool,
+        req_time: Optional[datetime.datetime],
+        *,
+        honor_backoff: bool,
+    ) -> Union[bool, _SyncAgain]:
+        """_sync_once's part under the clone's lock_source."""
         async with GitPolicyFetcher.lock_source(self._source_id):
             # Re-checked under the lock: N syncs of one source that honour the
             # backoff and arrive together — phase 2 syncs a few of a clone's
@@ -3535,22 +3923,33 @@ class GitPolicyFetcher(PolicyFetcher):
                             req_time=req_time,
                             pass_started=pass_started,
                         )
+                        if should_fetch and self._requested_branches() == frozenset():
+                            # A git command-line fetch would ask for nothing:
+                            # no fetch brings a branch that cannot be a ref,
+                            # and no other sync waits. The change check below
+                            # reads what the clone holds.
+                            should_fetch = False
                         fetched = False
                         if should_fetch and not self._tried_earlier_in_pass("fetch"):
                             self._tried_in_this_pass("fetch")
                             logger.debug(
                                 f"Fetching remote (force_fetch={force_fetch}): {self._remote} ({redact_url(self._source.url)})"
                             )
-                            # Record the START time but write it only on
-                            # success: a failed fetch must not look "fresh"
-                            # to _was_fetched_after(), or it suppresses the
-                            # forced refresh a webhook just asked for. The
-                            # start time (not completion) is what req_time
+                            # The START time (not completion) is what req_time
                             # comparisons need: a fetch that STARTED after
-                            # the request already satisfies it.
+                            # the request already satisfies it. It goes in
+                            # repos_last_fetched only on success, and for a
+                            # fetch of every branch: a failed fetch must not
+                            # look like a fresh one of every branch to
+                            # _fetched_after(). A git command-line fetch also
+                            # records each branch it asked for, once it reached
+                            # the remote (_record_fetch). Taken with the batch,
+                            # with no await between.
+                            requested, taken = self._take_batch()
                             fetch_started = datetime.datetime.now()
+                            outcome = _FetchOutcome.NOT_REACHED
                             try:
-                                await self._fetch(repo)
+                                await self._fetch(repo, requested)
                             except GitCliBusyError as exc:
                                 # Not this sync's to fetch; the change check
                                 # below still reads what the clone holds.
@@ -3558,9 +3957,11 @@ class GitPolicyFetcher(PolicyFetcher):
                             except GitCliLocalError as exc:
                                 self._count_local_failure("fetch", exc)
                             except (GitCliHostKeyError, HostKeyRefusedError) as exc:
+                                outcome = _FetchOutcome.FAILED
                                 self._count_host_key_refusal("fetch", exc)
                                 return
                             except TimeoutError as exc:
+                                outcome = _FetchOutcome.FAILED
                                 # Expected when a repo is unreachable: log cleanly
                                 # (no traceback) and skip, matching the clone path.
                                 # repos_last_fetched stays stale so the next cycle
@@ -3577,6 +3978,7 @@ class GitPolicyFetcher(PolicyFetcher):
                                 )
                                 return False
                             except (pygit2.GitError, GitCliError) as exc:
+                                outcome = _FetchOutcome.FAILED
                                 # The fast-fail half of the same problem, on a
                                 # source that already has a local copy: revoked
                                 # credentials or a deleted remote fail here in
@@ -3596,12 +3998,18 @@ class GitPolicyFetcher(PolicyFetcher):
                                 raise
                             else:
                                 fetched = True
-                                GitPolicyFetcher.repos_last_fetched[
-                                    self._source_id
-                                ] = fetch_started
+                                outcome = _FetchOutcome.SUCCEEDED
+                                if requested is None:
+                                    GitPolicyFetcher.repos_last_fetched[
+                                        self._source_id
+                                    ] = fetch_started
                                 self._clear_source_backoff()
                                 logger.debug(
                                     f"Fetch completed: {redact_url(self._source.url)}"
+                                )
+                            finally:
+                                await self._record_fetch(
+                                    requested, taken, fetch_started, outcome
                                 )
 
                         # New commits might be present because of a previous fetch made by another scope.
@@ -3634,6 +4042,8 @@ class GitPolicyFetcher(PolicyFetcher):
                                 # clone's, and in a pass this may be the one
                                 # sync that fetched it.
                                 await self._mark_repack_due()
+                        if not should_fetch and self._failed_stand_in_at is not None:
+                            return _SyncAgain.AFTER_FAILED_STAND_IN
                         return False
                     else:
                         if self._tried_earlier_in_pass("clone"):
@@ -3768,17 +4178,28 @@ class GitPolicyFetcher(PolicyFetcher):
 
     @staticmethod
     @contextmanager
-    def sync_pass():
+    def sync_pass(tracked_branches: Optional[Mapping[str, AbstractSet[str]]] = None):
         """Count a sync pass's phases as in flight (_sync_passes_in_flight),
         and record the pass's start for the syncs it runs
         (current_pass_started).
 
         ScopesService.sync_scopes wraps its two phases in this, and runs
         its due repacks only after it exits.
+
+        Args:
+            tracked_branches: Source id -> the branches the pass's scopes
+                track on that clone, for its git command-line fetches to
+                ask for.
         """
         global _sync_passes_in_flight
         _sync_passes_in_flight += 1
-        sync_pass = _SyncPass(started=datetime.datetime.now())
+        sync_pass = _SyncPass(
+            started=datetime.datetime.now(),
+            tracked_branches={
+                source_id: frozenset(branches)
+                for source_id, branches in (tracked_branches or {}).items()
+            },
+        )
         token = _current_sync_pass.set(sync_pass)
         try:
             yield
@@ -4212,16 +4633,26 @@ class GitPolicyFetcher(PolicyFetcher):
         git_path: Path = path / ".git"
         return discover_repository(str(path)) and git_path.exists()
 
-    async def _fetch(self, repo: Repository) -> None:
+    async def _fetch(
+        self, repo: Repository, branches: Optional[FrozenSet[str]] = None
+    ) -> None:
         """Fetch the clone's remote, with git (SCOPES_GIT_FETCH_WITH_CLI) or
         libgit2.
 
         Pruned when configured, so a branch deleted on the remote leaves
         the clone: otherwise its stale remote-tracking ref is served as the
-        head.
+        head. With git, ``branches`` (not None) are the only branches asked
+        for (see _narrow_fetch_args).
         """
         timeout = opal_server_config.SCOPES_GIT_FETCH_TIMEOUT
         if git_cli_enabled():
+            narrow: Dict[str, List[str]] = {}
+            if branches is not None:
+                narrow = await run_sync(self._narrow_fetch_args, repo, branches)
+                if not narrow["refspecs"]:
+                    raise GitCliLocalError(
+                        128, "fatal: no branch this fetch asks for can be looked up"
+                    )
             async with self._noting_a_recorded_host_key():
                 await run_git_cli_op(
                     partial(
@@ -4231,6 +4662,7 @@ class GitPolicyFetcher(PolicyFetcher):
                         self._source,
                         prune=bool(opal_server_config.SCOPES_GIT_FETCH_PRUNE),
                         timeout=timeout,
+                        **narrow,
                     ),
                     timeout=timeout,
                     busy_key=self._source_id,
@@ -4256,6 +4688,53 @@ class GitPolicyFetcher(PolicyFetcher):
             busy_key=self._source_id,
             marker_dir=hung_marker_dir(self._repo_path),
             mark_when_hung=reclone_hung_enabled(),
+        )
+
+    def _narrow_fetch_args(
+        self, repo: Repository, branches: FrozenSet[str]
+    ) -> Dict[str, List[str]]:
+        """cli_fetch's refspecs and negotiation tips for a fetch of
+        ``branches`` alone.
+
+        One one-wildcard pattern per branch,
+        ``+refs/heads/B*:refs/remotes/<remote>/B*``, not the exact name:
+        git sends a pattern as one protocol v2 ref prefix where it sends
+        six for an exact name (its short-name guesses), and a pattern
+        the remote has no branch for matches nothing, where an exact
+        name the remote lacks fails the whole fetch, and every sync that
+        rides it. The cost: a pattern also brings the branches whose
+        names start with B. Each branch's remote-tracking ref, where the
+        clone has one, is a negotiation tip, so git offers the remote
+        those commits only instead of every ref the clone holds. Read
+        under lock_source. A branch whose ref libgit2 cannot look up is
+        left out of the fetch, with a WARNING once per branch: one name
+        must not stop the fetch of every scope on the clone.
+        """
+        prefix = f"refs/remotes/{self._remote}/"
+        refspecs, tips = [], []
+        for branch in sorted(branches):
+            try:
+                found = repo.references.get(f"{prefix}{branch}") is not None
+            except (ValueError, pygit2.GitError) as e:
+                self._warn_unfetchable_branch(branch, e)
+                continue
+            refspecs.append(f"+refs/heads/{branch}*:{prefix}{branch}*")
+            if found:
+                tips.append(f"{prefix}{branch}")
+        return {"refspecs": refspecs, "negotiation_tips": tips}
+
+    def _warn_unfetchable_branch(self, branch: str, err: Exception) -> None:
+        key = (self._source_id, branch)
+        if key in _unfetchable_branches_warned:
+            return
+        _unfetchable_branches_warned.add(key)
+        logger.warning(
+            "Not fetching a branch of {source_id} ({length} characters, starting "
+            "{start!r}): its ref cannot be looked up: {err}",
+            source_id=self._source_id,
+            length=len(branch),
+            start=branch[:64],
+            err=type(err).__name__,
         )
 
     async def _clone_repository(self) -> Repository:
@@ -4475,8 +4954,11 @@ class GitPolicyFetcher(PolicyFetcher):
             GitPolicyFetcher.repos[str(self._repo_path)] = repo
             await self._record_clone_landed()
             # A reclone just downloaded current remote state — record it so
-            # _was_fetched_after() doesn't force a redundant fetch next cycle.
+            # _fetched_after() doesn't force a redundant fetch next cycle.
             GitPolicyFetcher.repos_last_fetched[self._source_id] = clone_started
+            await self._record_fetch(
+                None, frozenset(), clone_started, _FetchOutcome.SUCCEEDED
+            )
             try:
                 await self._notify_on_changes(repo)
             finally:
@@ -4544,11 +5026,12 @@ class GitPolicyFetcher(PolicyFetcher):
                     ref = probe.lookup_reference(
                         f"refs/remotes/{self._remote}/{self._source.branch}"
                     )
-                except (KeyError, pygit2.InvalidSpecError):
+                except (KeyError, pygit2.InvalidSpecError, ValueError):
                     # Branch not fetched yet — the fetch path handles that.
-                    # Nor one that cannot be a ref (an empty name, ``x~1``):
-                    # raised, it stopped the fetch of the clone, which the
-                    # scope's siblings on it wait for in a sync pass.
+                    # Nor one that cannot be a ref (an empty name, ``x~1``, a
+                    # name too long for libgit2: ValueError): raised, it
+                    # stopped the fetch of the clone, which the scope's
+                    # siblings on it wait for in a sync pass.
                     return repo
                 if probe.get(ref.target) is None:
                     _check_object_dirs_readable(
@@ -4577,28 +5060,37 @@ class GitPolicyFetcher(PolicyFetcher):
         req_time: datetime.datetime = None,
         pass_started: Optional[datetime.datetime] = None,
     ) -> bool:
+        # A fetch stands in for this sync's own only if it asked for this
+        # scope's branch (a fetch of every branch, or a clone, asks for all):
+        # with the git command line a fetch may ask for other branches only.
+        # One that reached the remote and failed counts once (_stood_in).
+        branch = self._source.branch
+        self._failed_stand_in_at = None
         if force_fetch:
-            if req_time is not None and await self._was_fetched_after(req_time):
+            if req_time is not None and self._stood_in(branch, req_time):
                 logger.debug(
                     "Repo was fetched after refresh request, override force_fetch with False"
                 )
             else:
                 return True  # must fetch
 
-        if not RepoInterface.has_remote_branch(repo, self._source.branch, self._remote):
-            if req_time is not None and await self._was_fetched_after(req_time):
+        if not RepoInterface.has_remote_branch(repo, branch, self._remote):
+            if req_time is not None and self._stood_in(branch, req_time):
                 # A fetch that started after this request already looked for
-                # the branch (a fetch brings every branch), so a burst of
-                # requests for a branch the remote does not have costs one
-                # fetch, not one per request.
+                # the branch, so a burst of requests for a branch the remote
+                # does not have costs one fetch, not one per request.
                 logger.debug(
                     "Target branch was not found in local clone, but the remote "
                     "was fetched after this request; not fetching again"
                 )
                 return False
-            if pass_started is not None and await self._was_fetched_after(pass_started):
+            if (
+                pass_started is not None
+                and self._fetched_after(branch, pass_started) is not None
+            ):
                 # The same rule for the syncs of a pass (the boot preload
-                # included): phase 1 fetches every clone, so the scopes of one
+                # included): phase 1 fetches every clone, asking for every
+                # branch the pass's scopes track on it, so the scopes of one
                 # clone whose branches the remote lacks cost the pass that one
                 # fetch, not one each. The next pass fetches again.
                 logger.debug(
@@ -4630,6 +5122,23 @@ class GitPolicyFetcher(PolicyFetcher):
 
         # by default, we try to avoid re-fetching the repo for performance
         return False
+
+    def _stood_in(self, branch: str, t: datetime.datetime) -> bool:
+        """Whether a fetch that asked for ``branch`` (or every branch), and
+        reached the remote, started after ``t``: it stands in for this sync's
+        own fetch.
+
+        One that failed there is noted in _failed_stand_in_at, so that
+        outside a pass this sync fetches once more
+        (_sync_after_failed_stand_in): a failure counts only for its own
+        sync.
+        """
+        attempt = self._attempt_after(branch, t)
+        if attempt is None:
+            return False
+        if not attempt[1]:
+            self._failed_stand_in_at = attempt[0]
+        return True
 
     @property
     def local_branch_name(self) -> str:
@@ -4674,16 +5183,20 @@ class GitPolicyFetcher(PolicyFetcher):
         """Log that the remote lacks this scope's branch: in a sync pass once
         per branch, since every scope naming it reports the same fetch.
 
-        In a pass, only once a fetch or clone of the clone succeeded in
-        it: after one that failed the pass does not fetch the clone again,
-        and has not reached the remote, so a branch the clone lacks says
-        nothing about the remote. That is logged at DEBUG; the failure was
-        logged where it happened.
+        In a pass, only once a fetch or clone of the clone that asked for
+        the branch succeeded in it: after one that failed the pass does not
+        fetch the clone again, and has not reached the remote, so a branch
+        the clone lacks says nothing about the remote. That is logged at
+        DEBUG; the failure was logged where it happened. A branch that
+        cannot be a ref no remote has, and no fetch asks for.
         """
         sync_pass = _running_sync_pass()
         if sync_pass is not None:
-            last_fetched = GitPolicyFetcher.repos_last_fetched.get(self._source_id)
-            if last_fetched is None or last_fetched <= sync_pass.started:
+            if (
+                self.branch_can_be_a_ref()
+                and self._fetched_after(self._source.branch, sync_pass.started)
+                is not True
+            ):
                 logger.debug(
                     "scope {scope}: target branch {branch} is not in the clone of "
                     "{url}, and no fetch of it in this sync pass reached the remote",
@@ -4823,12 +5336,11 @@ class GitPolicyFetcher(PolicyFetcher):
     def branch_can_be_a_ref(self) -> bool:
         """Whether the scope's branch name can name a ref at all.
 
-        One that cannot (``x~1``, say) is never brought by a fetch, so a
-        bundle request does not wait for it.
+        One that cannot (``x~1``, say, or one whose remote-tracking ref is
+        too long for libgit2) is never brought by a fetch, so a bundle
+        request does not wait for it, and PUT /scopes refuses it.
         """
-        return reference_is_valid_name(
-            f"refs/remotes/{self._remote}/{self._source.branch}"
-        )
+        return _can_be_a_branch(self._source.branch, self._remote)
 
     def has_branch_ref(self) -> bool:
         """Whether the clone has the scope's remote-tracking ref: one ref
@@ -4962,6 +5474,8 @@ class GitPolicyFetcher(PolicyFetcher):
             GitPolicyFetcher.forget_repo(path)
         GitPolicyFetcher.repos.clear()
         GitPolicyFetcher.repos_last_fetched.clear()
+        GitPolicyFetcher.pending_branches.clear()
+        GitPolicyFetcher.branch_attempts.clear()
         GitPolicyFetcher.repo_locks.clear()
 
 

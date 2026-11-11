@@ -41,7 +41,9 @@ from opal_server.scopes.scope_repository import ScopeNotFoundError
 from opal_server.scopes.service import ScopesService
 
 _AUTHOR = git.Actor("test", "test@example.com")
-_BRANCHES_THAT_CANNOT_BE_REFS = ["", "x~1"]
+# The last: its refs/remotes/origin/ ref is 1,024 bytes, which libgit2 refuses
+# to look up.
+_BRANCHES_THAT_CANNOT_BE_REFS = ["", "x~1", "b" * 1004]
 
 
 class _Scopes:
@@ -253,6 +255,18 @@ def test_put_scope_takes_a_branch_with_a_slash(tmp_path, monkeypatch):
 
     assert response.status_code == 201, response.text
     assert store.scopes == {"s1": scope}
+
+
+def test_put_scope_takes_a_branch_of_1003_characters(tmp_path, monkeypatch):
+    monkeypatch.setattr(opal_server_config, "BASE_DIR", str(tmp_path))
+    store = _Scopes([])
+    scope = _scope("s1", "https://git.example.com/org/policy.git", "b" * 1003)
+
+    response = _client(store, _PubSub(), tmp_path).put(
+        "/scopes", json=scope.model_dump()
+    )
+
+    assert response.status_code == 201, response.text
 
 
 def test_the_branch_check_passes_a_policy_that_is_not_on_git():

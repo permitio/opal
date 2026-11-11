@@ -32,6 +32,8 @@ def test_endpoint_present_when_enabled():
         "repo_locks_keys",
         "repos_keys",
         "repos_last_fetched_keys",
+        "pending_branches_keys",
+        "branch_attempts_keys",
     }
 
 
@@ -95,6 +97,8 @@ def test_server_wiring_mounts_endpoint_when_flag_enabled():
         "repo_locks_keys",
         "repos_keys",
         "repos_last_fetched_keys",
+        "pending_branches_keys",
+        "branch_attempts_keys",
     }
 
 

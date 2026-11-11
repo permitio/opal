@@ -984,7 +984,7 @@ async def test_a_burst_for_a_missing_branch_costs_one_fetch(monkeypatch, tmp_pat
     """A fetch that started after a sync request arrived already looked for the
     branch, so that request does not fetch again.
 
-    Mutation: dropping the `_was_fetched_after(req_time)` check in the
+    Mutation: dropping the `_fetched_after(branch, req_time)` check in the
     missing-branch arm of `_should_fetch` fetches for every request.
     """
     fetcher = GitPolicyFetcher(Path(tmp_path), "live", _scope().policy)

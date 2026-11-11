@@ -699,17 +699,27 @@ async def test_a_cli_fetch_that_succeeds_clears_the_hung_markers_of_earlier_ops(
 async def test_a_cli_sync_prunes_exactly_when_scopes_git_fetch_prune_is_on(
     prune, cli_on, git_origin, tmp_path, monkeypatch
 ):
+    """A sync's fetch asks for its scope's branch, and prunes only that
+    branch's refs: a branch deleted on the remote that it did not ask for
+    stays."""
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_PRUNE", prune)
     source = _source(git_origin.url)
     fetcher = _fetcher(tmp_path / "base", source)
     await fetcher.fetch_and_notify_on_changes()
     clone = GitPolicyFetcher.repo_clone_path(tmp_path / "base", source)
     git_origin.delete("dev")
-    git_origin.commit("master")
+    git_origin.delete("feature/x")
+    on_dev = GitPolicyFetcher(
+        tmp_path / "base",
+        "scope-dev",
+        source.model_copy(update={"branch": "dev"}),
+        callbacks=_Recorder(),
+    )
 
-    await fetcher.fetch_and_notify_on_changes(force_fetch=True)
+    await on_dev.fetch_and_notify_on_changes(force_fetch=True)
 
     assert ("refs/remotes/origin/dev" in _refs(clone)) is (not prune)
+    assert "refs/remotes/origin/feature/x" in _refs(clone)
 
 
 @pytest.mark.asyncio
@@ -986,6 +996,9 @@ async def test_a_fetch_whose_fetch_head_cannot_be_written_still_counts_as_one(
         logger.remove(sink)
 
     assert fetcher.callbacks.updates[-1][1] == new
-    assert GitPolicyFetcher.repos_last_fetched[fetcher.clone_source_id] > before
+    started, succeeded = GitPolicyFetcher.branch_attempts[fetcher.clone_source_id][
+        "master"
+    ]
+    assert succeeded and started > before
     assert fetcher.clone_source_id not in GitPolicyFetcher.source_backoff
     assert [r["message"] for r in records if "FETCH_HEAD" in r["message"]]

@@ -155,9 +155,11 @@ requirements: `python -m pip install --require-hashes -r requirements.txt`.
   would make a round-robin read miss the worker that fetched and let a `== 0`
   drain assertion pass falsely. One worker makes every cache read deterministic;
   the leak/boot/offline bugs all reproduce single-worker.
-- First-sync of a fresh scope takes the clone path, which fills only `repo_locks`;
-  `repos` / `repos_last_fetched` are filled by the discover/fetch path on a second
-  sync, so the load helpers issue a `refresh_all()` before asserting on `repos`.
+- First-sync of a fresh scope takes the clone path, which fills `repo_locks` and
+  `repos_last_fetched`; `repos` is filled by the discover/fetch path on a second
+  sync, so the load helpers issue a `refresh_all()` before asserting on `repos`. A
+  git command-line fetch that names its branches fills `branch_attempts`, not
+  `repos_last_fetched`.
 - `OPAL_SCOPES_GIT_FETCH_TIMEOUT` is set to `10` (code default: `120`) so hung
   clones/fetches against the `blackhole` sidecar fail fast — the code default
   exceeds this bed's serve windows, so offline-repo/timeout gates need the
