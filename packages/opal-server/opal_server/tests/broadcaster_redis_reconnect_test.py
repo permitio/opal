@@ -4,13 +4,18 @@
 SUBSCRIBE, UNSUBSCRIBE, PUBLISH, PING), counts the connections it accepts and
 records every command, and can fail the ways a Redis does: refuse, accept then
 close or reset, drop every session, reject a password, or leave a command
-unanswered.
+unanswered. It serves TLS when given a server context, and records what a
+client that does not speak RESP sends.
 """
 import asyncio
+import datetime
+import ipaddress
 import socket
+import ssl
 import struct
 import sys
 from contextlib import suppress
+from pathlib import Path
 from typing import Dict, List, Optional
 
 import pytest
@@ -33,6 +38,7 @@ from opal_server.pubsub_resilience import ReconnectingBroadcaster
 from redis.asyncio.client import PubSub as RedisPubSub
 from redis.asyncio.connection import ConnectionPool
 from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
 
 
 def _bulk(value: str) -> bytes:
@@ -49,10 +55,11 @@ def _integer(value: int) -> bytes:
 
 
 async def _read_command(reader: asyncio.StreamReader) -> Optional[List[str]]:
+    """Read one command, its leading ``*`` already read."""
     line = await reader.readline()
     if not line:
         return None
-    count = int(line[1:])
+    count = int(line)
     args = []
     for _ in range(count):
         header = await reader.readline()
@@ -74,15 +81,22 @@ class FakeRedis:
 
     ``users`` maps a user name to its password (``"default"`` is the user a
     one-argument AUTH names); with no users every command is allowed.
-    ``on_accept`` is ``"serve"``, ``"close"`` (close at once) or ``"reset"``
-    (close with an RST). Commands named in ``mute`` are recorded and never
-    answered.
+    ``on_accept`` is ``"serve"``, ``"close"`` (close at once), ``"reset"``
+    (close with an RST) or ``"silent"`` (read nothing, answer nothing).
+    Commands named in ``mute`` are recorded and never answered. With ``tls``
+    (a server SSL context) every connection is TLS.
     """
 
-    def __init__(self, users: Optional[Dict[str, str]] = None):
+    def __init__(
+        self,
+        users: Optional[Dict[str, str]] = None,
+        tls: Optional[ssl.SSLContext] = None,
+    ):
         self.users = users or {}
+        self.tls = tls
         self.on_accept = "serve"
         self.mute: set = set()
+        self.raw: List[bytes] = []
         self.accepts = 0
         self.sessions: List[_Session] = []
         self.closed_sessions: List[_Session] = []
@@ -113,7 +127,9 @@ class FakeRedis:
         return f"redis://{at}127.0.0.1:{self.port}"
 
     async def start(self) -> None:
-        self._server = await asyncio.start_server(self._serve, "127.0.0.1", self.port)
+        self._server = await asyncio.start_server(
+            self._serve, "127.0.0.1", self.port, ssl=self.tls
+        )
         self.port = self._server.sockets[0].getsockname()[1]
 
     async def stop(self) -> None:
@@ -162,9 +178,20 @@ class FakeRedis:
             writer.close()
             return
         session = _Session(writer)
+        if self.on_accept == "silent":
+            self.sessions.append(session)
+            with suppress(ConnectionError):
+                await reader.read()
+            self.sessions.remove(session)
+            writer.close()
+            return
         self.sessions.append(session)
         try:
             while True:
+                first = await reader.read(1)
+                if first != b"*":
+                    self.raw.append(first + await reader.read(65536))
+                    break
                 command = await _read_command(reader)
                 if command is None:
                     break
@@ -224,6 +251,40 @@ class FakeRedis:
         if name in ("SELECT", "CLIENT"):
             return b"+OK\r\n"
         return b"-ERR unknown command\r\n"
+
+
+def _self_signed(directory: Path) -> Path:
+    """A self-signed certificate for 127.0.0.1 in ``directory``, its PEM
+    path."""
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "another CA")])
+    now = datetime.datetime.now(datetime.timezone.utc)
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(minutes=5))
+        .not_valid_after(now + datetime.timedelta(days=1))
+        .add_extension(
+            x509.SubjectAlternativeName(
+                [x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]
+            ),
+            critical=False,
+        )
+        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+        .sign(key, hashes.SHA256())
+    )
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "cert.pem"
+    path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    return path
 
 
 def _free_port() -> int:
@@ -735,3 +796,124 @@ def test_the_url_cannot_change_the_timeouts_or_the_keepalive():
     assert connection.socket_connect_timeout == broadcast_redis.CONNECT_TIMEOUT_SECONDS
     assert connection.socket_keepalive is True
     assert connection.health_check_interval == 0
+
+
+def _rediss_url(fake: FakeRedis, query: str = "", host: str = "127.0.0.1") -> str:
+    return f"rediss://{host}:{fake.port}" + (f"?{query}" if query else "")
+
+
+@pytest.mark.asyncio
+async def test_rediss_publishes_and_subscribes_over_tls(tls_cert):
+    async with FakeRedis(tls=tls_cert.context) as fake:
+        url = _rediss_url(fake, f"ssl_ca_certs={tls_cert.path}")
+        async with EndOnLossBroadcast(url) as reader:
+            async with reader.subscribe("EventNotifier") as subscriber:
+                async with EndOnLossBroadcast(url) as writer:
+                    await writer.publish("EventNotifier", "hello")
+                event = await asyncio.wait_for(subscriber.get(), 2)
+    assert event.message == "hello"
+    assert fake.accepts >= 2
+
+
+@pytest.mark.asyncio
+async def test_rediss_authenticates_inside_tls(tls_cert):
+    async with FakeRedis(users={"default": "secret"}, tls=tls_cert.context) as fake:
+        url = f"rediss://:secret@127.0.0.1:{fake.port}?ssl_ca_certs={tls_cert.path}"
+        async with EndOnLossBroadcast(url) as broadcast:
+            await broadcast.publish("EventNotifier", "hello")
+    assert fake.published == [("EventNotifier", "hello")]
+
+
+@pytest.mark.asyncio
+async def test_rediss_with_a_ca_that_did_not_sign_the_certificate_fails_closed(
+    tls_cert, tmp_path
+):
+    other_ca = _self_signed(tmp_path / "other")
+    gave_up = []
+    async with FakeRedis(users={"default": "secret"}, tls=tls_cert.context) as fake:
+        broadcaster = _reconnecting(
+            f"rediss://:secret@127.0.0.1:{fake.port}?ssl_ca_certs={other_ca}",
+            reconnect_max_retries=2,
+        )
+        broadcaster.set_give_up_callback(lambda: _record(gave_up))
+        with capture_logs() as logs:
+            task = await broadcaster.start_reader_task()
+            await asyncio.wait_for(task, 5)
+    assert gave_up == [True]
+    assert "CERTIFICATE_VERIFY_FAILED" in "".join(logs.text)
+    assert fake.count("AUTH") == 0
+
+
+@pytest.mark.asyncio
+async def test_rediss_checks_the_host_name(tls_cert):
+    """The test certificate names 127.0.0.1 only, so connecting by the name
+    localhost must fail even though the CA is trusted."""
+    async with FakeRedis(tls=tls_cert.context) as fake:
+        url = _rediss_url(fake, f"ssl_ca_certs={tls_cert.path}", host="localhost")
+        with pytest.raises(RedisConnectionError, match="match|mismatch"):
+            async with EndOnLossBroadcast(url):
+                pass
+    assert fake.count("PING") == 0
+
+
+@pytest.mark.asyncio
+async def test_rediss_without_a_ca_uses_the_system_trust_store(tls_cert):
+    async with FakeRedis(tls=tls_cert.context) as fake:
+        with pytest.raises(RedisConnectionError, match="CERTIFICATE_VERIFY_FAILED"):
+            async with EndOnLossBroadcast(_rediss_url(fake)):
+                pass
+
+
+@pytest.mark.asyncio
+async def test_rediss_to_a_redis_without_tls_sends_no_command(short_timeouts):
+    async with FakeRedis(users={"default": "secret"}) as fake:
+        url = f"rediss://:secret@127.0.0.1:{fake.port}"
+        with pytest.raises((RedisConnectionError, RedisTimeoutError)):
+            async with EndOnLossBroadcast(url):
+                pass
+        await _wait_for(lambda: fake.raw)
+    assert fake.count("AUTH") == 0
+    assert all(b"secret" not in data for data in fake.raw)
+
+
+@pytest.mark.asyncio
+async def test_a_tls_handshake_that_never_completes_times_out(tls_cert, short_timeouts):
+    async with FakeRedis() as fake:
+        fake.on_accept = "silent"
+        url = _rediss_url(fake, f"ssl_ca_certs={tls_cert.path}")
+        started = asyncio.get_running_loop().time()
+        with pytest.raises(RedisTimeoutError, match="did not connect"):
+            async with EndOnLossBroadcast(url):
+                pass
+        took = asyncio.get_running_loop().time() - started
+    assert took < 1.0
+
+
+@pytest.mark.parametrize(
+    "query, warned",
+    [
+        ("", False),
+        ("ssl_check_hostname=false", True),
+        ("ssl_cert_reqs=none&ssl_check_hostname=false", True),
+    ],
+    ids=["verified", "host-name-off", "certificate-off"],
+)
+def test_turning_tls_verification_off_is_a_startup_warning(query, warned):
+    with capture_logs() as logs:
+        check_redis_url(f"rediss://:secret@localhost:6380?{query}")
+    warnings = [line for line in logs.text if "WARNING" in line]
+    assert bool(warnings) is warned
+    assert all("does not verify" in line for line in warnings)
+    assert all("secret" not in line for line in warnings)
+
+
+@pytest.mark.parametrize(
+    "query, problem",
+    [
+        ("ssl_ca_certs=/no/such/ca.pem", "No such file"),
+        ("ssl_cert_reqs=none", "check_hostname"),
+    ],
+)
+def test_unusable_tls_settings_are_refused_at_startup(query, problem):
+    with pytest.raises(ValueError, match=problem):
+        check_redis_url(f"rediss://localhost:6380?{query}")

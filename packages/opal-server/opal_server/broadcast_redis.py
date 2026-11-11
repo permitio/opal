@@ -16,6 +16,9 @@ for good when its subscription ends: there the backend reconnects and
 subscribes again itself, backing off, and nothing resyncs clients after the
 gap. Both use the library's own backends for every other scheme.
 
+A ``rediss://`` URL connects over TLS, and the server's certificate and its
+host name are verified.
+
 Nothing the backend does waits forever, with fixed limits that the URL
 cannot change: connecting (with AUTH), subscribing and publishing each time
 out, every connection has TCP keepalive, and a subscriber that hears nothing
@@ -26,6 +29,7 @@ for ``PING_INTERVAL_SECONDS`` sends PING and counts no answer within
 import asyncio
 import random
 import socket
+import ssl
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Dict, Optional
 from urllib.parse import urlparse
@@ -35,7 +39,8 @@ from broadcaster._backends.base import BroadcastBackend
 from opal_common.logger import logger
 from redis.asyncio import Redis
 from redis.asyncio.client import PubSub
-from redis.asyncio.connection import ConnectionPool, parse_url
+from redis.asyncio.connection import ConnectionPool, SSLConnection, parse_url
+from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import TimeoutError as RedisTimeoutError
 
 REDIS_SCHEMES = ("redis", "rediss")
@@ -60,11 +65,15 @@ def connection_options(url: str) -> Dict[str, Any]:
     """The redis-py connection options for a broadcaster URL.
 
     The URL's own options (user, password, database and redis-py's query
-    parameters) are kept. Whatever the URL says, redis-py's retries are
-    off (OPAL makes every reconnect itself), and the timeouts and TCP
-    keepalive are the backend's.
+    parameters) are kept. For ``rediss://``, redis-py verifies the
+    certificate but not the host name unless asked, so the host name is
+    verified unless the URL says ``ssl_check_hostname=false``. Whatever the
+    URL says, redis-py's retries are off (OPAL makes every reconnect
+    itself), and the timeouts and TCP keepalive are the backend's.
     """
     options: Dict[str, Any] = dict(parse_url(url))
+    if options.get("connection_class") is SSLConnection:
+        options.setdefault("ssl_check_hostname", True)
     options.update(
         decode_responses=True,
         retry=None,
@@ -102,28 +111,55 @@ async def _time_limit(seconds: float, failure: str) -> AsyncIterator[None]:
     Raises:
         redis.exceptions.TimeoutError: the block, or a socket timeout inside
             it, ran out of time; the message is ``failure`` and the limit.
+        redis.exceptions.ConnectionError: the block failed to connect. For a
+            failed TLS handshake the message gives the TLS error, which
+            redis-py's own message leaves out.
     """
     try:
         async with asyncio.timeout(seconds):
             yield
     except (TimeoutError, RedisTimeoutError):
         raise RedisTimeoutError(f"{failure} within {seconds:g} s") from None
+    except RedisConnectionError as error:
+        if isinstance(error.__context__, ssl.SSLError):
+            raise RedisConnectionError(
+                f"TLS with Redis failed: {error.__context__}"
+            ) from error
+        raise
 
 
 def check_redis_url(url: str) -> None:
     """Fail at startup on a Redis broadcaster URL redis-py cannot use.
 
+    A ``rediss://`` URL that turns certificate or host name verification
+    off is accepted, with a warning.
+
     Raises:
-        ValueError: the URL names a query parameter redis-py does not know.
+        ValueError: the URL names a query parameter redis-py does not know,
+            or TLS settings that cannot make a TLS context (a CA file that
+            does not exist, for example).
     """
     pool = ConnectionPool(**connection_options(url))
     try:
-        pool.make_connection()
+        connection = pool.make_connection()
     except TypeError as error:
         raise ValueError(
             f"OPAL_BROADCAST_URI has a query parameter the Redis client does not "
             f"accept: {error}. Remove it from the URI."
         ) from None
+    if isinstance(connection, SSLConnection):
+        try:
+            context = connection.ssl_context.get()
+        except (OSError, ValueError) as error:
+            raise ValueError(
+                f"OPAL_BROADCAST_URI's TLS settings cannot be used: {error}"
+            ) from None
+        if context.verify_mode == ssl.CERT_NONE or not context.check_hostname:
+            logger.warning(
+                "OPAL_BROADCAST_URI turns TLS verification off (ssl_cert_reqs or "
+                "ssl_check_hostname): the Redis broadcaster does not verify that it "
+                "talks to the Redis the URI names"
+            )
 
 
 class RedisBroadcastBackend(BroadcastBackend):
