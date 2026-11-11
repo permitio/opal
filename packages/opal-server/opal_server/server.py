@@ -43,6 +43,7 @@ from opal_server.redis_utils import RedisDB
 from opal_server.scopes.api import init_scope_router
 from opal_server.scopes.loader import load_scopes
 from opal_server.scopes.purge import subscribe_worker_purge_handler
+from opal_server.scopes.readiness import required_clones, validate_required_repos
 from opal_server.scopes.scope_repository import ScopeRepository
 from opal_server.scopes.service import ScopesService
 from opal_server.security.api import init_security_router
@@ -146,6 +147,7 @@ class OpalServer:
         # through loguru's default handler (no gunicorn master configured it
         # when uvicorn runs the server on its own).
         validate_git_cli_settings()
+        validate_required_repos()
         if opal_server_config.SCOPES and opal_server_config.SCOPES_GIT_FETCH_WITH_CLI:
             # SSH key files of a worker that died (SIGKILL, an OOM kill) before
             # it could remove them; the pre-fork preload sweeps them too.
@@ -433,6 +435,26 @@ class OpalServer:
                     return JSONResponse(
                         status_code=503,
                         content={"status": "error", "broadcaster": "unhealthy"},
+                    )
+            if (
+                opal_server_config.SCOPES
+                and opal_server_config.SCOPES_READY_REQUIRED_REPOS
+            ):
+                missing = required_clones.missing(Path(opal_server_config.BASE_DIR))
+                metrics.gauge(
+                    "opal_server.scopes.ready_clones_missing",
+                    len(missing),
+                    tags={"pid": str(os.getpid())},
+                )
+                if missing:
+                    # Source ids, never a URL: a URL can carry a credential.
+                    return JSONResponse(
+                        status_code=503,
+                        content={
+                            "status": "error",
+                            "scopes": "clones missing",
+                            "missing": missing,
+                        },
                     )
             return {"status": "ok"}
 

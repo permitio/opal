@@ -5,6 +5,7 @@ deletes each clone this host left marked before the preload's sync, which clones
 it fresh."""
 import asyncio
 import fcntl
+import hashlib
 import itertools
 import os
 import subprocess
@@ -1025,6 +1026,75 @@ def test_no_live_clone_on_disk_keeps_every_hung_clone(
     assert reclone_hung_scope_clones(tmp_path, live) == 0
     assert all((_root(tmp_path) / _sid(n)).exists() for n in (1, 2, 3))
     assert any("none is a clone of a current scope" in m for m in warnings_logged)
+
+
+# --- clones readiness waits for (SCOPES_READY_REQUIRED_REPOS) -------------------------------
+
+_REQUIRED_URL = "git@git.example:org/root.git"
+
+
+def _required_sid(shard: int = 0) -> str:
+    return f"{hashlib.sha256(_REQUIRED_URL.encode()).hexdigest()}-{shard}"
+
+
+@pytest.fixture
+def required(monkeypatch):
+    monkeypatch.setattr(
+        opal_server_config, "SCOPES_READY_REQUIRED_REPOS", [_REQUIRED_URL]
+    )
+
+
+def test_a_landed_hung_clone_of_a_required_repo_is_kept(
+    tmp_path, on, required, monkeypatch, warnings_logged
+):
+    """Deleted, the clone would keep the server from Ready until a fresh clone
+    of that repository lands; kept, it serves its last fetched policy."""
+    seen = []
+    monkeypatch.setattr(
+        git_fetcher_module.metrics, "increment", lambda name, *a, **k: seen.append(name)
+    )
+    kept = _clone_dir(tmp_path, _required_sid(), hung=True)
+    other = _clone_dir(tmp_path, _sid(2), hung=True)
+    for n in (3, 4, 5):
+        _clone_dir(tmp_path, _sid(n))
+
+    assert reclone_hung_scope_clones(tmp_path, None) == 1
+    assert kept.exists() and _markers(kept)
+    assert not other.exists()
+    assert sorted(seen) == [
+        "opal_server.scopes.hung_clone_kept",
+        "opal_server.scopes.hung_clone_recloned",
+    ]
+    assert any(
+        _required_sid() in m and "SCOPES_READY_REQUIRED_REPOS" in m
+        for m in warnings_logged
+    )
+
+
+def test_every_landed_shard_of_a_required_repo_is_kept(tmp_path, on, required):
+    shards = [_clone_dir(tmp_path, _required_sid(i), hung=True) for i in range(3)]
+    for n in (3, 4, 5):
+        _clone_dir(tmp_path, _sid(n))
+    assert reclone_hung_scope_clones(tmp_path, None) == 0
+    assert all(s.exists() for s in shards)
+
+
+def test_a_hung_clone_of_a_required_repo_that_never_landed_is_deleted(
+    tmp_path, on, required
+):
+    """It holds no policy to keep, and readiness waits for it anyway."""
+    clone = _root(tmp_path) / _required_sid()
+    pygit2.init_repository(str(clone))
+    (clone / ".git" / "FETCH_HEAD").write_text("")
+    _mark(clone)
+    assert reclone_hung_scope_clones(tmp_path, None) == 1
+    assert not clone.exists()
+
+
+def test_without_required_repos_a_hung_clone_of_that_repo_is_deleted(tmp_path, on):
+    clone = _clone_dir(tmp_path, _required_sid(), hung=True)
+    assert reclone_hung_scope_clones(tmp_path, None) == 1
+    assert not clone.exists()
 
 
 # --- the preload wiring ---------------------------------------------------------------------

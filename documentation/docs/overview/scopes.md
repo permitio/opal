@@ -182,6 +182,43 @@ so a rollout records every host again.
 replaces trust on first use, with either backend: only the hosts and keys in
 that file are accepted, and nothing is recorded.
 
+### Readiness and the first clones
+
+By default `/healthcheck` does not look at the scope clones: a new server is
+Ready before it has cloned anything, and a policy bundle request for a scope
+whose clone has not landed yet cannot be served. To keep a new
+server out of service until it can serve its main repositories, list them in
+[`OPAL_SCOPES_READY_REQUIRED_REPOS`](/getting-started/configuration#opal_scopes_ready_required_repos),
+comma-separated, each URL written exactly as the scopes' policy sources write
+it:
+
+```
+OPAL_SCOPES_READY_REQUIRED_REPOS=git@github.com:example/policy.git
+```
+
+`/healthcheck` then answers `503` until the clone of each has landed, naming the
+missing clones' directories, and `200` from then on. With libgit2
+(`OPAL_SCOPES_GIT_FETCH_WITH_CLI=false`), the server does not start with this
+set unless `OPAL_SCOPES_REPO_CLONES_SHARDS` is 1. Write the URLs without `#`,
+quotes or backslashes (percent-encode them): the list is read like a shell word
+list, and a server in scopes mode refuses an entry it would change. A URL that no stored
+scope's policy source uses is never cloned, so `/healthcheck` stays `503` until
+a stored scope uses that URL; the server logs a WARNING naming it (masked) at
+the preload and at the leader's sync passes. Each worker remembers the
+clones it has seen landed, so a later failed fetch, a remote that is down, or
+a clone deleted and cloned again does not take a Ready server out of service.
+There is no grace period: allow for the first clones in the deployment's
+rollout deadline (`progressDeadlineSeconds` on Kubernetes). Readiness never
+restarts the server.
+
+To move a readiness check off a script that reads the clones' `FETCH_HEAD`
+files, point the probe at `/healthcheck` and set this setting: it needs no
+clone directory names, and it fails while a clone is missing. With
+[`OPAL_SCOPES_GIT_RECLONE_HUNG_ON_START`](/getting-started/configuration#opal_scopes_git_reclone_hung_on_start)
+on, a start keeps a landed clone of a required repository that a hung git op
+marked, where it deletes any other marked clone, so a restart does not wait
+for a fresh clone.
+
 ### Upgrading from 0.9
 
 0.9 fetched with libgit2 unless `OPAL_SCOPES_GIT_FETCH_WITH_CLI` was on. From

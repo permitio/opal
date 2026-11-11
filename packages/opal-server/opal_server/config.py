@@ -556,7 +556,11 @@ class OpalServerConfig(Confi):
         "scopes use. Do not share BASE_DIR between running servers (see "
         "BASE_DIR); with this on, any marker counts, whoever wrote it. Each "
         "clone deleted "
-        "increments opal_server.scopes.hung_clone_recloned.",
+        "increments opal_server.scopes.hung_clone_recloned. A marked clone "
+        "of a repository in SCOPES_READY_REQUIRED_REPOS that had landed is "
+        "kept, with a WARNING, and increments "
+        "opal_server.scopes.hung_clone_kept: deleting it would keep the "
+        "server from Ready until the clone lands again.",
     )
     SCOPES_GIT_MAX_ZOMBIES = confi.int(
         "SCOPES_GIT_MAX_ZOMBIES",
@@ -1208,6 +1212,40 @@ class OpalServerConfig(Confi):
         "other shards stay unused in BASE_DIR's git_sources directory until "
         "they are removed. The server does not start in scopes mode when this "
         "is below 1.",
+    )
+    SCOPES_READY_REQUIRED_REPOS = confi.list(
+        "SCOPES_READY_REQUIRED_REPOS",
+        [],
+        description="In scopes mode, the repositories whose clones must have "
+        "landed before /healthcheck answers 200: a comma-separated list of "
+        "repository URLs, "
+        "each written exactly as the scopes' policy sources write it. Until "
+        "every clone of each has finished its first clone, /healthcheck "
+        "answers 503 with the missing clones' directory names in BASE_DIR's "
+        "git_sources directory (never a URL), and "
+        "opal_server.scopes.ready_clones_missing reports how many. A directory "
+        "a clone is still writing does not count. Once a worker has seen a "
+        "clone landed it does not look again: a later failed fetch, a remote "
+        "that is down, or the clone deleted and cloned again does not fail "
+        "readiness. A worker forked from the gunicorn master starts with what "
+        "the pre-fork scope preload saw. Each repository has one clone: with "
+        "SCOPES_GIT_FETCH_WITH_CLI off (libgit2) and SCOPES_REPO_CLONES_SHARDS "
+        "above 1 the server does not start in scopes mode with this set, since "
+        "a shard no scope's branch maps to would never clone and the server "
+        "would never get Ready. A URL no stored scope uses never clones "
+        "either, so /healthcheck stays 503 until a stored scope uses that URL: "
+        "the sync passes (the pre-fork preload's and the leader's) log a "
+        "WARNING for it, once per process, with the URL masked and the number "
+        "of stored scopes. There is no grace period: a new server is not Ready "
+        "until its first clones land, so size a deployment's rollout deadline "
+        "for them. Empty (the default), readiness does not look at the clones. "
+        "The list is read like a shell word list (a # starts a comment, and "
+        "quotes and backslashes are removed), so the server does not start in "
+        "scopes mode when an entry holds a #, a quote or a backslash "
+        "(percent-encode them in a URL), is blank, or starts with [ or ends "
+        "with ] (a JSON list). A URL can carry a credential, so the value is "
+        "never logged.",
+        sensitive=True,
     )
 
     REDIS_URL = confi.str(

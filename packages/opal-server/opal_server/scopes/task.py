@@ -29,6 +29,7 @@ from opal_server.policy.watcher.task import BasePolicyWatcherTask
 from opal_server.pubsub_resilience import ReconnectingBroadcaster
 from opal_server.redis_utils import RedisDB
 from opal_server.scopes.purge import LeaderScopePurger
+from opal_server.scopes.readiness import required_clones, validate_required_repos
 from opal_server.scopes.scope_repository import ScopeRepository
 from opal_server.scopes.service import ScopesService
 
@@ -392,6 +393,7 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                 configure_logs()
             # Before any clone, and before a worker exists to refuse to start.
             validate_git_cli_settings()
+            validate_required_repos()
             # This runs in the gunicorn MASTER (scripts/gunicorn_conf.py::when_ready)
             # before any worker configured monitoring. Without
             # configure_server_metrics() the git metrics emitted during preload
@@ -533,4 +535,12 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             # on-disk clones remain; workers re-open handles lazily.
             GitPolicyFetcher.reset_caches()
 
+            # Each worker forked from here starts with what this saw landed.
+            missing = required_clones.missing(Path(opal_server_config.BASE_DIR))
+            if missing:
+                logger.warning(
+                    "Preload finished without the required scope clones "
+                    "{missing}: readiness waits for them",
+                    missing=missing,
+                )
             logger.warning("Finished preloading repo clones for scopes.")

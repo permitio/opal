@@ -941,6 +941,8 @@ def reclone_hung_scope_clones(
     one the scopes use (the scope list came back empty, say), nothing is
     deleted: nothing serves from those clones, so keeping them costs
     nothing, while a scope that comes back during an outage still has one.
+    A landed clone of a repository in SCOPES_READY_REQUIRED_REPOS is kept:
+    readiness would wait for a fresh clone of it.
     Runs under the repack lock and does nothing while a repack holds it. With
     the setting off it only removes markers, which mean nothing then. Never
     raises: a clone it cannot fully delete keeps its markers for the next start.
@@ -1061,7 +1063,27 @@ def _reclone_hung_under_lock(
             total=len(all_repos),
         )
         return 0
-    return sum(_reclone_one(root / s) for s in hung)
+    # Readiness waits for these repositories' clones: a fresh clone of one
+    # that had landed would keep the server from Ready until it lands again.
+    required = {
+        GitPolicyFetcher.repo_hash(url)
+        for url in opal_server_config.SCOPES_READY_REQUIRED_REPOS
+    }
+    deleted = 0
+    for source_id in hung:
+        clone = root / source_id
+        if _repo_of(source_id) in required and clone_landed(clone / ".git"):
+            metrics.increment("opal_server.scopes.hung_clone_kept")
+            logger.warning(
+                "Scope clone {source_id} had a git op still hung when the previous "
+                "server process ended: kept, since its repository is in "
+                "SCOPES_READY_REQUIRED_REPOS and readiness would wait for a fresh "
+                "clone",
+                source_id=source_id,
+            )
+            continue
+        deleted += _reclone_one(clone)
+    return deleted
 
 
 def _reclone_one(clone: Path) -> bool:
@@ -5471,8 +5493,21 @@ class GitPolicyFetcher(PolicyFetcher):
                     return bundle_maker.make_bundle(current_head_commit)
 
     @staticmethod
+    def repo_hash(url: str) -> str:
+        """The part of a source id that names its repository: the sha256 of
+        the URL as the scope writes it."""
+        return hashlib.sha256(url.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def repo_source_ids(url: str) -> List[str]:
+        """The source ids of every clone of the repository at ``url``: one per
+        index below clone_shards()."""
+        base = GitPolicyFetcher.repo_hash(url)
+        return [f"{base}-{index}" for index in range(clone_shards())]
+
+    @staticmethod
     def source_id(source: GitPolicyScopeSource) -> str:
-        base = hashlib.sha256(source.url.encode("utf-8")).hexdigest()
+        base = GitPolicyFetcher.repo_hash(source.url)
         shards = clone_shards()
         index = hashlib.sha256(source.branch.encode("utf-8")).digest()[0] % shards
         return f"{base}-{index}"

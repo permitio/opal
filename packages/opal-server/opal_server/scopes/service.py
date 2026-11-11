@@ -34,6 +34,7 @@ from opal_server.scopes.purge import (
     confined_clone_path,
     find_scope_sharing_source,
 )
+from opal_server.scopes.readiness import warn_unmatched_required_repos
 from opal_server.scopes.scope_repository import (
     Scope,
     ScopeNotFoundError,
@@ -563,6 +564,7 @@ class ScopesService:
         """
         with tracer.trace("scopes_service.sync_scopes"):
             scopes = await self._scopes.all()
+            warn_unmatched_required_repos(scopes)
             # Emitted before the poll-updates filter below, so this is always the
             # true total rather than flapping with the caller's filter.
             metrics.gauge("opal_server.scopes.count", len(scopes))
