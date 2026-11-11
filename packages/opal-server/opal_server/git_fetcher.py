@@ -1950,6 +1950,78 @@ def _removes_without_lock(path: str, err: OSError) -> bool:
     return True
 
 
+def reclaim_clone_dir_unless_busy(path: str) -> Optional[bool]:
+    """Remove a scope clone no scope uses, and what lies beside it, for the
+    orphan sweep (scopes/orphans.py): True once removed, False, having removed
+    nothing, while a repack or a git op holds it, None when it is gone already.
+
+    Under the repack lock and the clone's own lock (git_cli.take_clone_lock),
+    each taken without waiting, and never without them, with the git
+    command-line fetch on or off (unlike _removes_without_lock). ``path`` is
+    removed only as a real directory, never through a symlink. Then what lies
+    beside it goes: the directories a clone of it was being made in, its
+    hung-op markers, the SSH host keys recorded for it, and last its lock
+    file, unlinked while held (take_clone_lock then opens a new one). What of
+    those cannot be removed is logged and left. Blocking.
+
+    Raises:
+        OSError: a lock cannot be taken at all, ``path`` is not a real
+            directory, or removing it failed (part of it may be gone).
+    """
+    repo_path = Path(path)
+    if not os.path.lexists(repo_path):
+        return None
+    repack_fd = _take_repack_lock(_repack_lock_dir(repo_path))
+    if repack_fd is None:
+        return False
+    try:
+        clone_fd = git_cli.take_clone_lock(repo_path)
+        if clone_fd is None:
+            return False
+        try:
+            try:
+                mode = os.lstat(repo_path).st_mode
+            except FileNotFoundError:
+                return None
+            if not stat.S_ISDIR(mode):
+                raise NotADirectoryError(
+                    errno.ENOTDIR, "not a real directory (a symlink?)", path
+                )
+            shutil.rmtree(repo_path)
+            _remove_beside_reclaimed_clone(repo_path)
+        finally:
+            git_cli.drop_clone_lock(clone_fd)
+    finally:
+        _drop_repack_lock(repack_fd)
+    return True
+
+
+def _remove_beside_reclaimed_clone(repo_path: Path) -> None:
+    """What lies beside a clone reclaim_clone_dir_unless_busy just removed,
+    under its locks; the lock file last.
+
+    Logged, never raised.
+    """
+    git_cli.remove_dead_op_leftovers(repo_path)
+    clear_hung_markers(hung_marker_dir(repo_path))
+    for leftover in (
+        git_cli.host_key_record(repo_path),
+        git_cli.clone_lock_path(repo_path),
+    ):
+        try:
+            leftover.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            logger.warning(
+                "Could not remove {path} beside the removed scope clone "
+                "{source_id}: {err!r}",
+                path=str(leftover),
+                source_id=repo_path.name,
+                err=e,
+            )
+
+
 # How long a repack can hold the repack lock past its timeout: the SIGTERM
 # grace, the SIGKILL wait and a sweep of the pack dir.
 _REPACK_STOP_SECONDS = _REPACK_TERM_GRACE_SECONDS + _REPACK_KILL_WAIT_SECONDS + 10.0
@@ -3014,6 +3086,53 @@ def fetch_mark_after(repo_path: Path, branch: str, t: float) -> Optional[bool]:
     return None
 
 
+# A branch's fetch mark name, as _fetch_mark_name writes it.
+_FETCH_MARK_NAME_RE = re.compile(r"\A[0-9a-f]{32}\Z")
+
+
+def remove_stale_fetch_marks(
+    repo_path: Path, branches: AbstractSet[str], before: float
+) -> int:
+    """Remove the branch fetch marks of the clone at ``repo_path`` that name
+    none of ``branches`` and are dated before ``before`` (epoch seconds), for
+    the orphan sweep; how many it removed.
+
+    ALL, FAILED and any other name are kept, and so are marks dated from
+    ``before`` on: a fetch that started then may be for a branch the sweep's
+    read of the scopes missed. Nothing is removed through a symlink. For the
+    holder of the clone's lock_source, which every fetch that writes marks
+    holds. Blocking.
+
+    Raises:
+        OSError: the marks directory cannot be read.
+    """
+    marks = repo_path / ".git" / _FETCH_MARKS_DIR
+    for directory in (marks.parent, marks):
+        try:
+            if not stat.S_ISDIR(os.lstat(directory).st_mode):
+                return 0
+        except (FileNotFoundError, NotADirectoryError):
+            return 0
+    tracked = {_fetch_mark_name(branch) for branch in branches}
+    with os.scandir(marks) as entries:
+        stale = [
+            entry.name
+            for entry in entries
+            if _FETCH_MARK_NAME_RE.match(entry.name)
+            and entry.name not in tracked
+            and entry.is_file(follow_symlinks=False)
+            and entry.stat(follow_symlinks=False).st_mtime < before
+        ]
+    removed = 0
+    for name in stale:
+        try:
+            os.unlink(marks / name)
+        except FileNotFoundError:
+            continue
+        removed += 1
+    return removed
+
+
 # source_id -> time.monotonic() when _log_cooldown_once last logged it.
 _repack_cooldown_logged_at: Dict[str, float] = {}
 
@@ -3264,6 +3383,14 @@ def _lock_is_busy(lock: asyncio.Lock) -> bool:
     """
     waiters = getattr(lock, "_waiters", None) or ()
     return lock.locked() or any(not w.cancelled() for w in waiters)
+
+
+def source_busy(source_id: str) -> bool:
+    """Whether a task of this process holds or waits for the source's
+    lock_source (a sync, a purge, a repack), or a git op of it is still in
+    flight here; taking lock_source while it is not busy never waits."""
+    lock = GitPolicyFetcher.repo_locks.get(source_id)
+    return (lock is not None and _lock_is_busy(lock)) or git_op_in_flight(source_id)
 
 
 class PolicyFetcherCallbacks:

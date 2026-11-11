@@ -146,10 +146,10 @@ class OpalServerClient:
             # check can't catch a transient minted-not-yet-popped lock (a flaky
             # I4 on the offline-repo test).
             #
-            # NOTE: this does NOT wait for clone dirs to be reclaimed — nothing
-            # reclaims them. The flushed scopes' dirs stay on disk (no
-            # reconciliation in this PR; PER-15612), which is why the tests that
-            # call hard_reset carry an I1 exemption.
+            # NOTE: this does NOT wait for clone dirs to be reclaimed. The
+            # flushed scopes' dirs stay on disk: the orphan sweep is off in
+            # this bed (and refuses a store with no scope), which is why the
+            # tests that call hard_reset carry an I1 exemption.
             deadline = time.time() + 30
             settled = False
             last_err = None

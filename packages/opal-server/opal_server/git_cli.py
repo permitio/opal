@@ -714,23 +714,44 @@ def take_clone_lock(repo_path: Path) -> Optional[int]:
     forks to spawn every child, and would close it before pass_fds hands
     it on. The one process that forks without exec, the gunicorn master,
     closes any left once its preload is over (close_leftover_lock_fds).
+
+    The orphan sweep unlinks the lock file of a clone it removes, while
+    it holds the lock. An op that opened the file before that gets the
+    flock once the sweep lets go, on a file no path names any more: the
+    file is opened once more then, and a second such miss is the busy
+    answer.
     """
     path = clone_lock_path(repo_path)
-    raw = os.open(path, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o600)
-    try:
-        fd = fcntl.fcntl(raw, fcntl.F_DUPFD_CLOEXEC, _LOCK_FD_MIN)
-    finally:
-        os.close(raw)
-    _lock_fds[fd] = path
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
+    for _ in range(2):
+        raw = os.open(path, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o600)
+        try:
+            fd = fcntl.fcntl(raw, fcntl.F_DUPFD_CLOEXEC, _LOCK_FD_MIN)
+        finally:
+            os.close(raw)
+        _lock_fds[fd] = path
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            if _locks_the_file_at(fd, path):
+                return fd
+        except BlockingIOError:
+            drop_clone_lock(fd)
+            return None
+        except BaseException:
+            drop_clone_lock(fd)
+            raise
         drop_clone_lock(fd)
-        return None
-    except BaseException:
-        drop_clone_lock(fd)
-        raise
-    return fd
+    return None
+
+
+def _locks_the_file_at(fd: int, path: Path) -> bool:
+    """Whether ``fd`` is open on the file at ``path``, not on one unlinked from
+    there since it was opened."""
+    held = os.fstat(fd)
+    try:
+        named = os.stat(path)
+    except FileNotFoundError:
+        return False
+    return (held.st_dev, held.st_ino) == (named.st_dev, named.st_ino)
 
 
 def drop_clone_lock(fd: int) -> None:

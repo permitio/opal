@@ -405,9 +405,10 @@ class ScopesService:
         - the removal is skipped while a git op is in flight for the source.
           Master freed the handle unconditionally; freeing one a lingering
           timed-out pygit2 call still holds on a pool thread is the
-          use-after-free class 89e090be fixed. NOTHING else owns that case:
-          the leader does no disk work and the deferred retry was cut, so a
-          delete whose remote is hung leaves the dir until PER-15612.
+          use-after-free class 89e090be fixed. Only the orphan sweep (off by
+          default) owns that case: the leader's purge does no disk work and the
+          deferred retry was cut, so a delete whose remote is hung leaves the
+          dir until the sweep reclaims it.
         """
         # Every other destructive path in this series derives its target from
         # source_id via confined_clone_path and refuses a malformed id; this one
@@ -449,14 +450,15 @@ class ScopesService:
                         # sibling scope does share this source, deleting its clone
                         # takes a LIVE tenant's policy offline until the re-clone
                         # completes — and the trigger is a transient store blip.
-                        # The cost of keeping is an orphan dir (PER-15612): disk
-                        # against availability, and this is a best-effort floor,
-                        # so it takes the conservative branch when it cannot tell.
+                        # The cost of keeping is an orphan dir, the orphan
+                        # sweep's to reclaim: disk against availability, and this
+                        # is a best-effort floor, so it takes the conservative
+                        # branch when it cannot tell.
                         logger.warning(
                             f"Local sibling check for {deleted_source_id} failed "
                             f"after deleting scope {scope_id}; keeping this "
-                            f"worker's clone (it stays until PER-15612's sweep "
-                            f"lands): {e!r}"
+                            f"worker's clone (it stays until the orphan sweep "
+                            f"reclaims it): {e!r}"
                         )
                         return
                     if sharer is not None:
@@ -470,7 +472,8 @@ class ScopesService:
                         logger.info(
                             f"Skipping the local clone purge for "
                             f"{deleted_source_id}: a git operation is still in "
-                            "flight; the dir stays until PER-15612's sweep lands"
+                            "flight; the dir stays until the orphan sweep "
+                            "reclaims it"
                         )
                         return
                     GitPolicyFetcher.forget_repo(safe_path)
@@ -524,8 +527,8 @@ class ScopesService:
 
         Without this a DELETE that returns 204 and is followed by SIGTERM loses
         its floor: the task is detached, nothing else references it, and the
-        clone dir it was about to remove survives with nothing left to reclaim
-        it (no reconciliation in this PR — PER-15612).
+        clone dir it was about to remove survives until the orphan sweep, when
+        on, reclaims it.
 
         Best-effort and expected to be bounded by the caller: each task takes
         lock_source, which a sync can hold across a whole clone/fetch. The

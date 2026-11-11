@@ -309,8 +309,8 @@ async def test_leader_confirms_memory_purge_for_unshared_source(tmp_path):
 
     Disk reclaim on delete belongs to the DELETE-serving worker's floor
     (ScopesService._purge_local_clone_best_effort); distributed disk
-    reclaim is PER-15612. Mutation: dropping the confirmation publish
-    fails here.
+    reclaim is the orphan sweep's. Mutation: dropping the confirmation
+    publish fails here.
     """
     dead = _scope("dead", "https://git/repo-a.git")
     sid = GitPolicyFetcher.source_id(dead.policy)

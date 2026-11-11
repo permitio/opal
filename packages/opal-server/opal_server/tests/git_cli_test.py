@@ -3494,3 +3494,62 @@ def test_no_fetch_timeout_with_the_cli_fetch_on_is_warned_about(timeout, monkeyp
         logger.remove(sink)
     assert [r["level"].name for r in records] == ["WARNING"]
     assert "no time limit" in records[0]["message"]
+
+
+# --- a lock file unlinked while held (the orphan sweep's) ----------------------
+
+
+def _unlink_on_flock(monkeypatch, path: Path, times: int) -> list:
+    """Unlink ``path`` right before each of the next ``times`` flocks of the
+    clone lock: what the orphan sweep does to a reclaimed clone's lock file,
+    between another op's open and its flock. The sweep only unlinks a lock
+    file it holds, so the flock that follows takes a lock on a file no path
+    names any more. Returns, per flock, whether the file was unlinked first."""
+    real_flock = git_cli.fcntl.flock
+    unlinked = []
+
+    def flock(fd, operation):
+        unlink = sum(unlinked) < times
+        if unlink:
+            path.unlink()
+        unlinked.append(unlink)
+        return real_flock(fd, operation)
+
+    monkeypatch.setattr(git_cli.fcntl, "flock", flock)
+    return unlinked
+
+
+@pytest.mark.fetch_backend("both")
+def test_take_clone_lock_retries_on_an_unlinked_lock_file(tmp_path, monkeypatch):
+    clone = tmp_path / ("a" * 64 + "-0")
+    lock = clone_lock_path(clone)
+    lock.write_text("")
+    unlinked = _unlink_on_flock(monkeypatch, lock, times=1)
+
+    fd = git_cli.take_clone_lock(clone)
+
+    try:
+        assert fd is not None and unlinked == [True, False]
+        held = os.fstat(fd)
+        at_path = os.stat(lock)
+        assert (held.st_dev, held.st_ino) == (at_path.st_dev, at_path.st_ino)
+        assert list(git_cli._lock_fds) == [fd]
+    finally:
+        git_cli.drop_clone_lock(fd)
+    assert git_cli._lock_fds == {}
+
+
+@pytest.mark.fetch_backend("both")
+def test_take_clone_lock_gives_up_when_its_file_is_unlinked_again(
+    tmp_path, monkeypatch
+):
+    """Unlinked once more after the retry's open: the lock is in someone's
+    hands, so this is the busy answer, holding nothing."""
+    clone = tmp_path / ("b" * 64 + "-0")
+    lock = clone_lock_path(clone)
+    lock.write_text("")
+    unlinked = _unlink_on_flock(monkeypatch, lock, times=2)
+
+    assert git_cli.take_clone_lock(clone) is None
+
+    assert unlinked == [True, True] and git_cli._lock_fds == {}

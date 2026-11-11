@@ -282,7 +282,7 @@ async def test_stop_cancels_lock_holders_before_draining_purges(
 
     The drained purge's observable completion is the confirmation it publishes
     (the leader no longer mutates the clone tree — that is the DELETE-serving
-    worker's floor, and distributed disk reclaim is PER-15612).
+    worker's floor, and distributed disk reclaim is the orphan sweep's).
 
     Mutation: awaiting the drain before super().stop() must fail here (it blocks
     for the whole _PURGE_DRAIN_TIMEOUT, past this wait_for).

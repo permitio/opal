@@ -221,7 +221,7 @@ def test_shared_repo_survives_sibling_scope_delete(opal, repo_count):
 # GUARD, not a red gate" — excusing the very invariants the repoint purge under
 # test exists to satisfy. Measured on this head: it passes with I3/I4 enforced.
 # I1 stays: the repoint path has no local floor, so the OLD source's clone dir
-# is expected to remain on disk (PER-15612).
+# remains on disk: the orphan sweep is off in this bed.
 @pytest.mark.invariant_exempt("I1")
 def test_scope_repoint_releases_old_repo_cache(opal, repo_count):
     """Re-pointing a scope to a new repo URL must drain the OLD URL's cache

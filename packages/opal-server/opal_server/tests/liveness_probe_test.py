@@ -134,8 +134,7 @@ async def test_repointed_scope_is_not_cloned_against_stale_source(
     """PER-15157 J2: a sync that captured source A before a PUT repoints the
     scope to source B must not re-clone A — the repoint already purged A's
     cache entries, so cloning it again would strand a dir that
-    nothing reclaims (no later purge names that source; PER-15612's sweep is
-    what would eventually catch it)."""
+    only the orphan sweep reclaims (no later purge names that source)."""
     stale = _git_scope("scope-1", "https://git/repo-a.git")
     repointed = _git_scope("scope-1", "https://git/repo-b.git")
     svc = ScopesService(

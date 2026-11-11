@@ -29,6 +29,7 @@ from opal_server.policy.watcher.task import BasePolicyWatcherTask
 from opal_server.pubsub_resilience import ReconnectingBroadcaster
 from opal_server.redis_utils import RedisDB
 from opal_server.scopes.missing_scope import validate_missing_scope_settings
+from opal_server.scopes.orphans import OrphanCloneSweeper, orphan_sweep_interval
 from opal_server.scopes.purge import LeaderScopePurger
 from opal_server.scopes.readiness import required_clones, validate_required_repos
 from opal_server.scopes.scope_repository import ScopeRepository
@@ -44,9 +45,9 @@ class _UnknownChildWarningFilter(logging.Filter):
 
 # Upper bound on the shutdown drain of in-flight scope purges. The drain is
 # best-effort: a purge's rmtree runs on a worker thread and completes whether or
-# not we are still awaiting it. What is abandoned before it starts is NOT
-# recovered — no reconciliation sweep exists in this PR (split out, PER-15612),
-# and no later purge will name a deleted scope's source. Blocking shutdown
+# not we are still awaiting it. No later purge will name a deleted scope's
+# source, so what is abandoned before it starts stays until the orphan sweep
+# (SCOPES_ORPHAN_SWEEP_INTERVAL, off by default) reclaims it. Blocking shutdown
 # longer would be strictly worse —
 # stop() runs while the leadership lock is still held, so no other worker can
 # take over, and k8s's terminationGracePeriodSeconds (30s by default) would
@@ -237,6 +238,13 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
 
         if opal_server_config.POLICY_REFRESH_INTERVAL > 0:
             self._tasks.append(asyncio.create_task(self._periodic_polling()))
+
+        interval = orphan_sweep_interval()
+        if interval > 0:
+            sweeper = OrphanCloneSweeper(
+                Path(opal_server_config.BASE_DIR), self._scopes, interval
+            )
+            self._tasks.append(asyncio.create_task(sweeper.run()))
 
     async def stop(self):
         # stop() runs TWICE on the normal path — once from

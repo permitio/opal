@@ -1226,7 +1226,7 @@ def init_scope_router(
             # An unreadable old record must not block the overwrite that
             # fixes it. Its source_id is unknowable anyway, so no purge can be
             # published for it and nothing later will name it — the old clone
-            # dir stays on disk until PER-15612's sweep lands.
+            # dir stays on disk until the orphan sweep reclaims it.
             logger.warning(
                 f"Could not read previous record for scope "
                 f"{scope_in.scope_id}, skipping repoint purge: "
@@ -1417,7 +1417,8 @@ def init_scope_router(
             # Deletes the record and broadcasts a ScopePurgeCommand; every worker
             # drops its in-memory caches when the leader's confirmation broadcast
             # arrives. The clone dir is removed by THIS worker's best-effort
-            # floor, not by the leader — the leader does no disk work (PER-15612).
+            # floor, not by the leader's purge (the leader's orphan sweep, when
+            # on, reclaims what the floor leaves).
             await scopes_service.delete_scope(scope_id)
         except ScopeNotFoundError:
             # Deleting a missing scope was always a silent no-op (204); keep it.

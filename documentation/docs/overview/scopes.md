@@ -305,6 +305,54 @@ on, a start keeps a landed clone of a required repository that a hung git op
 marked, where it deletes any other marked clone, so a restart does not wait
 for a fresh clone.
 
+### Clones no scope uses
+
+A scope's clone stays in `OPAL_BASE_DIR`'s `git_sources` directory after the
+scope stops using it: a scope repointed to another repository, a delete that
+reached another server of the deployment but not this one, the shard clones
+that the git command line (or a new `OPAL_SCOPES_REPO_CLONES_SHARDS`) leaves
+unused, a clone left by a crash. Nothing removes them unless the orphan sweep is
+on: set
+[`OPAL_SCOPES_ORPHAN_SWEEP_INTERVAL`](/getting-started/configuration#opal_scopes_orphan_sweep_interval)
+to the seconds between its looks (it is off by default; 600 is a reasonable
+start). The leader worker of each server then looks at its own clones. The
+sweep runs with `OPAL_REPO_WATCHER_ENABLED` on only, as the leader's syncs do.
+
+- A clone goes once two looks at least an interval apart found no stored scope
+  using it, and none in between found one. The clones of
+  `OPAL_SCOPES_READY_REQUIRED_REPOS` always stay, and only real directories
+  named like a clone count: never a symlink, the heartbeat file or anything
+  else in `OPAL_BASE_DIR`.
+- Right before a clone goes, the sweep reads the scope store again (bounded
+  by `OPAL_SCOPES_STORE_READ_TIMEOUT`): a scope stored, or repointed back,
+  since the look that uses the clone keeps it.
+- With it go its lock file, its hung-op markers, the directories a clone of it
+  was being made in and the SSH host keys recorded for it: the next clone of
+  that repository trusts the key its host shows on first use again (see
+  [SSH host keys](#ssh-host-keys)). A clone that a git op, a repack or a delete
+  holds is kept for the next look. At most 16 go per look.
+- Nothing goes while the store lists no scope at all, or while more than
+  [`OPAL_SCOPES_ORPHAN_SWEEP_MAX_SHARE`](/getting-started/configuration#opal_scopes_orphan_sweep_max_share)
+  of the clones (half, by default; the required clones not counted) are
+  unused. A scope store that was wiped, or a server pointed at another Redis
+  database, looks the same as one whose scopes were all deleted, so after a
+  wipe the sweep keeps every clone and counts `opal_server.scopes.orphan_sweep`
+  with outcome `refused` until the scopes are back. After a refusal a clone
+  goes only once two looks in a row found the store no bigger, so a store being
+  refilled keeps the clones of the scopes still to come. When the scopes
+  really are gone, raise the share to 1.0 (no guard) and restart.
+- A scope whose record Redis evicted counts as deleted: its clone goes, and is
+  cloned again once the record is back. Scope records have no expiry, so only
+  an `allkeys-*` `maxmemory-policy` can evict them; check the scope store's
+  policy before turning the sweep on.
+- In the clones it keeps, each look also removes the fetch marks
+  (`.git/opal-fetched`) of branches no stored scope of the clone tracks.
+
+What a look saw lives in the leader's memory: a restart or a new leader starts
+over, which delays a removal and never hastens one. The
+[metrics](/tutorials/monitoring_opal#scope-git-metrics) count every look and
+every clone removed.
+
 ### Upgrading from 0.9
 
 0.9 fetched with libgit2 unless `OPAL_SCOPES_GIT_FETCH_WITH_CLI` was on. From
@@ -320,8 +368,9 @@ for a fresh clone.
 - A server that restarts on the same `OPAL_BASE_DIR` fetches libgit2's first
   clone of each repository (the directory whose name ends in `-0`) without
   cloning again. The clones of the other shards are no longer used; remove
-  them by hand. A Kubernetes pod on an `emptyDir` starts with an empty volume
-  and makes one clone per repository.
+  them by hand, or turn on the orphan sweep
+  ([Clones no scope uses](#clones-no-scope-uses)). A Kubernetes pod on an
+  `emptyDir` starts with an empty volume and makes one clone per repository.
 - The clone timeout is hard: a clone still running at
   `OPAL_SCOPES_GIT_CLONE_TIMEOUT` is stopped and never lands, where libgit2
   let a slow clone finish in the background. Measure a clone of your largest
@@ -385,6 +434,9 @@ for a fresh clone.
   back (for example from `OPAL_SCOPES_MISSING_SCOPE_WEBHOOK_URL`), so that a
   client whose scope is lost keeps its own policy. A value other than `default`
   or `not_found` stops the server.
+- The orphan sweep is new and off: with
+  `OPAL_SCOPES_ORPHAN_SWEEP_INTERVAL` unset nothing changes. Turned on, it
+  removes the clones no stored scope uses, as above.
 
 ### OpenShift and other arbitrary user ids
 

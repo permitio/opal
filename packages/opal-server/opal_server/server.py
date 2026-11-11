@@ -292,7 +292,8 @@ class OpalServer:
                     "OPAL_REPO_WATCHER_ENABLED is off while OPAL_SCOPES is on: the "
                     "leader worker will never SYNC or PURGE scopes (no periodic "
                     "sync_scopes pass, no post-leadership sync-all, no fleet "
-                    "purge). NOTE the gunicorn master's PRE-FORK PRELOAD still "
+                    "purge, no orphan sweep). NOTE the gunicorn master's PRE-FORK "
+                    "PRELOAD still "
                     "clones/fetches every registered scope on every boot - this "
                     "flag does not gate it, so git traffic and clone-tree growth "
                     "at boot are expected regardless. If ongoing sync is "
@@ -657,8 +658,8 @@ class OpalServer:
 
         Without this, a DELETE that returns 204 followed by SIGTERM loses its
         floor: the task is detached, nothing else references it, and the clone
-        dir it was about to remove survives with nothing left to reclaim it (no
-        reconciliation in this PR — PER-15612). Master removed the dir inline,
+        dir it was about to remove survives until the orphan sweep (off by
+        default) reclaims it. Master removed the dir inline,
         before returning 204, so an undrained floor is a regression against the
         merge base rather than merely a missing improvement.
         """
@@ -667,7 +668,8 @@ class OpalServer:
         except asyncio.TimeoutError:
             logger.warning(
                 "Abandoned in-flight scope clone purges at shutdown after "
-                "{timeout}s; their clone dirs stay on disk (PER-15612)",
+                "{timeout}s; their clone dirs stay on disk until the orphan "
+                "sweep reclaims them (OPAL_SCOPES_ORPHAN_SWEEP_INTERVAL)",
                 timeout=timeout,
             )
         except Exception:

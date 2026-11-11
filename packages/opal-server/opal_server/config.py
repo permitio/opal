@@ -1264,8 +1264,8 @@ class OpalServerConfig(Confi):
         "one (its directory name ends in -0), so a server switched to the git "
         "command line fetches it without cloning again, and the clones of the "
         "other shards stay unused in BASE_DIR's git_sources directory until "
-        "they are removed. The server does not start in scopes mode when this "
-        "is below 1.",
+        "they are removed, by hand or by SCOPES_ORPHAN_SWEEP_INTERVAL's sweep. "
+        "The server does not start in scopes mode when this is below 1.",
     )
     SCOPES_READY_REQUIRED_REPOS = confi.list(
         "SCOPES_READY_REQUIRED_REPOS",
@@ -1344,8 +1344,63 @@ class OpalServerConfig(Confi):
         "it (the old source's record is still live, just moved). The clone dir "
         "is unaffected either way: on a store fault the delete floor KEEPS this "
         "worker's clone rather than risk deleting one a live sibling shares, "
-        "leaving an orphan tracked by PER-15612 "
+        "leaving an orphan clone dir for SCOPES_ORPHAN_SWEEP_INTERVAL's sweep "
         "(0 or negative means no timeout).",
+    )
+    SCOPES_ORPHAN_SWEEP_INTERVAL = confi.float(
+        "SCOPES_ORPHAN_SWEEP_INTERVAL",
+        0.0,
+        description="In scopes mode, with REPO_WATCHER_ENABLED on, how often "
+        "(seconds) the leader worker looks in BASE_DIR's git_sources directory "
+        "for scope clones no stored scope uses any more, and removes them: a "
+        "deleted or repointed scope's clone, one whose delete never reached "
+        "this server, the shard clones the git command line or a change of "
+        "SCOPES_REPO_CLONES_SHARDS leaves unused, a clone left by a crash. 0 "
+        "(the default), negative or not finite: off. A clone goes only once two "
+        "looks at least this far apart found no stored scope using it, with "
+        "none in between finding one; a look decides nothing when the scope "
+        "store fails, or when a scope its keys list (as GET /scopes/ids lists "
+        "them) reads back although the listing of the records missed it. "
+        "Nothing goes while the store lists no scope at all, or while more than "
+        "SCOPES_ORPHAN_SWEEP_MAX_SHARE of the clones are unused, and after such "
+        "a refusal a clone goes only once two looks in a row found the store no "
+        "bigger, so a store being refilled keeps the clones of the scopes still "
+        "to come. Only a real directory named like a clone counts, never a "
+        "symlink, and the clones of SCOPES_READY_REQUIRED_REPOS are kept. "
+        "Right before a clone goes, holding its lock_source, the sweep reads "
+        "the store's records again, and reads back each scope its branches "
+        "name, bounded by SCOPES_STORE_READ_TIMEOUT: a scope stored since the "
+        "look that uses the clone keeps it. It goes under its clone's lock and "
+        "the repack lock, taken without waiting: a clone a git op, a repack or "
+        "a delete holds is kept for the next look. With it go its hung-op "
+        "markers, the directories a clone of it was being made in, the SSH "
+        "host keys recorded for it, so the next clone of that repository "
+        "trusts the key its host shows on first use again, and its lock file. "
+        "At most 16 go per look; one that cannot be removed is tried again one "
+        "interval later, then two, four and so on. Each look also removes, in "
+        "the clones it keeps, the fetch marks of branches no stored scope of "
+        "the clone tracks. A scope whose record Redis evicted, or a restore "
+        "lost, counts as deleted: its clone goes, and is cloned again once the "
+        "record is back. What a look saw lives in the leader's memory, so a "
+        "restart or a new leader starts over, which delays a removal and never "
+        "hastens one.",
+    )
+    SCOPES_ORPHAN_SWEEP_MAX_SHARE = confi.float(
+        "SCOPES_ORPHAN_SWEEP_MAX_SHARE",
+        0.5,
+        description="The most of the scope clones in BASE_DIR's git_sources "
+        "directory (real directories named like a clone, the clones of "
+        "SCOPES_READY_REQUIRED_REPOS not counted) that the orphan sweep "
+        "(SCOPES_ORPHAN_SWEEP_INTERVAL) may find unused and still remove any: "
+        "above it, a look removes nothing, forgets what it saw, and counts "
+        "opal_server.scopes.orphan_sweep with outcome refused. A scope store "
+        "that lost its scopes, or a server pointed at another store, looks "
+        "like one whose scopes were all deleted, so after a wipe the clones "
+        "stay until the store is right again or this is raised; a store that "
+        "lists no scope at all is refused whatever the share, unless this is "
+        "1.0. Equal to it is allowed, and 1.0 turns the guard off. Read as 0 "
+        "to 1; not a number reads as 0, which refuses while any clone is "
+        "unused.",
     )
 
     def on_load(self):

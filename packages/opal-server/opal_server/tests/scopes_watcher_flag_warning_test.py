@@ -76,6 +76,7 @@ def test_scopes_without_the_watcher_warns_that_nothing_will_sync(scopes_on, warn
     ]
     assert hits, warnings
     assert "never SYNC or PURGE" in hits[0]
+    assert "no orphan sweep" in hits[0]
 
 
 def test_scopes_with_the_watcher_is_quiet(scopes_on, warnings):

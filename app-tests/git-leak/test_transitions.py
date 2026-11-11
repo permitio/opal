@@ -99,9 +99,8 @@ def test_randomized_churn_holds_invariants(opal, repo_count):
 # green — exempting exactly the invariants the purge under test exists to
 # satisfy. Measured on this head: all three of these gates pass with I3/I4
 # enforced, so the exemptions were stale and are gone. I1 stays: a delete or
-# repoint that races a hung clone still leaves the DIR on disk (nothing
-# reconciles in this PR — PER-15612), which is the documented trade, not a
-# memory leak.
+# repoint that races a hung clone still leaves the DIR on disk (the orphan
+# sweep is off in this bed), which is the documented trade, not a memory leak.
 @pytest.mark.invariant_exempt("I1")
 def test_delete_during_hung_fetch_no_crash(opal):
     """Deleting a scope whose clone is hung must never crash a worker (the use-
@@ -255,9 +254,9 @@ def test_delete_reclaims_clone_when_the_purge_broadcast_is_lost(
     a publish on ``SCOPES_PURGE_CHANNEL``, which is droppable: the DELETE usually
     lands on a non-leader worker and must traverse the broadcaster, and that
     channel is freeze-exempt, so during a backbone gap the publish is *attempted
-    and lost* rather than deferred and replayed. With nothing else reclaiming
-    (the reconciliation sweep is split out, PER-15612), the dir would then
-    survive restart, redeploy and leader failover.
+    and lost* rather than deferred and replayed. With the orphan sweep off
+    (its default), nothing else reclaims it, and the dir would then survive
+    restart, redeploy and leader failover.
 
     This is the only test in the bed that measures the floor: every other delete
     path here runs with a healthy backbone, where the confirmation arrives and
@@ -265,10 +264,10 @@ def test_delete_reclaims_clone_when_the_purge_broadcast_is_lost(
 
     ATTRIBUTION. An earlier version of this docstring claimed the leader's purge
     would otherwise have removed the dir. That was true when written and is not
-    now: the leader's disk role was cut out of this PR (PER-15612), so the floor
-    is the ONLY path in the server that removes a clone dir. Nothing else can
-    satisfy this assertion, which is what makes it a gate rather than a
-    coincidence.
+    now: the leader's purge does no disk work, and the orphan sweep is off in
+    this bed (only the three orphan gates turn it on, for their own container).
+    So the floor is the ONLY path that can remove these dirs, which is what
+    makes this a gate rather than a coincidence.
 
     Runs 2 workers so the backbone is genuinely in the path (a single worker
     fans out in-process and never touches Postgres).

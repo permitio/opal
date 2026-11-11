@@ -176,8 +176,8 @@ async def test_local_floor_skips_while_a_git_op_is_in_flight(tmp_path):
 
     Freeing one a lingering timed-out pygit2 call still holds on a pool
     thread is the use-after-free class 89e090be fixed — the leader's
-    purge owned that case; since the disk-reclaim cut, nothing does —
-    the dir stays until PER-15612.
+    purge owned that case; since the disk-reclaim cut, only the orphan
+    sweep does — the dir stays until it reclaims it.
     """
     scope = _scope("only", "https://git/repo-a.git")
     clone = GitPolicyFetcher.repo_clone_path(tmp_path, scope.policy)
@@ -409,7 +409,7 @@ async def test_local_floor_keeps_the_clone_when_the_sibling_check_raises(tmp_pat
     clone a sibling scope may still share, 503ing that tenant until the
     re-clone finishes — triggered by a transient Redis error, which is far more
     common than the ambiguous-delete case master was protecting against. The
-    cost of keeping is an orphan dir (PER-15612).
+    cost of keeping is an orphan dir, the orphan sweep's to reclaim.
 
     Mutation: restoring `sharer = None` on the exception fails here.
     """
