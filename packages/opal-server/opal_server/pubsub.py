@@ -37,6 +37,7 @@ from opal_server.pubsub_resilience import (
     ReconnectingBroadcaster,
     SafeConnectionManager,
 )
+from opal_server.redis_broadcast_backend import ResilientBroadcast
 from pydantic import BaseModel
 from starlette.datastructures import QueryParams
 
@@ -175,6 +176,15 @@ class PubSub:
                     broadcaster_uri,
                     notifier=self.notifier,
                     channel=opal_server_config.BROADCAST_CHANNEL_NAME,
+                    # For a Redis backbone: a backend that reports a lost connection
+                    # to the reconnect loop (the stock one reconnects out of sight,
+                    # and with a password never subscribes again). None is the
+                    # stock Broadcast. Other backbones are unaffected either way.
+                    broadcast_type=(
+                        ResilientBroadcast
+                        if opal_server_config.BROADCAST_REDIS_RESILIENT_BACKEND_ENABLED
+                        else None
+                    ),
                     reconnect_max_retries=opal_server_config.BROADCAST_RECONNECT_MAX_RETRIES,
                     reconnect_backoff_min=opal_server_config.BROADCAST_RECONNECT_BACKOFF_MIN_SECONDS,
                     reconnect_backoff_max=opal_server_config.BROADCAST_RECONNECT_BACKOFF_MAX_SECONDS,

@@ -124,6 +124,16 @@ class OpalServerConfig(Confi):
         "the previous behavior, where the receiving worker's own clients update immediately "
         "and peers only after reconnect.",
     )
+    BROADCAST_REDIS_RESILIENT_BACKEND_ENABLED = confi.bool(
+        "BROADCAST_REDIS_RESILIENT_BACKEND_ENABLED",
+        True,
+        description="With a Redis broadcast backbone, use OPAL's redis-py based backend, "
+        "which reports a lost Redis connection to the broadcaster so it reconnects, "
+        "authenticates and subscribes again. The stock backend reconnects on its own "
+        "without reporting it, and with a Redis password it never subscribes again. "
+        "Engages only with BROADCAST_RECONNECT_ENABLED. Set to False to revert to the "
+        "stock backend.",
+    )
 
     # server security
     AUTH_PRIVATE_KEY_FORMAT = confi.enum(
