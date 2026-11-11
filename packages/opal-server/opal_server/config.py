@@ -527,7 +527,11 @@ class OpalServerConfig(Confi):
         "loop also waits up to this long for git command-line ops still being "
         "stopped; those not done by then get SIGKILL as the loop ends, their "
         "clones stay recorded as unfinished, and the next op on each clone "
-        "removes what git left.",
+        "removes what git left. With libgit2 (opt-in, SCOPES_GIT_FETCH_WITH_CLI "
+        "off), a libgit2 op still running when this wait ends keeps the pack "
+        "files it has open, in the gunicorn master and in every worker forked "
+        "from it: a pack a later repack deletes keeps its disk space until "
+        "the server restarts. With the git command line no such op is left.",
     )
     SCOPES_GIT_RECLONE_HUNG_ON_START = confi.bool(
         "SCOPES_GIT_RECLONE_HUNG_ON_START",

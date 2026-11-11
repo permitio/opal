@@ -537,7 +537,7 @@ Pub/sub channel (worker-to-worker, over the broadcaster) used to purge GitPolicy
 
 Default: `10.0`
 
-Max seconds the pre-fork scope preload waits for in-flight git ops to finish before tearing down and forking workers. Ops still lingering past this bound are left running on their daemon threads and their cached handles are left unfreed by the pre-fork cache reset, avoiding a use-after-free (0 = don't wait). With SCOPES_GIT_FETCH_WITH_CLI on, the preload's event loop also waits up to this long for git command-line ops still being stopped; those not done by then get SIGKILL as the loop ends, their clones stay recorded as unfinished, and the next op on each clone removes what git left.
+Max seconds the pre-fork scope preload waits for in-flight git ops to finish before tearing down and forking workers. Ops still lingering past this bound are left running on their daemon threads and their cached handles are left unfreed by the pre-fork cache reset, avoiding a use-after-free (0 = don't wait). With SCOPES_GIT_FETCH_WITH_CLI on, the preload's event loop also waits up to this long for git command-line ops still being stopped; those not done by then get SIGKILL as the loop ends, their clones stay recorded as unfinished, and the next op on each clone removes what git left. With libgit2 (opt-in, SCOPES_GIT_FETCH_WITH_CLI off), a libgit2 op still running when this wait ends keeps the pack files it has open, in the gunicorn master and in every worker forked from it: a pack a later repack deletes keeps its disk space until the server restarts. With the git command line no such op is left.
 
 #### OPAL_SCOPES_GIT_RECLONE_HUNG_ON_START
 
