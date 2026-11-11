@@ -6,7 +6,7 @@ OPAL supports multiple ways to configure your deployment:
 
 - **Environment Variables** (recommended) - `export OPAL_SERVER_URL=http://localhost:7002`
 - **Command Line Arguments** - `opal-server run --server-url http://localhost:7002`
-- **Configuration Files** - `.env` or `.ini` files in your project
+- **Configuration Files** - a `.env` or `settings.ini` file in the working directory (see [Configuration Files](#configuration-files))
 
 ### Essential Configuration
 
@@ -1471,6 +1471,31 @@ opal-client --help
 opal-server run --help
 opal-client run --help
 ```
+
+#### Configuration Files
+
+OPAL server and client read their settings from the environment, and then from a `.env` file or a
+`settings.ini` file (values under a `[settings]` section):
+
+- The file is read from the working directory (`/opal` in the OPAL images), or from the folder that
+  `OPAL_CONFIG_FILE_DIR` names. Only that one folder is read, never a folder above it.
+- `OPAL_CONFIG_FILE_DIR` is read from the environment only. Default: unset (the working directory).
+  If it names a path that is not a folder, or a folder with neither file in it, OPAL fails at
+  startup with an error that names the path.
+- If the folder holds both files, `settings.ini` is read and `.env` is not.
+- A setting in the environment wins over the same setting in the file.
+- At startup, the server and the client log at INFO the file they read (`Read settings from ...`),
+  or that the folder holds neither file (`No .env or settings.ini in ...`).
+
+:::note Migrating from OPAL 0.9
+Folders above the working directory are no longer searched. Before OPAL 0.10, the file was looked
+for in the installed `opal_common` package's folder and every folder above it, and not in the
+working directory. A `.env` found that way, such as one in a project folder that holds OPAL's
+virtualenv, or in your home folder for a `pip install --user`, is no longer read unless it is in
+the working directory, and settings it held fall back to the environment and the defaults (an
+`OPAL_AUTH_PUBLIC_KEY` kept only there turns authentication off). Run OPAL from that folder, or
+set `OPAL_CONFIG_FILE_DIR` to it, and check the startup line above.
+:::
 
 #### Kubernetes Deployment
 For Kubernetes deployments, see [OPAL Helm Chart for Kubernetes](/tutorials/helm-chart-for-kubernetes).

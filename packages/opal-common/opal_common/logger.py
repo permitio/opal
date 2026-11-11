@@ -2,6 +2,7 @@ import logging
 import sys
 
 from loguru import logger
+from opal_common.confi.confi import describe_settings_source
 from opal_common.config import opal_common_config
 from opal_common.http_utils import redact_sensitive_text
 from opal_common.logging_utils.filter import ModuleFilter
@@ -103,6 +104,8 @@ def configure_logs():
             diagnose=opal_common_config.LOG_DIAGNOSE,
             colorize=False,
         )
+    if not _logs_configured:
+        logger.info(describe_settings_source())
     _logs_configured = True
 
 

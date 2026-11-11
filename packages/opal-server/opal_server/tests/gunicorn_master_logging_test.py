@@ -25,6 +25,7 @@ import opal_server.scopes
 import opal_server.scopes.task as task_module
 import pytest
 from loguru import logger
+from opal_common.confi.confi import describe_settings_source
 from opal_common.config import opal_common_config
 from opal_common.http_utils import redact_url
 from opal_common.logger import configure_logs
@@ -204,6 +205,11 @@ def stub_preload(monkeypatch, preload_sandbox):
     )
 
 
+def _settings_source_line():
+    """The record configure_logs() writes first: where settings came from."""
+    return ("INFO", describe_settings_source())
+
+
 def _run_when_ready(gunicorn_conf, master_logs, monkeypatch, scopes):
     monkeypatch.setattr(opal_server_config, "SCOPES", scopes)
     with master_logs.streams():
@@ -250,7 +256,10 @@ def test_when_ready_scopes_off_warning_goes_to_configured_handler(
     _run_when_ready(gunicorn_conf, master_logs, monkeypatch, scopes=False)
 
     assert master_logs.default_records == []
-    assert master_logs.configured() == [("WARNING", "Finished pre loading scopes...")]
+    assert master_logs.configured() == [
+        _settings_source_line(),
+        ("WARNING", "Finished pre loading scopes..."),
+    ]
 
 
 @pytest.mark.parametrize("scopes", [True, False])
@@ -341,7 +350,10 @@ def test_when_ready_configures_logs_even_when_opal_server_is_absent(
 
     if configure_logs_runs:
         assert master_logs.default_records == []
-        assert master_logs.configured() == [("INFO", "after when_ready")]
+        assert master_logs.configured() == [
+            _settings_source_line(),
+            ("INFO", "after when_ready"),
+        ]
     else:
         assert master_logs.default_records == [("INFO", "after when_ready")]
 
@@ -367,6 +379,7 @@ def test_when_ready_routes_stdlib_logging_to_the_configured_sink(
 
     if configure_logs_runs:
         assert master_logs.configured() == [
+            _settings_source_line(),
             ("INFO", "stdlib info"),
             ("WARNING", "stdlib warning"),
         ]

@@ -30,12 +30,83 @@ from opal_common.logging_utils.errors import describe_validation_error
 from pydantic import BaseModel, ValidationError
 from typer import Typer
 
+# Read from the environment only: it says which file the other settings come from.
+CONFIG_FILE_DIR_VARIABLE = "OPAL_CONFIG_FILE_DIR"
 
-def build_config() -> AutoConfig:
-    return AutoConfig(os.environ.get("CONFI_PATH") or os.getcwd())
+
+def _settings_file_in(folder: str) -> str:
+    """The settings.ini or .env file in folder (settings.ini first), or ""."""
+    for name in AutoConfig.SUPPORTED:
+        candidate = os.path.join(folder, name)
+        if os.path.isfile(candidate):
+            return candidate
+    return ""
+
+
+class _OneFolderConfig(AutoConfig):
+    """Decouple's AutoConfig, reading a settings file from its folder only.
+
+    AutoConfig also searches every folder above it, which would read a
+    stray .env from above the working directory.
+    """
+
+    # The file the last load read, "" when the folder holds none.
+    settings_file = ""
+
+    def _find_file(self, path: str) -> str:
+        self.settings_file = _settings_file_in(path)
+        return self.settings_file
+
+    def describe(self) -> str:
+        """Where the settings come from, for a line in the startup log."""
+        if self.config is None:
+            self._load(self.search_path)
+        if self.settings_file:
+            return (
+                f"Read settings from {self.settings_file}; the environment overrides it"
+            )
+        return (
+            f"No .env or settings.ini in {self.search_path}: settings come from the "
+            "environment and the defaults"
+        )
+
+
+def build_config() -> "_OneFolderConfig":
+    """The decouple config every Confi entry is read through.
+
+    It reads the environment, then a settings.ini or .env file (settings.ini
+    if both are there) in the folder OPAL_CONFIG_FILE_DIR names, or else in
+    the working directory.
+
+    Raises:
+        ValueError: OPAL_CONFIG_FILE_DIR names no folder, or a folder with
+            neither file in it.
+    """
+    folder = os.environ.get(CONFIG_FILE_DIR_VARIABLE)
+    if not folder:
+        return _OneFolderConfig(os.getcwd())
+    folder = os.path.abspath(folder)
+    if not os.path.isdir(folder):
+        raise ValueError(
+            f"{CONFIG_FILE_DIR_VARIABLE} is {folder!r}, which is not a folder. Set "
+            "it to the folder that holds the .env or settings.ini file, or unset it "
+            "to read the file from the working directory."
+        )
+    if not _settings_file_in(folder):
+        raise ValueError(
+            f"{CONFIG_FILE_DIR_VARIABLE} is {folder!r}, but there is no .env or "
+            "settings.ini in that folder. Put the file there, or unset "
+            f"{CONFIG_FILE_DIR_VARIABLE} to read it from the working directory."
+        )
+    return _OneFolderConfig(folder)
 
 
 config = build_config()
+
+
+def describe_settings_source() -> str:
+    """Where this process's settings come from, for the startup log."""
+    return config.describe()
 
 
 class Placeholder(object):

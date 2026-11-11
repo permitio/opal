@@ -3,8 +3,9 @@
 
 Easy Python configuration interface built on top of python-decouple and click / typer.
 Adding typing support and parsing with Pydantic and Enum.
-Combine config values from .env, .ini, env-vars, and cli options
-(Override order: .env < .ini < env-vars < cli)
+Combine config values from one settings file (settings.ini, else .env, in the folder
+OPAL_CONFIG_FILE_DIR names or the working directory), env-vars, and cli options
+(Override order: settings file < env-vars < cli)
 
 
 ## Simple config values
