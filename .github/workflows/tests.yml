@@ -369,6 +369,26 @@ jobs:
           fail-on-severity: high
           comment-summary-in-pr: on-failure
 
+  # On a pull request only: .github/scripts/vuln.sh resolves the ranges the published packages
+  # declare (packages/requires.txt and packages/*/requires.txt, which dependency-review does not
+  # read) at their floor and at their ceiling, and fails when either tree has a vulnerability of
+  # high or critical severity that has a fixed version: raise the floor past it. It downloads uv
+  # and Trivy with fetch-tool.sh and runs them without a token. The scheduled security scan
+  # resolves and scans the same trees on the default branch.
+  vuln:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Scan the floor and the ceiling of the published ranges
+        run: .github/scripts/vuln.sh
+
   ci:
     # The branch ruleset requires only this check, so the jobs above and their
     # matrix legs can be renamed without editing the ruleset. always(): GitHub
@@ -376,7 +396,7 @@ jobs:
     # fail, when a needed job fails or is cancelled.
     name: CI
     if: always()
-    needs: [build, e2e-tests, e2e-tests-alpine, binary-stages, secrets, dependency-review]
+    needs: [build, e2e-tests, e2e-tests-alpine, binary-stages, secrets, dependency-review, vuln]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -409,6 +429,6 @@ jobs:
         env:
           NEEDS: ${{ toJSON(needs) }}
           EVENT: ${{ github.event_name }}
-          EXPECTED_JOBS: 6
-          PULL_REQUEST_JOBS: dependency-review
+          EXPECTED_JOBS: 7
+          PULL_REQUEST_JOBS: dependency-review vuln
         run: .github/scripts/ci-aggregate.sh

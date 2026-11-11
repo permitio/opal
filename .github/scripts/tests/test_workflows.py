@@ -33,8 +33,9 @@ CI_NEEDS = {
     "binary-stages",
     "secrets",
     "dependency-review",
+    "vuln",
 }
-CI_PULL_REQUEST_JOBS = {"dependency-review"}
+CI_PULL_REQUEST_JOBS = {"dependency-review", "vuln"}
 
 # Every write permission a job has: (workflow, job, scope).
 WRITE_PERMISSIONS = {
@@ -256,6 +257,15 @@ class TestTests:
 
     def test_the_e2e_job_installs_the_packages_on_their_python(self, jobs):
         assert setup_python_versions(jobs["e2e-tests"]) == [PACKAGES_PYTHON]
+
+    def test_the_vuln_job_scans_the_published_ranges_with_vuln_sh(self, jobs):
+        """vuln.sh resolves the packages' requires files at their floor and
+        ceiling and fails on a fixable HIGH or CRITICAL vulnerability; the job
+        only runs it."""
+        runs = [step["run"] for step in steps_of(jobs["vuln"]) if "run" in step]
+
+        assert runs == [".github/scripts/vuln.sh"]
+        assert jobs["vuln"]["permissions"] == {"contents": "read"}
 
 
 class TestRelease:
