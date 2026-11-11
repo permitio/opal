@@ -7,6 +7,7 @@ Real git against local remotes only (see git_cli_test).
 """
 
 import asyncio
+import base64
 import errno
 import math
 import os
@@ -67,6 +68,10 @@ def _source(url: str, auth=None) -> GitPolicyScopeSource:
         branch="master",
         auth=auth or NoAuthData(auth_type="none"),
     )
+
+
+def _basic(user: str, password: str) -> str:
+    return "Basic " + base64.b64encode(f"{user}:{password}".encode()).decode()
 
 
 def _fetcher(base: Path, source: GitPolicyScopeSource) -> GitPolicyFetcher:
@@ -806,6 +811,28 @@ async def test_a_failure_on_the_server_s_own_side_is_counted_as_local(
     assert not any(token in r["message"] for r in records)
     assert not git_op_in_flight(fetcher.clone_source_id)
     assert git_cli._lock_fds == {}
+
+
+@pytest.mark.parametrize("cli", [True, False], ids=["cli", "libgit2"])
+@pytest.mark.asyncio
+async def test_a_source_with_nothing_to_give_a_server_that_asks_is_counted_and_backed_off(
+    cli, git_http, make_origin, tmp_path, monkeypatch, emitted
+):
+    """An http source with no credentials, on a server that asks for some.
+
+    The clone fails as a git error, counted and backed off, with either
+    backend.
+    """
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", cli)
+    make_origin(git_http.root / "repo.git")
+    git_http.authorization = _basic("git", "x")
+    fetcher = _fetcher(tmp_path / "base", _source(git_http.url("repo.git")))
+
+    await fetcher.fetch_and_notify_on_changes()
+
+    assert _failures(emitted) == [{"op": "clone", "reason": "git_error"}]
+    assert fetcher.clone_source_id in GitPolicyFetcher.source_backoff
+    assert fetcher.callbacks.updates == []
 
 
 # server.py's own startup handlers use FastAPI's deprecated on_event; not what

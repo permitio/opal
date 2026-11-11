@@ -4,6 +4,7 @@ import errno
 import fcntl
 import hashlib
 import inspect
+import ipaddress
 import itertools
 import math
 import os
@@ -32,8 +33,10 @@ from typing import (
     NamedTuple,
     Optional,
     Tuple,
+    Union,
     cast,
 )
+from urllib.parse import urlsplit
 
 import pygit2
 from ddtrace import tracer
@@ -70,7 +73,7 @@ from pygit2 import (
     discover_repository,
     reference_is_valid_name,
 )
-from pygit2.enums import FetchPrune
+from pygit2.enums import CredentialType, FetchPrune
 
 # Source ids whose scope git op (clone/fetch) is still running on a pool thread
 # — including one that already exceeded its timeout but whose blocking pygit2
@@ -85,6 +88,16 @@ _git_busy_lock = threading.Lock()
 class GitConcurrencyLimitExceeded(RuntimeError):
     """Raised when in-flight (live + zombie) git ops reach
     SCOPES_GIT_MAX_ZOMBIES."""
+
+
+class CredentialsNotGivenError(pygit2.GitError):
+    """libgit2 asked GitCallback for credentials it does not give: for a URL
+    that is not the source's own server, or of a kind the source has none
+    of.
+
+    Raised from the callback, kept by pygit2 and raised again from the
+    clone or fetch, where it counts as a git error.
+    """
 
 
 class CloneNotPopulatedError(ValueError):
@@ -4564,12 +4577,106 @@ class GitPolicyFetcher(PolicyFetcher):
         GitPolicyFetcher.repo_locks.clear()
 
 
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def _authority(url: str) -> Tuple[str, str]:
+    """The scheme and the host[:port] of ``url``, both lowercased and without
+    any user or password, as written: an IPv6 host may come with or without its
+    brackets."""
+    scheme, sep, rest = url.partition("://")
+    if not sep:
+        return "", ""
+    authority = re.split(r"[/?#]", rest, maxsplit=1)[0].rpartition("@")[2]
+    return scheme.lower(), authority.lower()
+
+
+def _is_ipv6(text: str) -> bool:
+    try:
+        return isinstance(ipaddress.ip_address(text), ipaddress.IPv6Address)
+    except ValueError:
+        return False
+
+
+def _bracketed(authority: str) -> Optional[str]:
+    """``authority`` with an IPv6 host in brackets, as libgit2 leaves them out
+    of the URL it asks credentials for; None when that cannot be told: the
+    address with a port (``2001:db8::1`` on 8080) and an address on the
+    scheme's port (``2001:db8::1:8080``) read the same."""
+    if authority.startswith("[") or authority.count(":") < 2:
+        return authority
+    head, _, tail = authority.rpartition(":")
+    with_port = tail.isdigit() and int(tail) <= 65535 and _is_ipv6(head)
+    whole = _is_ipv6(authority)
+    if with_port and whole:
+        return None
+    if with_port:
+        return f"[{head}]:{tail}"
+    return f"[{authority}]" if whole else None
+
+
+def _authority_form(host: str, port: Optional[int]) -> str:
+    """How a URL writes ``host`` and ``port`` (None: none written)."""
+    written = f"[{host}]" if ":" in host else host
+    return written if port is None else f"{written}:{port}"
+
+
+def _asks_for_the_source(source_url: str, asked_url: str) -> bool:
+    """Whether libgit2 asks credentials for ``asked_url`` on the source's own
+    server.
+
+    As the git command line's credential helper answers: the source's
+    host (any case) and port, a port its scheme implies counting as
+    written, over the source's scheme or, for an http source, https
+    (where a redirect to https on its host takes libgit2). libgit2 1.9.5
+    and later ask with the URL that asks, after a redirect, and leave a
+    default port and an IPv6 host's brackets out of it: an IPv6 host
+    whose port cannot be told from its address that way is no source's.
+    Users and passwords in either URL do not count.
+    """
+    try:
+        source = urlsplit(source_url)
+        source_port = source.port
+    except ValueError:
+        return False
+    source_scheme = source.scheme.lower()
+    asked_scheme, asked = _authority(asked_url)
+    if asked_scheme != source_scheme and (source_scheme, asked_scheme) != (
+        "http",
+        "https",
+    ):
+        return False
+    host = source.hostname or ""
+    if source_port == _DEFAULT_PORTS.get(source_scheme):
+        source_port = None
+    forms = {_authority_form(host, source_port)}
+    if source_port is None:
+        forms.add(_authority_form(host, _DEFAULT_PORTS.get(asked_scheme)))
+    return bool(host) and _bracketed(asked) in forms
+
+
 class GitCallback(RemoteCallbacks):
     def __init__(self, source: GitPolicyScopeSource):
         super().__init__()
         self._source = source
 
-    def credentials(self, url, username_from_url, allowed_types):
+    def credentials(
+        self,
+        url: str,
+        username_from_url: Optional[str],
+        allowed_types: CredentialType,
+    ) -> Union[KeypairFromMemory, UserPass, Username]:
+        """The source's credentials for libgit2's request for ``url``.
+
+        An SSH key goes to any SSH request. For an http(s) source, or an
+        http(s) request, the source's token goes only to its own server (see
+        _asks_for_the_source), as user ``git``, and only as a user and
+        password.
+
+        Raises:
+            CredentialsNotGivenError: such a request for another server, or
+                one the source has no token for.
+        """
         if isinstance(self._source.auth, SSHAuthData):
             auth = cast(SSHAuthData, self._source.auth)
 
@@ -4580,6 +4687,27 @@ class GitCallback(RemoteCallbacks):
                 passphrase="",
             )
             return KeypairFromMemory(**ssh_key)
+        asked_scheme, asked = _authority(url)
+        source_scheme, _ = _authority(self._source.url)
+        if _DEFAULT_PORTS.keys() & {asked_scheme, source_scheme}:
+            if _bracketed(asked) is None:
+                raise CredentialsNotGivenError(
+                    f"no credentials for {asked_scheme}://{asked}: libgit2 names "
+                    "this IPv6 host and its port in a way that reads as another "
+                    "address too; use the git command line for this source"
+                )
+            if not _asks_for_the_source(self._source.url, url):
+                raise CredentialsNotGivenError(
+                    f"no credentials for {asked_scheme}://{asked}: it is not the "
+                    "source's own server"
+                )
+            if not isinstance(self._source.auth, GitHubTokenAuthData) or not (
+                allowed_types & CredentialType.USERPASS_PLAINTEXT
+            ):
+                raise CredentialsNotGivenError(
+                    f"{asked_scheme}://{asked} asks for credentials the source "
+                    "has none of"
+                )
         if isinstance(self._source.auth, GitHubTokenAuthData):
             auth = cast(GitHubTokenAuthData, self._source.auth)
 

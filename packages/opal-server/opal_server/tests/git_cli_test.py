@@ -47,7 +47,10 @@ from opal_server.git_cli import (
     known_hosts_file,
     validate_git_cli_settings,
 )
-from opal_server.git_fetcher import GitCallback
+from opal_server.git_fetcher import CredentialsNotGivenError, GitCallback
+from opal_server.tests.git_cli_isolation_test import (
+    _libgit2_clone as _isolated_libgit2_clone,
+)
 from opal_server.tests.git_repack_test import _flock_fails_with
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
@@ -2103,35 +2106,82 @@ async def test_the_server_gets_the_credentials_libgit2_would_send(
             assert set(sent) == {None, expected}
 
 
+# What the remote redirects to: the same host on another port, or another
+# host name for the same address (libgit2 calls only another host name a
+# redirect off its site).
+_REDIRECT_TARGET_HOST = {"other-port": "127.0.0.1", "other-host": "localhost"}
+
+
+def _libgit2_clone(url: str, dest: Path, source) -> None:
+    """``url`` cloned to ``dest`` by libgit2, as the scopes fetcher clones
+    (GitCallback for the source's credentials)."""
+    pygit2.clone_repository(url, str(dest), callbacks=GitCallback(source)).free()
+
+
+@pytest.mark.parametrize("backend", ["libgit2", "cli"])
+@pytest.mark.parametrize("target", ["other-port", "other-host"])
 @pytest.mark.parametrize("target_asks", [False, True], ids=["open", "asks"])
 @pytest.mark.asyncio
-async def test_a_redirect_to_another_host_gets_no_credentials(
-    target_asks, git_http, make_git_http, make_origin, tmp_path
+async def test_a_redirect_to_another_host_or_port_gets_no_credentials(
+    backend, target, target_asks, git_http, make_git_http, make_origin, tmp_path
 ):
-    """The remote redirects to another host and port.
+    """The remote redirects to another port, or another host name.
 
     git asks its credential helper per host, and the helper answers only
-    for the remote's own host and port, so the other host never gets the
-    token, whether it asks for credentials or not.
+    for the remote's own host and port; libgit2 asks GitCallback with
+    the URL it was redirected to, which answers the same way. So the
+    other server never gets the token, whether it asks for credentials
+    or not.
     """
     other = make_git_http(tmp_path / "other")
     make_origin(other.root / "repo.git")
-    git_http.redirect_to = other.url("")
+    port = other.server_address[1]
+    git_http.redirect_to = f"http://{_REDIRECT_TARGET_HOST[target]}:{port}"
     other.authorization = _basic("git", "the-token") if target_asks else None
     url = git_http.url("repo.git")
     source = _source(url, GitHubTokenAuthData(token="the-token"))
+    dest = tmp_path / backend
 
     if target_asks:
-        with pytest.raises(GitCliError):
-            await _clone(url, tmp_path / "cli", source)
+        with pytest.raises((pygit2.GitError, GitCliError)):
+            if backend == "cli":
+                await _clone(url, dest, source)
+            else:
+                _libgit2_clone(url, dest, source)
     else:
-        await _clone(url, tmp_path / "cli", source)
-        assert "refs/remotes/origin/master" in _refs(tmp_path / "cli")
+        if backend == "cli":
+            await _clone(url, dest, source)
+        else:
+            _libgit2_clone(url, dest, source)
+        assert "refs/remotes/origin/master" in _refs(dest)
 
     assert git_http.requests and other.requests
-    assert [h.get("Authorization") for _, _, h in other.requests] == [None] * len(
-        other.requests
-    )
+    assert {h.get("Authorization") for _, _, h in other.requests} == {None}
+
+
+def test_libgit2_asks_for_credentials_with_the_url_it_was_redirected_to(
+    git_http, make_git_http, make_origin, tmp_path
+):
+    """GitCallback's host check relies on this: libgit2 (1.9.5 and later) asks
+    for credentials with the URL that asks, not the source's."""
+    other = make_git_http(tmp_path / "other")
+    make_origin(other.root / "repo.git")
+    port = other.server_address[1]
+    git_http.redirect_to = f"http://localhost:{port}"
+    other.authorization = _basic("git", "x")
+    asked = []
+
+    class _Recording(pygit2.RemoteCallbacks):
+        def credentials(self, url, username_from_url, allowed_types):
+            asked.append(url)
+            raise pygit2.Passthrough
+
+    with pytest.raises(pygit2.GitError):
+        pygit2.clone_repository(
+            git_http.url("repo.git"), str(tmp_path / "c"), callbacks=_Recording()
+        )
+    assert asked
+    assert all(u.startswith(f"http://localhost:{port}/") for u in asked), asked
 
 
 @pytest.mark.parametrize("where", ["token", "url"])
@@ -2166,6 +2216,39 @@ async def test_an_http_remote_that_redirects_to_https_on_its_host_gets_its_crede
     auths = [h.get("Authorization") for _, _, h in git_http.requests]
     sent = list(zip(git_http.schemes, auths))
     assert ("http", None) in sent
+    assert ("https", git_http.authorization) in sent
+    assert {auth for scheme, auth in sent if scheme == "http"} == {None}
+
+
+# pygit2's macOS wheel verifies TLS with SecureTransport, which reads no
+# SSL_CERT_FILE; the manylinux and musllinux wheels use OpenSSL, which does.
+@pytest.mark.skipif(
+    sys.platform == "darwin", reason="libgit2 on macOS reads no SSL_CERT_FILE"
+)
+def test_libgit2_gives_an_http_source_s_token_after_a_redirect_to_https_on_its_host(
+    git_http, tls_cert, make_origin, tmp_path
+):
+    """As the credential helper does: the token goes over https on the
+    source's own host and port, never over plain http."""
+    make_origin(git_http.root / "repo.git")
+    git_http.tls = tls_cert.context
+    git_http.redirect_to = git_http.url("", scheme="https")
+    git_http.authorization = _basic("git", "the-token")
+    home = tmp_path / "home"
+    home.mkdir()
+
+    cloned = _isolated_libgit2_clone(
+        git_http.url("repo.git"),
+        tmp_path / "libgit2",
+        home,
+        token="the-token",
+        env={"SSL_CERT_FILE": str(tls_cert.path)},
+    )
+
+    assert cloned == "cloned"
+    sent = list(
+        zip(git_http.schemes, (h.get("Authorization") for _, _, h in git_http.requests))
+    )
     assert ("https", git_http.authorization) in sent
     assert {auth for scheme, auth in sent if scheme == "http"} == {None}
 
@@ -2207,35 +2290,35 @@ _HTTP_REMOTE = "http://git.example:8080/org/repo.git"
 _HTTPS_REMOTE = "https://git.example:8080/org/repo.git"
 
 
-@pytest.mark.parametrize(
-    "url, asked, answers",
-    [
-        (_HTTP_REMOTE, "protocol=http\nhost=git.example:8080\n", True),
-        (
-            _HTTP_REMOTE,
-            "protocol=http\nhost=git.example:8080\npath=other/r.git\n",
-            True,
-        ),
-        (_HTTP_REMOTE, "protocol=https\nhost=git.example:8080\n", True),
-        (_HTTP_REMOTE, "protocol=http\nhost=git.example\n", False),
-        (_HTTP_REMOTE, "protocol=http\nhost=elsewhere.example:8080\n", False),
-        (_HTTP_REMOTE, "protocol=https\nhost=git.example\n", False),
-        (_HTTP_REMOTE, "protocol=https\nhost=elsewhere.example:8080\n", False),
-        (_HTTPS_REMOTE, "protocol=https\nhost=git.example:8080\n", True),
-        (_HTTPS_REMOTE, "protocol=http\nhost=git.example:8080\n", False),
-    ],
-    ids=[
-        "its-host",
-        "other-path",
-        "https-on-its-host",
-        "other-port",
-        "other-host",
-        "https-other-port",
-        "https-other-host",
-        "https-remote",
-        "https-remote-asked-for-http",
-    ],
-)
+_HELPER_CASES = [
+    (_HTTP_REMOTE, "protocol=http\nhost=git.example:8080\n", True),
+    (
+        _HTTP_REMOTE,
+        "protocol=http\nhost=git.example:8080\npath=other/r.git\n",
+        True,
+    ),
+    (_HTTP_REMOTE, "protocol=https\nhost=git.example:8080\n", True),
+    (_HTTP_REMOTE, "protocol=http\nhost=git.example\n", False),
+    (_HTTP_REMOTE, "protocol=http\nhost=elsewhere.example:8080\n", False),
+    (_HTTP_REMOTE, "protocol=https\nhost=git.example\n", False),
+    (_HTTP_REMOTE, "protocol=https\nhost=elsewhere.example:8080\n", False),
+    (_HTTPS_REMOTE, "protocol=https\nhost=git.example:8080\n", True),
+    (_HTTPS_REMOTE, "protocol=http\nhost=git.example:8080\n", False),
+]
+_HELPER_CASE_IDS = [
+    "its-host",
+    "other-path",
+    "https-on-its-host",
+    "other-port",
+    "other-host",
+    "https-other-port",
+    "https-other-host",
+    "https-remote",
+    "https-remote-asked-for-http",
+]
+
+
+@pytest.mark.parametrize("url, asked, answers", _HELPER_CASES, ids=_HELPER_CASE_IDS)
 def test_the_credential_helper_answers_only_for_the_remote_s_protocol_and_host(
     url, asked, answers, tmp_path
 ):
@@ -2265,6 +2348,93 @@ def test_the_credential_helper_answers_only_for_the_remote_s_protocol_and_host(
     else:
         assert filled.returncode != 0
         assert "the-token" not in filled.stdout + filled.stderr
+
+
+def _asked_url(asked: str) -> str:
+    """The URL libgit2 would ask GitCallback with for git's credential request
+    ``asked`` (``protocol=..`` and ``host=..`` lines)."""
+    fields = dict(line.split("=", 1) for line in asked.splitlines() if line)
+    return f"{fields['protocol']}://{fields['host']}/{fields.get('path', 'r.git')}"
+
+
+_USERPASS = pygit2.enums.CredentialType.USERPASS_PLAINTEXT
+
+
+@pytest.mark.parametrize("url, asked, answers", _HELPER_CASES, ids=_HELPER_CASE_IDS)
+def test_libgit2_answers_for_the_hosts_the_credential_helper_answers_for(
+    url, asked, answers
+):
+    """The credential helper's table, asked of GitCallback; the same-server
+    tests above show both backends behave alike."""
+    callback = GitCallback(_source(url, GitHubTokenAuthData(token="the-token")))
+    if answers:
+        given = callback.credentials(_asked_url(asked), None, _USERPASS)
+        assert given.credential_tuple == ("git", "the-token")
+    else:
+        with pytest.raises(CredentialsNotGivenError) as info:
+            callback.credentials(_asked_url(asked), None, _USERPASS)
+        assert "the-token" not in str(info.value)
+
+
+@pytest.mark.parametrize(
+    "source_url, asked_url, answers",
+    [
+        ("https://h.example:443/r.git", "https://h.example/r.git", True),
+        ("https://h.example/r.git", "https://h.example:443/r.git", True),
+        ("http://h.example/r.git", "https://h.example/r.git", True),
+        ("https://H.Example/r.git", "https://h.example/r.git", True),
+        ("https://h.example/r.git", "https://user:pw@h.example/r.git", True),
+        ("https://h.example/r.git", "https://h.example:8443/r.git", False),
+        ("https://h.example/r.git", "http://h.example/r.git", False),
+        ("https://h.example/r.git", "https://h.example.evil/r.git", False),
+        # libgit2 writes an IPv6 host without its brackets: taken where only
+        # one reading is an address and a port (58203 is no group of an
+        # address), refused where both are (8080 and 443 are)
+        ("http://[::1]:58203/r.git", "http://::1:58203/r.git", True),
+        ("http://[::1]:58203/r.git", "http://[::1]:58203/r.git", True),
+        ("http://[::1]/r.git", "http://::1/r.git", True),
+        ("https://[2001:db8::1]/r.git", "https://2001:db8::1/r.git", True),
+        ("http://[::1]:58203/r.git", "http://::1:58204/r.git", False),
+        ("http://[::1]:58203/r.git", "http://::2:58203/r.git", False),
+        ("http://[::1]:8080/r.git", "http://::1:8080/r.git", False),
+        ("http://[2001:db8::1]:8080/r.git", "http://2001:db8::1:8080/r.git", False),
+        ("http://[2001:db8::1:8080]/r.git", "http://2001:db8::1:8080/r.git", False),
+        ("https://[2001:db8::1]/r.git", "https://2001:db8::1:443/r.git", False),
+        ("http://[::1]/r.git", "http://::1:8080/r.git", False),
+        ("http://[::1]:8080/r.git", "http://[::1]:8080/r.git", True),
+        ("https://h.example/r.git", "not a url", False),
+    ],
+)
+def test_libgit2_answers_for_the_source_s_own_host_and_port(
+    source_url, asked_url, answers
+):
+    callback = GitCallback(_source(source_url, GitHubTokenAuthData(token="t")))
+    if answers:
+        assert callback.credentials(asked_url, None, _USERPASS)
+    else:
+        with pytest.raises(CredentialsNotGivenError):
+            callback.credentials(asked_url, None, _USERPASS)
+
+
+def test_an_ipv6_host_and_port_libgit2_writes_ambiguously_get_nothing_and_say_why():
+    """``2001:db8::1:8080`` is the address ``2001:db8::1`` on port 8080, and
+    the address ``2001:db8::1:8080`` on the scheme's port: no token for
+    either."""
+    callback = GitCallback(
+        _source("http://[2001:db8::1]:8080/r.git", GitHubTokenAuthData(token="t"))
+    )
+    with pytest.raises(CredentialsNotGivenError, match="git command line"):
+        callback.credentials("http://2001:db8::1:8080/r.git", None, _USERPASS)
+
+
+def test_libgit2_gives_no_token_for_a_kind_of_credential_it_has_none_of():
+    callback = GitCallback(
+        _source("https://h.example/r.git", GitHubTokenAuthData(token="t"))
+    )
+    with pytest.raises(CredentialsNotGivenError):
+        callback.credentials(
+            "https://h.example/r.git", None, pygit2.enums.CredentialType.SSH_KEY
+        )
 
 
 @pytest.mark.parametrize("where", ["token", "url"])
