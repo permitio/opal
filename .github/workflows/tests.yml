@@ -227,31 +227,19 @@ jobs:
         with:
           python-version: "3.14"
 
-      - name: Install opal packages
+      - name: Install the E2E suite's requirements
         if: ${{ !cancelled() && (success() || steps.gate.outcome == 'failure') }}
-        run: |
-          python -m pip install -e ./packages/opal-common
-          python -m pip install -e ./packages/opal-client
-          python -m pip install -e ./packages/opal-server
+        run: python -m pip install --require-hashes -r app-tests/requirements.txt
 
-      - name: App Tests
+      # The policy repo is on the stack's own git server, so this needs no secret and runs
+      # on pull requests from forks too. e2e-github.yml runs the policy repo tests again
+      # with the repo on github.com, outside the required checks.
+      - name: E2E tests
         if: ${{ !cancelled() && (success() || steps.gate.outcome == 'failure') }}
-        working-directory: ./app-tests
+        working-directory: app-tests
         env:
           OPAL_IMAGE_TAG: test
-          OPAL_TESTS_POLICY_REPO_DEPLOY_KEY: ${{ secrets.OPAL_TESTS_POLICY_REPO_DEPLOY_KEY }}
-        run: |
-          # Prepare git for using tests policy repo
-          OPAL_POLICY_REPO_SSH_KEY_PATH="$(realpath .)/opal-tests-policy-repo-key"
-          export OPAL_POLICY_REPO_SSH_KEY_PATH
-          echo "$OPAL_TESTS_POLICY_REPO_DEPLOY_KEY" > "$OPAL_POLICY_REPO_SSH_KEY_PATH"
-          chmod 400 "$OPAL_POLICY_REPO_SSH_KEY_PATH"
-
-          git config --global core.sshCommand "ssh -i $OPAL_POLICY_REPO_SSH_KEY_PATH -o IdentitiesOnly=yes"
-          git config --global user.name "$GITHUB_ACTOR"
-          git config --global user.email "<>"
-
-          ./run.sh
+        run: python -m pytest
 
   binary-stages:
     # The OPA and EOPA extraction stages, for both release architectures. The jobs above

@@ -1,0 +1,7 @@
+# The GitHub lane (pytest --policy-repo=github): the servers track the policy repo on
+# github.com over SSH, with the deploy key the suite passes in OPAL_POLICY_REPO_SSH_KEY.
+services:
+  opal_server:
+    environment:
+      - OPAL_POLICY_REPO_URL=git@github.com:permitio/opal-tests-policy-repo.git
+      - OPAL_POLICY_REPO_SSH_KEY=${OPAL_POLICY_REPO_SSH_KEY}

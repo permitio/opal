@@ -274,7 +274,7 @@ class TestTests:
             "python-version": [PACKAGES_PYTHON]
         }
 
-    def test_the_e2e_job_installs_the_packages_on_their_python(self, jobs):
+    def test_the_e2e_job_runs_on_the_packages_python(self, jobs):
         assert setup_python_versions(jobs["e2e-tests"]) == [PACKAGES_PYTHON]
 
     def test_the_e2e_job_gates_the_images_it_builds(self, jobs):
@@ -308,6 +308,108 @@ class TestTests:
 
         assert runs == [".github/scripts/vuln.sh"]
         assert jobs["vuln"]["permissions"] == {"contents": "read"}
+
+
+class TestE2e:
+    """tests.yml: the E2E job runs the pytest suite in app-tests on the stack's
+    own git server, with no secret."""
+
+    @pytest.fixture
+    def job(self):
+        return load(WORKFLOWS / "tests.yml")["jobs"]["e2e-tests"]
+
+    def test_installs_the_suite_from_its_hashed_requirements(self, job):
+        assert any(
+            "pip install --require-hashes -r app-tests/requirements.txt"
+            in step.get("run", "")
+            for step in steps_of(job)
+        )
+
+    def test_runs_the_whole_suite_on_the_images_it_built(self, job):
+        (suite,) = [
+            step
+            for step in steps_of(job)
+            if step.get("run", "").startswith("python -m pytest")
+        ]
+
+        assert suite["run"].strip() == "python -m pytest"
+        assert suite["working-directory"] == "app-tests"
+        assert suite["env"] == {"OPAL_IMAGE_TAG": "test"}
+        # It runs on every event, and after a failed image gate, but never after a cancel.
+        assert suite["if"] == (
+            "${{ !cancelled() && (success() || steps.gate.outcome == 'failure') }}"
+        )
+
+    def test_no_step_sees_a_secret(self, job):
+        assert "secrets." not in str(job)
+
+
+class TestE2eGithub:
+    """e2e-github.yml: the E2E suite's policy repo tests with the repo on
+    github.com over SSH, where the deploy key's secret is set, outside the
+    required checks."""
+
+    WORKFLOW = "e2e-github.yml"
+    DEPLOY_KEY = "${{ secrets.OPAL_TESTS_POLICY_REPO_DEPLOY_KEY }}"
+
+    @pytest.fixture
+    def jobs(self):
+        return load(WORKFLOWS / self.WORKFLOW)["jobs"]
+
+    def test_is_not_a_required_check(self, jobs):
+        assert self.WORKFLOW not in REQUIRED_CHECKS
+        assert not set(jobs) & set(load(WORKFLOWS / "tests.yml")["jobs"])
+
+    def test_runs_only_when_the_deploy_key_is_set(self, jobs):
+        (check,) = steps_of(jobs["deploy-key"])
+        lane = jobs["e2e-github-ssh"]
+
+        assert check["env"] == {"DEPLOY_KEY": self.DEPLOY_KEY}
+        assert jobs["deploy-key"]["outputs"] == {
+            "present": "${{ steps.check.outputs.present }}"
+        }
+        assert lane["needs"] == "deploy-key"
+        assert lane["if"] == "needs.deploy-key.outputs.present == 'true'"
+
+    def test_runs_the_policy_repo_tests_on_the_images_it_built(self, jobs):
+        steps = steps_of(jobs["e2e-github-ssh"])
+        builds = {
+            step["with"]["target"]: step["with"]["tags"].strip()
+            for step in steps
+            if step.get("uses", "").startswith("docker/build-push-action@")
+        }
+        (suite,) = [
+            step for step in steps if step.get("run", "").startswith("python -m pytest")
+        ]
+
+        assert builds == {
+            "client": "permitio/opal-client:test",
+            "server": "permitio/opal-server:test",
+        }
+        assert suite["run"].strip() == (
+            "python -m pytest --policy-repo=github -m policy_repo"
+        )
+        assert suite["working-directory"] == "app-tests"
+        assert suite["env"] == {
+            "OPAL_IMAGE_TAG": "test",
+            "OPAL_TESTS_POLICY_REPO_DEPLOY_KEY": self.DEPLOY_KEY,
+        }
+
+    def test_only_the_key_check_and_the_tests_see_the_key(self, jobs):
+        workflow = load(WORKFLOWS / self.WORKFLOW)
+        readers = [
+            (job_id, step.get("id", step.get("name")))
+            for job_id, job in jobs.items()
+            for step in steps_of(job)
+            if "secrets." in str(step)
+        ]
+
+        assert "secrets." not in str(workflow.get("env"))
+        assert all("env" not in job for job in jobs.values())
+        assert readers == [
+            ("deploy-key", "check"),
+            ("e2e-github-ssh", "E2E tests, policy repo on GitHub over SSH"),
+        ]
 
 
 class TestRelease:

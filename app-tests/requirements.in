@@ -1,0 +1,6 @@
+# The E2E suite runs with these, installed from requirements.txt with --require-hashes.
+# requirements.txt is generated from this file with:
+#   uv pip compile --generate-hashes --python-version 3.14 --universal \
+#     app-tests/requirements.in -o app-tests/requirements.txt
+pytest==9.2.0
+requests==2.34.2

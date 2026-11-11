@@ -1,0 +1,111 @@
+name: E2E on GitHub
+
+# The E2E suite's policy repo tests, with the policy repo on github.com over SSH, the way most
+# deployments fetch their policy (app-tests/README.md, "The GitHub lane"). Tests' E2E job runs
+# them on the stack's own git server. This workflow is apart from Tests so that it is never a
+# required check: a missing, revoked or read-only deploy key fails it and blocks nothing. It runs
+# only where the deploy key's secret is set, which a pull request from a fork never has.
+
+on:
+  push:
+    branches: [ master, 'release/**' ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push to a PR cancels that PR's older runs; runs on master and release branches are
+# never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash --noprofile --norc -euo pipefail {0}
+
+env:
+  # As in tests.yml: keep the triggering event out of the builds' provenance and metadata, and
+  # upload no build record.
+  BUILDX_METADATA_PROVENANCE: disabled
+  DOCKER_BUILD_RECORD_UPLOAD: "false"
+
+jobs:
+  deploy-key:
+    name: Check for the policy repo deploy key
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      present: ${{ steps.check.outputs.present }}
+    steps:
+      - name: Check for the policy repo deploy key
+        id: check
+        env:
+          DEPLOY_KEY: ${{ secrets.OPAL_TESTS_POLICY_REPO_DEPLOY_KEY }}
+        run: |
+          if [[ -n "$DEPLOY_KEY" ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  e2e-github-ssh:
+    name: E2E Tests, policy repo on GitHub over SSH
+    needs: deploy-key
+    if: needs.deploy-key.outputs.present == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
+
+      - name: Build client
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: false
+          target: client
+          cache-from: type=registry,ref=permitio/opal-client:latest
+          cache-to: type=inline
+          load: true
+          tags: |
+            permitio/opal-client:test
+
+      - name: Build server
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: false
+          target: server
+          cache-from: type=registry,ref=permitio/opal-server:latest
+          cache-to: type=inline
+          load: true
+          tags: |
+            permitio/opal-server:test
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.14"
+
+      - name: Install the E2E suite's requirements
+        run: python -m pip install --require-hashes -r app-tests/requirements.txt
+
+      - name: E2E tests, policy repo on GitHub over SSH
+        working-directory: app-tests
+        env:
+          OPAL_IMAGE_TAG: test
+          OPAL_TESTS_POLICY_REPO_DEPLOY_KEY: ${{ secrets.OPAL_TESTS_POLICY_REPO_DEPLOY_KEY }}
+        run: python -m pytest --policy-repo=github -m policy_repo
