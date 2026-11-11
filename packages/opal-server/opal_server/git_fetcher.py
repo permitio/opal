@@ -916,7 +916,8 @@ def sweep_scope_clone_leftovers(base_dir: Path) -> None:
     Not the reflogs a repack set aside and did not remove before its
     process ended (see _set_reflogs_aside): tens of thousands of files
     per clone, removed here, would hold up the start of every worker.
-    The clone's next repack removes them (_remove_reflogs_set_aside).
+    The scopes leader's start removes them
+    (remove_reflogs_left_set_aside), as does the clone's next repack.
     """
     git_cli.sweep_clone_leftovers(GitPolicyFetcher.base_dir(base_dir))
 
@@ -1337,17 +1338,37 @@ class _HungOpMarker:
             # The op returned while the marker was being written.
             _remove_hung_marker(marker)
 
-    def returned(self, succeeded: bool) -> None:
+    def returned(self, succeeded: bool, *, on_loop: bool = False) -> None:
+        """The op returned: remove its own marker when it wrote one, or look
+        for stale ones after a success within its timeout.
+
+        ``on_loop``: called on the event loop (a git command-line op's
+        on_gone), where the file I/O, on the clones' volume, goes to a
+        thread of its own; the flags are set here all the same.
+        """
         if self._dir is None:
             return
         with self._lock:
             self._returned = True
             timed_out, marked = self._timed_out, self._marked
+        if not marked and (timed_out or not succeeded):
+            return
+        if on_loop:
+            _start_marker_thread(
+                self._after_return,
+                marked,
+                what="tidy the hung-op markers in",
+                path=self._dir,
+            )
+        else:
+            self._after_return(marked)
+
+    def _after_return(self, marked: bool) -> None:
         if marked:
             # Only this op's own marker: another process's op on the same
             # clone may still be hung.
             _remove_hung_marker(cast(Path, self._marker))
-        elif succeeded and not timed_out and os.path.isdir(self._dir):
+        elif os.path.isdir(cast(Path, self._dir)):
             # Finished within its timeout: the clone works, so no earlier hang
             # calls for a fresh clone. Only a stat on the common path; the rare
             # removal runs on a thread of its own, so it never adds to this
@@ -1459,7 +1480,7 @@ async def run_git_cli_op(
                 timer.cancel()
             _mark_git_op_done(busy_key)
             if how is not None:
-                hung.returned(how)
+                hung.returned(how, on_loop=True)
 
         token = next(_cli_op_tokens)
         if timeout and math.isfinite(timeout) and timeout > 0:
@@ -2687,18 +2708,19 @@ def _remove_reflogs(asides: List[Path]) -> None:
             _emit_ref_step_failed("reflogs")
 
 
-def _remove_reflogs_set_aside(git_dir: Path) -> None:
+def _remove_reflogs_set_aside(git_dir: Path) -> bool:
     """Remove the reflogs ``_set_reflogs_aside`` moved, on a daemon thread of
     its own, so that it delays neither the clone's next op nor the repack's
-    caller.
+    caller; whether there were any.
 
-    Those of a process that died first are removed with them, here only:
-    the pre-fork preload leaves them (sweep_scope_clone_leftovers).
+    Those of a process that died first are removed with them, here and
+    at a scopes leader's start (remove_reflogs_left_set_aside); the
+    preload before the fork leaves them (sweep_scope_clone_leftovers).
     Never raises.
     """
     asides = _reflogs_set_aside(git_dir)
     if not asides:
-        return
+        return False
     try:
         threading.Thread(
             target=_remove_reflogs,
@@ -2713,6 +2735,39 @@ def _remove_reflogs_set_aside(git_dir: Path) -> None:
             paths=asides,
             err=e,
         )
+    return True
+
+
+def remove_reflogs_left_set_aside(base_dir: Path) -> int:
+    """For a scopes leader's start: remove the reflogs that a repack set aside
+    and a process that died left (see _set_reflogs_aside), in every scope clone
+    under ``base_dir``, each clone's on a thread of its own; how many clones
+    had some.
+
+    A quiet clone, whose packs stay under the repack's limit, has no
+    next repack to remove them. Not in the pre-fork preload: a removal
+    thread there would hold directory fds at fork in every worker. Only
+    real directories named like a source id are looked into. Never
+    raises.
+    """
+    clones_dir = GitPolicyFetcher.base_dir(base_dir)
+    try:
+        with os.scandir(clones_dir) as entries:
+            clones = [
+                Path(e.path)
+                for e in entries
+                if SOURCE_ID_RE.match(e.name) and e.is_dir(follow_symlinks=False)
+            ]
+    except FileNotFoundError:
+        return 0
+    except OSError as e:
+        logger.warning(
+            "Could not look for reflogs set aside in {path}: {err!r}",
+            path=clones_dir,
+            err=e,
+        )
+        return 0
+    return sum(_remove_reflogs_set_aside(clone / ".git") for clone in sorted(clones))
 
 
 def _init_scope_clone(path: str | bytes, bare: bool) -> Repository:
@@ -3086,16 +3141,38 @@ def fetch_mark_after(repo_path: Path, branch: str, t: float) -> Optional[bool]:
     return None
 
 
-# A branch's fetch mark name, as _fetch_mark_name writes it.
-_FETCH_MARK_NAME_RE = re.compile(r"\A[0-9a-f]{32}\Z")
+# A branch's fetch mark name, as _fetch_mark_name and _fetch_failed_mark_name
+# write it: the branch's hash in group 1.
+_FETCH_MARK_NAME_RE = re.compile(r"\A([0-9a-f]{32})(?:\.failed)?\Z")
+# A temp file of the mark writer (_write_fetch_marks), of any mark.
+_FETCH_MARK_TEMP_RE = re.compile(
+    r"\A\.(?:[0-9a-f]{32}(?:\.failed)?|ALL|FAILED)\.[0-9a-f]{8}\Z"
+)
+
+
+def _stale_fetch_mark(
+    entry: os.DirEntry, tracked: AbstractSet[str], before: float
+) -> bool:
+    """Whether remove_stale_fetch_marks removes ``entry``."""
+    if not entry.is_file(follow_symlinks=False):
+        return False
+    info = entry.stat(follow_symlinks=False)
+    if _FETCH_MARK_TEMP_RE.match(entry.name):
+        return info.st_ctime < before - _FETCH_MARK_TEMP_SECONDS
+    named = _FETCH_MARK_NAME_RE.match(entry.name)
+    return (
+        named is not None and named.group(1) not in tracked and info.st_mtime < before
+    )
 
 
 def remove_stale_fetch_marks(
     repo_path: Path, branches: AbstractSet[str], before: float
 ) -> int:
-    """Remove the branch fetch marks of the clone at ``repo_path`` that name
-    none of ``branches`` and are dated before ``before`` (epoch seconds), for
-    the orphan sweep; how many it removed.
+    """Remove the branch fetch marks of the clone at ``repo_path``, of success
+    and of failure, that name none of ``branches`` and are dated before
+    ``before`` (epoch seconds), and the mark writer's temp files made a minute
+    or more before it (a writer that died left them), for the orphan sweep; how
+    many it removed.
 
     ALL, FAILED and any other name are kept, and so are marks dated from
     ``before`` on: a fetch that started then may be for a branch the sweep's
@@ -3116,12 +3193,7 @@ def remove_stale_fetch_marks(
     tracked = {_fetch_mark_name(branch) for branch in branches}
     with os.scandir(marks) as entries:
         stale = [
-            entry.name
-            for entry in entries
-            if _FETCH_MARK_NAME_RE.match(entry.name)
-            and entry.name not in tracked
-            and entry.is_file(follow_symlinks=False)
-            and entry.stat(follow_symlinks=False).st_mtime < before
+            entry.name for entry in entries if _stale_fetch_mark(entry, tracked, before)
         ]
     removed = 0
     for name in stale:
@@ -3419,7 +3491,9 @@ class RepoInterface:
         if branch_name not in repo.branches.local:
             base_remote_branch = f"{remote_name}/{base_branch}"
             if repo.branches.remote.get(base_remote_branch) is not None:
-                (commit, _) = repo.resolve_refish(base_remote_branch)
+                commit = RepoInterface.remote_branch_commit(
+                    repo, base_branch, remote_name
+                )
             else:
                 raise RuntimeError("Base branch was not found on remote")
             logger.debug(
@@ -3451,13 +3525,32 @@ class RepoInterface:
             return None
 
     @staticmethod
+    def remote_branch_commit(
+        repo: Repository, branch: str, remote: str
+    ) -> pygit2.Commit:
+        """The commit of ``branch``'s remote-tracking ref, looked up by its
+        exact name, ``refs/remotes/<remote>/<branch>``.
+
+        Never by a short name or a revision: ``x~1`` would name the parent
+        of ``<remote>/x``, and a tag named ``<remote>/<branch>`` would come
+        before the branch.
+
+        Raises:
+            KeyError: there is no such ref (pygit2.NotFoundError).
+            ValueError: ``branch`` cannot be part of a ref name
+                (pygit2.InvalidSpecError), or is too long for one.
+            pygit2.GitError: the ref names an object the clone lacks.
+        """
+        reference = repo.lookup_reference(f"refs/remotes/{remote}/{branch}")
+        return reference.peel(pygit2.Commit)
+
+    @staticmethod
     def get_commit_hash(repo: Repository, branch: str, remote: str) -> Optional[str]:
         try:
-            (commit, _) = repo.resolve_refish(f"{remote}/{branch}")
-            return str(commit.id)
-        except (pygit2.GitError, KeyError, pygit2.InvalidSpecError, ValueError):
-            # InvalidSpecError: an empty branch, as for has_remote_branch, and
-            # ValueError a name too long.
+            return str(RepoInterface.remote_branch_commit(repo, branch, remote).id)
+        except (pygit2.GitError, KeyError, ValueError):
+            # ValueError: a branch that cannot be a ref, as for
+            # has_remote_branch: its scope reports a missing branch.
             return None
 
     @staticmethod
@@ -5527,7 +5620,9 @@ class GitPolicyFetcher(PolicyFetcher):
             # a missing ref and for a missing object alike. The ref tells
             # them apart.
             try:
-                commit, _ = repo.resolve_refish(f"{self._remote}/{self._source.branch}")
+                commit = RepoInterface.remote_branch_commit(
+                    repo, self._source.branch, self._remote
+                )
                 head_commit_hash = str(commit.id)
             except KeyError:
                 if RepoInterface.has_remote_branch(
@@ -5558,6 +5653,11 @@ class GitPolicyFetcher(PolicyFetcher):
                         f"The first clone or fetch of {self._repo_path} has not "
                         "finished"
                     )
+                head_commit_hash = None
+            except ValueError:
+                # A branch that cannot be a ref (x~1, stored before PUT
+                # refused such names): no fetch brings it, so it is missing
+                # whatever the clone holds.
                 head_commit_hash = None
         finally:
             free = getattr(repo, "free", None)
@@ -5642,6 +5742,15 @@ class GitPolicyFetcher(PolicyFetcher):
 
     @tracer.wrap("git_policy_fetcher.make_bundle")
     def make_bundle(self, base_hash: Optional[str] = None) -> PolicyBundle:
+        if not self.branch_can_be_a_ref():
+            # No fetch brings such a branch (x~1, stored before PUT refused
+            # them), whatever the clone holds, or whether it exists at all:
+            # with libgit2's shards it may hash to a clone no other scope
+            # made. The 409 of a missing branch, never a 503 to retry.
+            raise BranchHeadNotFoundError(
+                "Could not find current branch head: "
+                f"{self._remote}/{self._source.branch} cannot be a ref"
+            )
         # Closed on the way out: the persistent `git cat-file` processes an
         # open Repo keeps would otherwise live until the garbage collector
         # breaks its reference cycle, and hold every pack they read open,

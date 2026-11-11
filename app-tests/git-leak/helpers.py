@@ -442,8 +442,8 @@ def worker_pids(service: str = "opal_server") -> set:
     The server runs ``gunicorn`` (master) + ``UvicornWorker`` children (see
     ``scripts/start.sh``). When a worker's broadcaster reader gives up on a
     backbone disconnect it triggers a graceful shutdown and gunicorn respawns
-    the worker with a *new* PID; the reconnecting broadcaster (PER-15065 / #915)
-    instead recovers the reader in place and the worker keeps its PID. Comparing
+    the worker with a *new* PID; the reconnecting broadcaster (#915) instead
+    recovers the reader in place and the worker keeps its PID. Comparing
     this set across a transient bounce is how the broadcaster test tells an
     in-place reconnect apart from a worker respawn.
 
@@ -480,7 +480,7 @@ def worker_pids(service: str = "opal_server") -> set:
     return set(pids[1:])  # drop the master (lowest PID); the rest are workers
 
 
-# The reconnecting broadcaster (PER-15065 / #915) logs this line every time its
+# The reconnecting broadcaster (#915) logs this line every time its
 # reader (re)connects to the backbone channel — once at boot, and once more on
 # each reconnect after a backbone drop (pubsub_resilience.py `_reader_loop` ->
 # `_ensure_connected`). Counting it across a Postgres bounce positively proves a
@@ -497,7 +497,7 @@ def broadcaster_connect_count(service: str = "opal_server") -> int:
     future Postgres shutdown-signal change, connection pooling, etc.) would leave
     the worker PIDs unchanged and pass the gate vacuously. Paired with
     ``worker_pids()`` unchanged (which proves the recovery was *in place*, not a
-    respawn), the two together pin down the PER-15065 property.
+    respawn), the two together pin down the in-place reconnect.
     """
     # --no-log-prefix strips the "service | " column so the marker matches cleanly.
     out = compose("logs", "--no-log-prefix", service).stdout

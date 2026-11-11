@@ -1499,14 +1499,15 @@ def test_a_clone_deleted_during_a_branch_hold_keeps_the_hold(monkeypatch, emitte
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("cloned, status", [(True, 409), (False, 503)])
+@pytest.mark.parametrize("cloned", [True, False])
 async def test_a_branch_name_that_cannot_be_a_ref_is_answered_at_once(
-    tmp_path, emitted, clear_fetcher_caches, cloned, status
+    tmp_path, emitted, clear_fetcher_caches, cloned
 ):
-    """``x~1`` parses as a revision, so make_bundle answers a miss for it, but
-    no fetch can ever bring it: it cannot name a ref. The route answers what
-    it answered before the wait existed, at once, and asks no server for a
-    sync, which would fail on the name on every server.
+    """No fetch can ever bring ``x~1``: it cannot name a ref. The route answers
+    the 409 of a missing branch at once, whether the scope's clone is there or
+    not (a clone that is not there would otherwise be a 503 to retry forever),
+    and asks no server for a sync, which would fail on the name on every
+    server.
 
     Mutation: offering such a name the branch wait holds the request for the
     whole wait and publishes a sync request.
@@ -1522,7 +1523,7 @@ async def test_a_branch_name_that_cannot_be_a_ref_is_answered_at_once(
     async with _route_app(scopes, pubsub, service) as client:
         resp = await client.get("/scopes/moved/policy")
 
-    assert resp.status_code == status, resp.text
+    assert resp.status_code == 409, resp.text
     assert _waits(emitted) == []
     assert pubsub.syncs() == []
 

@@ -71,9 +71,9 @@ async def test_failed_trigger_exception_is_retrieved_and_logged():
 
 @pytest.mark.asyncio
 async def test_webhook_listener_line_is_debug_and_failure_line_stays_error():
-    """'Webhook listener triggered (N)' is DEBUG (PER-16361: at INFO it was one
-    line per webhook message per pod leader); N, the task-list length, is still
-    in the message.
+    """'Webhook listener triggered (N)' is DEBUG (at INFO it was one line per
+    webhook message per pod leader); N, the task-list length, is still in the
+    message.
 
     The swept-failure ERROR stays visible at the deployed level.
     """

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
 from fastapi_websocket_pubsub import Topic
+from opal_common.async_utils import run_sync
 from opal_common.logger import configure_logs, logger, logs_configured
 from opal_server import health
 from opal_server.config import opal_server_config
@@ -21,6 +22,7 @@ from opal_server.git_fetcher import (
     git_busy_count,
     reclone_hung_enabled,
     reclone_hung_scope_clones,
+    remove_reflogs_left_set_aside,
     shutdown_git_executor,
     sweep_scope_clone_leftovers,
 )
@@ -238,6 +240,15 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
 
         if opal_server_config.POLICY_REFRESH_INTERVAL > 0:
             self._tasks.append(asyncio.create_task(self._periodic_polling()))
+        # Reflogs a repack set aside before its process died: a quiet clone has
+        # no next repack to remove them, and the pre-fork preload leaves them.
+        self._tasks.append(
+            asyncio.create_task(
+                run_sync(
+                    remove_reflogs_left_set_aside, Path(opal_server_config.BASE_DIR)
+                )
+            )
+        )
 
         interval = orphan_sweep_interval()
         if interval > 0:

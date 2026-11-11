@@ -1,4 +1,4 @@
-"""Scope fetches and clones through the git command line (PER-17993).
+"""Scope fetches and clones through the git command line.
 
 With SCOPES_GIT_FETCH_WITH_CLI on, the scopes fetcher runs ``git fetch`` and
 ``git clone`` as child processes instead of calling libgit2 on a thread. A
@@ -857,7 +857,11 @@ def sweep_clone_leftovers(clones_dir: Path) -> None:
     every clone, and every directory a clone was being made in, each under
     the clone's lock (a clone whose lock is held is left alone). A dead
     op's record stays in the clone's lock file until all of that is gone.
-    A clone that cannot be read is logged and left; never raises.
+    The lock file of a clone that is gone, with nothing of it left (a
+    delete of a scope never cloned takes the lock too), is removed under
+    its lock: nothing else runs then, and nothing else removes one whose
+    clone never existed. A clone that cannot be read is logged and left;
+    never raises.
     """
     remove_dead_key_dirs()
     try:
@@ -876,28 +880,71 @@ def sweep_clone_leftovers(clones_dir: Path) -> None:
         for n in names
         if n.startswith(".") and _CLONE_DIR_MARK in n
     }
+    # A clone's lock file is ".<source id>.lock".
+    targets |= {
+        n[1 : -len(_LOCK_SUFFIX)]
+        for n in names
+        if n.startswith(".")
+        and n.endswith(_LOCK_SUFFIX)
+        and "." not in n[1 : -len(_LOCK_SUFFIX)]
+    }
+    # A stray ".lock" or "..clone-*" names no clone: "" is git_sources itself.
+    targets.discard("")
+    removed_locks = 0
     for name in sorted(targets):
         repo_path = Path(clones_dir) / name
         try:
-            _sweep_clone(repo_path)
+            removed_locks += _sweep_clone(repo_path)
         except OSError as e:
             logger.warning("Not sweeping {path}: {err!r}", path=repo_path, err=e)
+    if removed_locks:
+        logger.info(
+            "Removed {count} lock files of clones no longer in {path}",
+            count=removed_locks,
+            path=clones_dir,
+        )
 
 
-def _sweep_clone(repo_path: Path) -> None:
+def _sweep_clone(repo_path: Path) -> bool:
+    """Sweep one clone (see sweep_clone_leftovers); whether its lock file was
+    removed, the clone being gone."""
     fd = take_clone_lock(repo_path)
     if fd is None:
         logger.warning(
             "Not sweeping {path}: a git op of another process holds it",
             path=repo_path,
         )
-        return
+        return False
     try:
         # A record of a dead op stays until what it left is all gone.
-        if remove_dead_op_leftovers(repo_path):
-            mark_op_finished(fd)
+        if not remove_dead_op_leftovers(repo_path):
+            return False
+        mark_op_finished(fd)
+        if os.path.lexists(repo_path):
+            return False
+        return _remove_held_lock_file(repo_path)
     finally:
         drop_clone_lock(fd)
+
+
+def _remove_held_lock_file(repo_path: Path) -> bool:
+    """Remove the lock file of a clone that is gone, its lock held by the
+    caller; whether it went.
+
+    An op that opened the file meanwhile finds, once it has the flock,
+    that no path names its file any more (take_clone_lock).
+    """
+    lock = clone_lock_path(repo_path)
+    try:
+        os.unlink(lock)
+    except OSError as e:
+        logger.warning(
+            "Could not remove the lock file {path} of a clone that is gone: {err!r}",
+            path=lock,
+            err=e,
+        )
+        return False
+    return True
 
 
 def remove_dead_op_leftovers(repo_path: Path) -> bool:

@@ -1,5 +1,5 @@
-"""The scopes fetcher with SCOPES_GIT_FETCH_WITH_CLI on (PER-17993): clones and
-fetches run git (``opal_server.git_cli``) under the bookkeeping a libgit2 op
+"""The scopes fetcher with SCOPES_GIT_FETCH_WITH_CLI on: clones and fetches
+run git (``opal_server.git_cli``) under the bookkeeping a libgit2 op
 gets (in-flight key, SCOPES_GIT_MAX_WORKERS slot, hung-op marker, metrics,
 backoff), and a fetch that hangs no longer keeps its clone from syncing.
 

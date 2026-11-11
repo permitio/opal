@@ -13,6 +13,7 @@ import fcntl
 import math
 import os
 import shutil
+import time
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set
 
@@ -1156,6 +1157,52 @@ async def test_no_fetch_mark_goes_when_the_sweep_decides_nothing(
 
     assert (await sweeper.sweep_once()).outcome == "refused"
     assert stale.exists()
+
+
+def test_failed_marks_and_dead_temp_files_go_with_the_branch_marks(clones):
+    """A narrow fetch that failed at the remote writes <hash>.failed for each
+    branch it asked for, and a mark writer that died leaves its temp file:
+    the sweep removes those of untracked branches, and every temp file older
+    than a minute at its read of the store, tracked or not. A tracked
+    branch's marks stay.
+
+    Mutation: matching only <hash> names keeps the failed marks and the temp
+    files.
+    """
+    clone = _make_clone(clones, "f" * 64 + "-2")
+    marks = _marks(clone)
+    read_at = time.time() + 3600
+    old = time.time() - 10
+    main = _fetch_mark_name("main")
+    gone = [
+        _mark(marks, f"{_fetch_mark_name('gone')}.failed", old),
+        _mark(marks, f".{_fetch_mark_name('gone')}.ab12cd34", old),
+        _mark(marks, f".{main}.failed.ab12cd34", old),
+        _mark(marks, ".ALL.ab12cd34", old),
+    ]
+    kept = [
+        _mark(marks, main, old),
+        _mark(marks, f"{main}.failed", old),
+        _mark(marks, "ALL", old),
+        _mark(marks, "FAILED", old),
+        _mark(marks, f"{_fetch_mark_name('gone')}.other", old),
+        _mark(marks, ".README", old),
+        _mark(marks, f"{_fetch_mark_name('fresh')}.failed", read_at + 1),
+    ]
+
+    assert remove_stale_fetch_marks(clone, {"main"}, read_at) == len(gone)
+    assert [p.name for p in gone if p.exists()] == []
+    assert [p.name for p in kept if not p.exists()] == []
+
+
+def test_a_live_mark_writer_s_temp_file_is_left(clones):
+    """A temp file made less than a minute before the sweep read the store may
+    be a live writer's, about to be renamed into place."""
+    clone = _make_clone(clones, "f" * 64 + "-3")
+    temp = _mark(_marks(clone), f".{_fetch_mark_name('gone')}.ab12cd34", 1.0)
+
+    assert remove_stale_fetch_marks(clone, set(), time.time()) == 0
+    assert temp.exists()
 
 
 def test_fetch_marks_through_a_symlink_are_left(tmp_path, clones):

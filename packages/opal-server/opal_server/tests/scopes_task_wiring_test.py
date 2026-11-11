@@ -775,3 +775,61 @@ async def test_stop_removes_the_gap_listener(monkeypatch):
     assert broadcaster.listeners == []
     await t.stop()  # a second stop is a no-op
     assert broadcaster.listeners == []
+
+
+@pytest.mark.asyncio
+async def test_start_removes_the_reflogs_a_dead_process_set_aside(
+    monkeypatch, tmp_path
+):
+    """The leader's start removes, off the event loop, the reflogs a repack set
+    aside before its process died, which a quiet clone's next repack may never
+    come to remove.
+
+    Mutation: calling remove_reflogs_left_set_aside on the loop, not through
+    run_sync, lists the clones on the loop's thread.
+    """
+    import threading
+    import time
+
+    import opal_server.scopes.task as task_module
+    from opal_server import git_cli
+    from opal_server.config import opal_server_config
+    from opal_server.git_fetcher import GitPolicyFetcher
+    from opal_server.policy.watcher.task import BasePolicyWatcherTask
+
+    async def _noop_start(self):
+        return None
+
+    monkeypatch.setattr(BasePolicyWatcherTask, "start", _noop_start)
+    monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 0)
+    monkeypatch.setattr(opal_server_config, "BASE_DIR", str(tmp_path))
+    aside = (
+        GitPolicyFetcher.base_dir(tmp_path)
+        / f"{'a' * 64}-0"
+        / ".git"
+        / f"{git_cli.REFLOGS_SET_ASIDE}dead"
+    )
+    (aside / "refs").mkdir(parents=True)
+    (aside / "refs" / "x").write_text("0" * 40 + "\n")
+    looked_on = []
+    remove = task_module.remove_reflogs_left_set_aside
+
+    def _recorded(base_dir):
+        looked_on.append(threading.get_ident())
+        return remove(base_dir)
+
+    monkeypatch.setattr(task_module, "remove_reflogs_left_set_aside", _recorded)
+    t = _bare_task([])
+    t._pubsub_endpoint = _FakeEndpoint()
+    t._tasks = []
+    t._purger_sub_id = None
+
+    await t.start()
+    await asyncio.wait_for(asyncio.gather(*t._tasks), timeout=5)
+
+    deadline = time.monotonic() + 10
+    while aside.exists():
+        assert time.monotonic() < deadline, "the reflogs set aside stayed"
+        await asyncio.sleep(0.01)
+    assert len(looked_on) == 1
+    assert looked_on != [threading.get_ident()]

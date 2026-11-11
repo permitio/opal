@@ -1,4 +1,4 @@
-"""Scopes mode logs one INFO line per incremental policy push (PER-16361).
+"""Scopes mode logs one INFO line per incremental policy push.
 
 The kept line is ``NewCommitsCallbacks.trigger_notification``'s "Triggering
 policy update for scope", logged once per publish by each pod leader. The other
@@ -316,8 +316,8 @@ async def test_already_fetched_line_is_debug_and_missing_branch_line_stays_info(
             repo, force_fetch=True, req_time=req_time
         )
 
-    # A fetch that started after the request already looked for the branch
-    # (PER-17978): no second fetch, and both lines stay at DEBUG.
+    # A fetch that started after the request already looked for the branch:
+    # no second fetch, and both lines stay at DEBUG.
     assert should_fetch is False
     [fetched] = starting_with(logs.emitted, "Repo was fetched after refresh request")
     assert fetched["level"].name == "DEBUG"

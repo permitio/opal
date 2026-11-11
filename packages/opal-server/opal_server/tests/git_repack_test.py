@@ -4379,6 +4379,74 @@ def test_reflogs_left_set_aside_are_removed_by_the_next_repack_not_the_preload(
     assert _wait_for(lambda: not left.exists())
 
 
+def _clone_dir_with_reflogs_set_aside(clones: Path, name: str) -> Path:
+    git_dir = clones / name / ".git"
+    aside = git_dir / f"{git_cli.REFLOGS_SET_ASIDE}dead"
+    (aside / "refs" / "remotes" / "origin").mkdir(parents=True)
+    (aside / "refs" / "remotes" / "origin" / "main").write_text("0" * 40 + "\n")
+    (git_dir / "HEAD").write_text("ref: refs/heads/main\n")
+    return aside
+
+
+def test_reflogs_left_set_aside_in_a_quiet_clone_go_when_a_leader_starts(tmp_path):
+    """A quiet clone, whose packs stay under the repack's limit, has no next
+    repack to remove the reflogs a dead process set aside: the scopes leader's
+    start removes them in every clone, each on a thread of its own, and says
+    how many clones had some. Names that are not a clone's, and a symlink to
+    one, are not looked into.
+
+    Mutation: leaving this to the next repack keeps them.
+    """
+    clones = GitPolicyFetcher.base_dir(tmp_path / "base")
+    asides = [_clone_dir_with_reflogs_set_aside(clones, f"{c * 64}-0") for c in "ab"]
+    _clone_dir_with_reflogs_set_aside(clones, f"{'c' * 64}-1").parent.joinpath(
+        f"{git_cli.REFLOGS_SET_ASIDE}0"
+    ).mkdir()
+    kept = [
+        _clone_dir_with_reflogs_set_aside(clones, "not-a-source-id"),
+        _clone_dir_with_reflogs_set_aside(tmp_path / "elsewhere", f"{'d' * 64}-0"),
+    ]
+    (clones / f"{'d' * 64}-0").symlink_to(kept[1].parent.parent)
+    quiet = clones / f"{'e' * 64}-0"
+    (quiet / ".git").mkdir(parents=True)
+
+    assert git_fetcher.remove_reflogs_left_set_aside(tmp_path / "base") == 3
+
+    assert _wait_for(lambda: not any(a.exists() for a in asides))
+    assert _wait_for(lambda: not _asides(clones / f"{'c' * 64}-1"))
+    assert all(k.exists() for k in kept)
+
+
+def test_no_clones_dir_means_no_reflogs_to_remove(tmp_path):
+    assert git_fetcher.remove_reflogs_left_set_aside(tmp_path / "base") == 0
+
+
+def test_a_clones_dir_that_cannot_be_listed_is_logged_not_raised(
+    tmp_path, monkeypatch, records
+):
+    clones = GitPolicyFetcher.base_dir(tmp_path / "base")
+    _clone_dir_with_reflogs_set_aside(clones, f"{'a' * 64}-0")
+    scandir = os.scandir
+
+    def _scandir(path="."):
+        if Path(path) == clones:
+            raise PermissionError(13, "Permission denied")
+        return scandir(path)
+
+    monkeypatch.setattr(git_fetcher.os, "scandir", _scandir)
+
+    assert git_fetcher.remove_reflogs_left_set_aside(tmp_path / "base") == 0
+    assert [
+        (r["level"].name, r["message"]) for r in records if "set aside" in r["message"]
+    ] == [
+        (
+            "WARNING",
+            f"Could not look for reflogs set aside in {clones}: "
+            "PermissionError(13, 'Permission denied')",
+        )
+    ]
+
+
 def _reflog_thread_ahead_of_unlink(monkeypatch) -> None:
     """os.unlink with the reflog removal thread running ahead of it in the same
     directory: by the first reflog file a delete removes, the thread has
@@ -4818,9 +4886,9 @@ def test_pack_refs_stopped_at_its_share_of_the_timeout_leaves_a_usable_clone(
     while it removes that ref's file. Stopped with SIGKILL it leaves them, and
     every later pack-refs, and every fetch that updates or prunes such a ref,
     fails on them. They are removed once its process group is gone, as after a
-    stopped fetch (PER-17993). Before a repack the stop is a warning, counted,
-    and git repack then runs with the rest of the timeout; with the ref steps
-    alone TimeoutError names pack-refs, and the stop is counted too.
+    stopped fetch. Before a repack the stop is a warning, counted, and git
+    repack then runs with the rest of the timeout; with the ref steps alone
+    TimeoutError names pack-refs, and the stop is counted too.
 
     Mutation: not removing the locks after the stop fails the lock asserts
     and the fetch after; cancelling git repack fails "repack"; raising

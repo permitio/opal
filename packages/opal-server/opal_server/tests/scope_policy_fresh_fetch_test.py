@@ -1369,3 +1369,33 @@ async def test_libgit2_writes_no_mark_for_a_skipped_sync(
     await fetcher.fetch_and_notify_on_changes(force_fetch=True, honor_backoff=True)
 
     assert not (bed.clone / ".git" / "opal-fetched").exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.fetch_backend("cli")
+async def test_fresh_claims_never_push_a_branch_refresh_claim_out(
+    monkeypatch, tmp_path
+):
+    """Fresh-fetch claims are kept apart from the branch-refresh claims: a
+    burst of cold starts on more scopes than the claims list holds evicts only
+    older fresh claims, never the claim of a request held for a missing
+    branch.
+
+    Mutation: recording fresh claims in _branch_refresh_requested pushes the
+    branch-refresh claim out.
+    """
+    monkeypatch.setattr(scopes_api, "_BRANCH_REFRESH_TRACKED_MAX", 3)
+    held = ("branch", "held-scope", "main")
+    scopes_api._record_branch_refresh(held, 1.0)
+
+    async def _published() -> None:
+        return None
+
+    for i in range(5):
+        claim, ended = await scopes_api._fresh_fetch_claim(
+            f"cold-{i}", _published, 10.0 + i, 5.0, repo_path=tmp_path, branch="main"
+        )
+        assert (claim, ended) == (10.0 + i, None)
+
+    assert dict(scopes_api._branch_refresh_requested) == {held: 1.0}
+    assert list(scopes_api._fresh_fetch_claims) == ["cold-2", "cold-3", "cold-4"]

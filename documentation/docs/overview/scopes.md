@@ -103,8 +103,10 @@ curl --request PUT 'http://opal_server/scopes'
 
 `PUT /scopes` refuses, with 422, a branch name git can't fetch (such as `x~1`
 or an empty name), since such a scope can't follow a branch. A scope stored
-with such a name before this release keeps being served as it was until it is
-changed. A scope whose branch is not on the remote gets no policy
+with such a name by an earlier release counts as one whose branch is not on the
+remote until a `PUT` gives it a real branch. A scope's branch is looked up by its exact
+name, `refs/remotes/origin/<branch>`, so a tag of the same name is never served
+in its place. A scope whose branch is not on the remote gets no policy
 (`GET /scopes/<scope_id>/policy` answers 409), and the server logs
 `Did not find target branch on remote: <branch> (<url>)` at ERROR; a sync pass
 logs it once for each branch of each clone.
@@ -346,7 +348,8 @@ sweep runs with `OPAL_REPO_WATCHER_ENABLED` on only, as the leader's syncs do.
   an `allkeys-*` `maxmemory-policy` can evict them; check the scope store's
   policy before turning the sweep on.
 - In the clones it keeps, each look also removes the fetch marks
-  (`.git/opal-fetched`) of branches no stored scope of the clone tracks.
+  (`.git/opal-fetched`), of success and of failure, of branches no stored
+  scope of the clone tracks, and the temp files a mark writer that died left.
 
 What a look saw lives in the leader's memory: a restart or a new leader starts
 over, which delays a removal and never hastens one. The
@@ -437,6 +440,10 @@ every clone removed.
 - The orphan sweep is new and off: with
   `OPAL_SCOPES_ORPHAN_SWEEP_INTERVAL` unset nothing changes. Turned on, it
   removes the clones no stored scope uses, as above.
+- A scope stored with a branch that is a revision rather than a branch name
+  (`x~1`, which `PUT /scopes` now refuses) gets no policy and a 409, with
+  the missing-branch ERROR on every pass, where 0.9 served the commit the
+  revision named. It is not deleted: a `PUT` with a real branch fixes it.
 
 ### OpenShift and other arbitrary user ids
 

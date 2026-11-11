@@ -221,8 +221,11 @@ class OpalCommonConfig(Confi):
     HTTP_FETCHER_TIMEOUT = confi.float(
         "HTTP_FETCHER_TIMEOUT",
         5,
-        description="The timeout for the httpx or aiohttp fetcher provider, in seconds. "
-        "if provided different value, 5 seconds will be used.",
+        description="Timeout in seconds for the requests of the HTTP fetch "
+        "provider, which fetches data sources over http and https. With aiohttp "
+        "(see HTTP_FETCHER_PROVIDER_CLIENT) it bounds the whole request; with httpx "
+        "it bounds each of connecting, writing the request, reading the response "
+        "and waiting for a pooled connection.",
     )
 
 

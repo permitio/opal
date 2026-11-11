@@ -1118,10 +1118,12 @@ def verify_branch_or_throw(scope_in: Scope):
     say.
 
     Such a name is not a branch name git can fetch, so the scope could not
-    follow a branch. ``x~1`` still resolves, as a revision expression (the
-    parent of ``origin/x``), and a scope stored with one before this check
-    is served that commit; a PUT of such a scope, new or an update, gets
-    the 422.
+    follow a branch; a PUT of such a scope, new or an update, gets the 422.
+    A scope stored with one before this check is looked up by the exact ref
+    name like any other, never as a revision expression (``x~1`` would be
+    the parent of ``origin/x``): it reports a missing branch on every pass,
+    and its bundle requests get the 409. It stays stored, for a PUT with a
+    real branch to fix.
     """
     if not isinstance(scope_in.policy, GitPolicyScopeSource):
         return
@@ -1440,7 +1442,7 @@ def init_scope_router(
         try:
             require_peer_type(authenticator, claims, PeerType.datasource)
         except Unauthorized as ex:
-            logger.error(f"Unauthorized to delete scope: {repr(ex)}")
+            logger.error(f"Unauthorized to refresh scope: {repr(ex)}")
             raise
 
         try:

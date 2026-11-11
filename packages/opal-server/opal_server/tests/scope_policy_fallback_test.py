@@ -135,7 +135,7 @@ def test_missing_scope_still_falls_back_to_default_bundle(tmp_path, monkeypatch)
     `refresh_scope`, which 404 the identical condition. It is left unchanged
     here only to keep PR3 scoped to the git-resilience work; the fix (404, or
     gating the fallback on the caller being authorized for "default") needs its
-    own compatibility discussion, recorded on PER-15157.
+    own compatibility discussion.
 
     So this pins WHAT HAPPENS TODAY, so a change is deliberate — it does not
     say the behaviour is right.
@@ -202,13 +202,15 @@ from opal_server.git_fetcher import GitPolicyFetcher as _Fetcher  # noqa: E402
 
 
 class _FakeRepo:
-    """Stand-in for pygit2.Repository whose resolve_refish outcome we control.
+    """Stand-in for pygit2.Repository whose branch lookup we control.
 
     ``refs`` are written as loose ref files under ``path``, the git dir the
     KeyError split reads: an empty remote-tracking namespace means the clone
     is still being populated (transient), refs present but not ours means the
     branch is misconfigured (permanent). Defaults to a populated namespace so
-    existing callers keep exercising the permanent case.
+    existing callers keep exercising the permanent case. A ref looked up
+    that has no file is a KeyError, as pygit2's NotFoundError is; peeling
+    one that has is ``resolve``'s outcome.
     """
 
     def __init__(
@@ -230,19 +232,24 @@ class _FakeRepo:
             Path(path).mkdir(parents=True, exist_ok=True)
             (Path(path) / "FETCH_HEAD").write_text(_FETCHED)
 
-    def resolve_refish(self, refish):
-        return self._resolve()
-
     def lookup_reference(self, name):
         if not (Path(self.path) / name).is_file():
             raise KeyError(name)
-        return name
+        return _FakeRef(self._resolve)
 
     def free(self):  # _get_current_branch_head free()s the handle in finally
         pass
 
 
 _FETCHED = "0" * 40 + "\tnot-for-merge\tbranch 'some-other-branch' of origin\n"
+
+
+class _FakeRef:
+    def __init__(self, resolve):
+        self._resolve = resolve
+
+    def peel(self, kind):
+        return self._resolve()
 
 
 class _FakeCommit:
@@ -268,7 +275,7 @@ def _branch_head_fetcher(tmp_path, branch="main"):
 
 
 def test_branch_head_missing_ref_is_permanent_branchheadnotfound(tmp_path, monkeypatch):
-    # resolve_refish raises KeyError AND the remote namespace has other refs:
+    # The branch's ref is missing AND the remote namespace has other refs:
     # the clone is populated, our branch simply is not there -> permanent.
     monkeypatch.setattr(
         "opal_server.git_fetcher.Repository",
@@ -332,7 +339,9 @@ def test_branch_head_success_returns_hash(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "opal_server.git_fetcher.Repository",
         lambda path: _FakeRepo(
-            lambda: (_FakeCommit("deadbeef"), None), path=tmp_path / "g"
+            lambda: _FakeCommit("deadbeef"),
+            refs=("refs/remotes/origin/main",),
+            path=tmp_path / "g",
         ),
     )
     assert _branch_head_fetcher(tmp_path)._get_current_branch_head() == "deadbeef"
@@ -414,7 +423,7 @@ def test_branch_head_with_no_remote_refs_is_transient_not_permanent(
     """_clone() rmtree's the destination and clones INTO the final path, so for
     the whole duration of a recovery re-clone the dir exists with NO
     refs/remotes/<remote>/* at all. That is indistinguishable from a wrong
-    branch by resolve_refish alone, and it is the opposite verdict.
+    branch by the ref lookup alone, and it is the opposite verdict.
 
     Mutation: dropping the remote-tracking refs check raises
     BranchHeadNotFoundError (the 409 path) and fails here.

@@ -1,5 +1,5 @@
 """A sync pass fetches a clone once for every branch its remote lacks, and one
-clone's slow sync holds one phase-2 slot (PER-17994).
+clone's slow sync holds one phase-2 slot.
 
 A scope whose branch is not in its clone makes its sync fetch the clone. A
 pass (the periodic one, a refresh of every scope, the boot preload) kept no

@@ -38,6 +38,7 @@ from opal_common.schemas.policy_source import (
     NoAuthData,
     SSHAuthData,
 )
+from opal_common.tests.log_capture import capture_records
 from opal_server import git_cli
 from opal_server import git_fetcher as git_fetcher_module
 from opal_server.config import opal_server_config
@@ -2322,3 +2323,168 @@ async def test_a_deleted_scope_s_clone_another_process_s_git_holds_is_kept(
 
     assert await git_fetcher_module.remove_clone_dir_exclusive(str(clone)) is False
     assert clone.exists()
+
+
+def _lock_files_of_clones_that_are_gone(clones: Path, orphan) -> dict:
+    """In ``clones``: a clone with its lock file, lock files whose clone never
+    existed or was removed (one recording a dead op), one beside a directory a
+    clone was being made in, one another process holds, and other dotted names;
+    the paths by role."""
+    live = clones / "live"
+    url = str(clones.parent / "origin-not-used")
+    clones.mkdir(parents=True, exist_ok=True)
+    live.mkdir()
+    pygit2.init_repository(str(live))
+    pygit2.Repository(str(live)).remotes.create("origin", url)
+    for name, record in (("live", ""), ("gone", ""), ("dead", "4194303\n")):
+        clone_lock_path(clones / name).write_text(record)
+    clone_lock_path(clones / "half").write_text("")
+    half_made = clones / ".half.clone-0123456789abcdef"
+    (half_made / ".git").mkdir(parents=True)
+    orphan(clones / "held")
+    others = [
+        clones / ".gone.known_hosts.lock",
+        clones / ".libgit2-home",
+        clones / ".x.y.lock",
+        clones / "gone.hung",
+    ]
+    for path in others:
+        path.write_text("")
+    return {
+        "removed": [clone_lock_path(clones / n) for n in ("gone", "dead", "half")],
+        "kept": [clone_lock_path(clones / n) for n in ("live", "held")] + others,
+        "half made": half_made,
+    }
+
+
+@pytest.mark.fetch_backend("both")
+def test_the_pre_fork_sweep_removes_the_lock_files_of_clones_that_are_gone(
+    tmp_path, orphan
+):
+    """Every op on a clone, and every delete of one, takes its lock file, a
+    delete of a scope that was never cloned included; nothing else removes a
+    lock file whose clone is gone. With either fetch backend, the pre-fork
+    sweep removes each one it can lock whose clone is not there and has no
+    directory being made, once what a dead op left is gone, and logs how many;
+    a lock another process holds, the lock of a clone and other dotted names
+    stay.
+
+    Mutation: dropping the check for the clone's directory removes the
+    live clone's lock; skipping the lock-only names keeps every one.
+    """
+    base = tmp_path / "base"
+    clones = GitPolicyFetcher.base_dir(base)
+    paths = _lock_files_of_clones_that_are_gone(clones, orphan)
+
+    with capture_records() as logs:
+        git_fetcher_module.sweep_scope_clone_leftovers(base)
+
+    assert [p for p in paths["removed"] if p.exists()] == []
+    assert not paths["half made"].exists()
+    assert [p for p in paths["kept"] if not p.exists()] == []
+    assert [r["message"] for r in logs.emitted if "lock file" in r["message"]] == [
+        f"Removed 3 lock files of clones no longer in {clones}"
+    ]
+
+
+def test_a_lock_file_that_cannot_be_removed_is_logged_and_the_sweep_goes_on(
+    tmp_path, orphan, monkeypatch
+):
+    base = tmp_path / "base"
+    clones = GitPolicyFetcher.base_dir(base)
+    paths = _lock_files_of_clones_that_are_gone(clones, orphan)
+    stuck = clone_lock_path(clones / "gone")
+    unlink = os.unlink
+
+    def _unlink(path, *args, **kwargs):
+        if Path(path) == stuck:
+            raise PermissionError(errno.EACCES, "Permission denied", str(path))
+        return unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(git_cli.os, "unlink", _unlink)
+
+    with capture_records() as logs:
+        git_fetcher_module.sweep_scope_clone_leftovers(base)
+
+    assert stuck.exists()
+    assert [p for p in paths["removed"] if p != stuck and p.exists()] == []
+    assert [
+        (r["level"].name, r["message"])
+        for r in logs.emitted
+        if "lock file" in r["message"]
+    ] == [
+        (
+            "WARNING",
+            f"Could not remove the lock file {stuck} of a clone that is gone: "
+            "PermissionError(13, 'Permission denied')",
+        ),
+        ("INFO", f"Removed 2 lock files of clones no longer in {clones}"),
+    ]
+
+
+def test_the_lock_of_a_clone_whose_leftovers_stay_is_kept(
+    tmp_path, orphan, monkeypatch
+):
+    """A directory a clone was being made in that cannot be removed keeps the
+    dead op recorded in the lock file, for the next op to try again: the lock
+    file stays with it.
+
+    Mutation: removing the lock file whatever the leftovers' removal says.
+    """
+    base = tmp_path / "base"
+    clones = GitPolicyFetcher.base_dir(base)
+    paths = _lock_files_of_clones_that_are_gone(clones, orphan)
+    remove_tree = git_cli.remove_tree
+
+    def _remove_tree(path):
+        if Path(path) == paths["half made"]:
+            return False
+        return remove_tree(path)
+
+    monkeypatch.setattr(git_cli, "remove_tree", _remove_tree)
+
+    git_fetcher_module.sweep_scope_clone_leftovers(base)
+
+    assert paths["half made"].exists()
+    assert clone_lock_path(clones / "half").exists()
+    assert not clone_lock_path(clones / "gone").exists()
+
+
+@pytest.mark.parametrize("code", [errno.ENOLCK, errno.EBADF], ids=["ENOLCK", "EBADF"])
+def test_lock_files_stay_where_the_sweep_cannot_lock_them(
+    tmp_path, orphan, monkeypatch, code
+):
+    """With flock failing (a clones directory on NFS without local_lock=flock),
+    a lock file that cannot be locked is never removed, and the sweep does not
+    raise."""
+    base = tmp_path / "base"
+    clones = GitPolicyFetcher.base_dir(base)
+    paths = _lock_files_of_clones_that_are_gone(clones, orphan)
+    _flock_fails_with(monkeypatch, code)
+
+    git_fetcher_module.sweep_scope_clone_leftovers(base)
+
+    assert [p for p in paths["removed"] + paths["kept"] if not p.exists()] == []
+
+
+@pytest.mark.parametrize("stray", [".lock", "..clone-0123456789abcdef"])
+def test_a_stray_name_with_no_source_id_is_not_swept_as_a_clone(tmp_path, stray):
+    """A file named ``.lock``, or a directory named like a clone being made for
+    an empty source id, names no clone: the sweep leaves it, and never takes
+    the clones directory itself for one (no ``.git_sources.lock`` beside it).
+
+    Mutation: accepting an empty source id sweeps git_sources as a clone.
+    """
+    base = tmp_path / "base"
+    clones = GitPolicyFetcher.base_dir(base)
+    clones.mkdir(parents=True)
+    path = clones / stray
+    if stray == ".lock":
+        path.write_text("")
+    else:
+        path.mkdir()
+
+    git_fetcher_module.sweep_scope_clone_leftovers(base)
+
+    assert path.exists()
+    assert sorted(p.name for p in clones.parent.iterdir()) == ["git_sources"]

@@ -60,7 +60,7 @@ def _load_scopes(opal, prefix, names):
     scopes and the drain assertions test a cache the sync path actually fills.
 
     A fresh libgit2 clone also gets one pass of the ref steps alone, which
-    releases its cached handle (``repos``) once it is done (PER-16330); one
+    releases its cached handle (``repos``) once it is done; one
     that lands after the refresh's fetch leaves ``repos`` short until a later
     sync. So each round waits for ``repos`` to fill and the counts to settle
     (those passes done), and refreshes again while ``repos`` is short, for at

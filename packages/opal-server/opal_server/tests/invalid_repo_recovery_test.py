@@ -220,9 +220,13 @@ def test_branch_head_does_not_touch_shared_handle(monkeypatch, tmp_path):
     class _FreshCommit:
         id = "abc123"
 
+    class _FreshRef:
+        def peel(self, kind):
+            return _FreshCommit()
+
     class _FreshRepo:
-        def resolve_refish(self, refish):
-            return (_FreshCommit(), None)
+        def lookup_reference(self, name):
+            return _FreshRef()
 
         def free(self):
             pass

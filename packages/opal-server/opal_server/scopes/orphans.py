@@ -28,8 +28,9 @@ Every interval, one look:
    two, four and so on. One a task of this process holds (lock_source, a git
    op in flight) or another process holds (its locks) is kept for the next
    look.
-5. In each clone kept, the fetch marks of branches no stored scope of it
-   tracks go (remove_stale_fetch_marks).
+5. In each clone kept, the fetch marks (of success and of failure) of
+   branches no stored scope of it tracks go, and the temp files of a mark
+   writer that died (remove_stale_fetch_marks).
 
 A refused look, or one that cannot read the store or the clones, forgets
 every sighting; after a refusal a clone goes only once two looks in a row
