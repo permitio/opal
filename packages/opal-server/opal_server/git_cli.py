@@ -39,6 +39,7 @@ user can read, in a directory of its own, removed when the op ends.
 
 import asyncio
 import base64
+import errno
 import fcntl
 import itertools
 import math
@@ -53,6 +54,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -171,9 +173,8 @@ _SH = "/bin/sh"
 # git runs under sh, which prints git's exit status on its stdout once git is
 # done. The status is read from there because waitpid cannot be trusted for it:
 # the scope preload runs in the gunicorn master, whose SIGCHLD handler reaps
-# every child with waitpid(-1), and asyncio then reports 255 for a child that
-# handler reaped first. asyncio's pidfd child watching loses that race on
-# every child (it reaps through a pidfd the handler's waitpid(-1) beats).
+# every child with waitpid(-1), and subprocess reads 0 for a child that
+# handler reaped first (_Reaper).
 # git's own stdout goes to /dev/null, so the status is all that sh's stdout
 # carries, and no status at all means sh was killed before git's came back.
 #
@@ -710,10 +711,11 @@ def take_clone_lock(repo_path: Path) -> Optional[int]:
     pass_fds to have the child hold the lock as well. Raises OSError when
     the lock file cannot be opened.
 
-    No at-fork handler closes it in a child forked without exec: uvloop
-    forks to spawn every child, and would close it before pass_fds hands
-    it on. The one process that forks without exec, the gunicorn master,
-    closes any left once its preload is over (close_leftover_lock_fds).
+    No at-fork handler closes it in a child forked without exec: a
+    process start that forks and runs the at-fork handlers (uvloop's, any
+    os.fork) would close it before pass_fds hands it on. The one process
+    that forks without exec, the gunicorn master, closes any left once its
+    preload is over (close_leftover_lock_fds).
 
     The orphan sweep unlinks the lock file of a clone it removes, while
     it holds the lock. An op that opened the file before that gets the
@@ -2425,7 +2427,8 @@ class _Group:
 
     def __init__(
         self,
-        proc: "asyncio.subprocess.Process",
+        proc: subprocess.Popen,
+        reaper: "_Reaper",
         stdin: int,
         status: _PipeReader,
         stderr: _PipeReader,
@@ -2434,9 +2437,9 @@ class _Group:
         self._stdin: Optional[int] = stdin
         self._status = status
         self._stderr = stderr
-        # asyncio has none of sh's pipes to wait for: this is done once sh is
-        # reaped.
-        self._reaped = asyncio.ensure_future(proc.wait())
+        self._reaper = reaper
+        # Done once sh is reaped.
+        self._reaped = reaper.reaped
         self._empty = False
 
     @property
@@ -2506,14 +2509,14 @@ class _Group:
             os.close(stdin)
 
     def abandon(self) -> None:
-        """The event loop is ending: close sh's pipes, and asyncio's transport
-        for sh, while the loop still runs. Left to the garbage collector,
-        they would be closed on a closed loop, which raises."""
+        """The event loop is ending: close sh's pipes, and stop watching sh,
+        while the loop still runs. Left to the garbage collector, their
+        readers would be removed from a closed loop, which raises. sh is
+        reaped all the same (_Reaper.abandon)."""
         self.close_stdin()
         self._status.close()
         self._stderr.close()
-        # asyncio's Process has no public close: its transport is private.
-        self._proc._transport.close()  # type: ignore[attr-defined]
+        self._reaper.abandon()
 
     def status(self) -> Optional[int]:
         """The exit status of git as sh reported it; None when sh reported none
@@ -2580,13 +2583,8 @@ async def _run_git(
         await op.not_started()
         raise GitCliLocalError(127, "git not found on PATH")
     assert op.lock_fd is not None
-    # sh's pipes are this module's own, not ones asyncio makes. Cancelled
-    # before it has connected its pipes, asyncio leaves the ends it made
-    # open (sh's stdin, which the watchdog reads: it would wait for good),
-    # and its give-up waits for every pipe it goes on connecting to close:
-    # sh's stderr too, which git holds until the watchdog ends it, which it
-    # does only once this process closes sh's stdin after that give-up. With
-    # no pipe of asyncio's, the give-up waits for sh alone.
+    # sh's pipes are this module's own: sh is started with subprocess.Popen
+    # (see below), which is given their ends as they are.
     fds: List[int] = []
     try:
         for _ in range(3):
@@ -2608,17 +2606,23 @@ async def _run_git(
         if isinstance(e, OSError):
             raise GitCliLocalError(127, f"could not start git: {e}") from None
         raise
-    # From here on sh may be running whatever the start ends in: the group's
-    # id is not known then, so the clone's lock, which every member that can
-    # write in the clone holds (all but ssh), says when it is gone.
+    # sh is started with subprocess.Popen, on the loop's thread and not with
+    # the event loop's subprocess_exec: CPython starts it with vfork (Linux),
+    # whose cost does not grow with the memory the worker holds, and runs no
+    # at-fork hook (there is no preexec_fn). uvloop's subprocess_exec, which
+    # the server's workers run, forks the whole worker and runs every at-fork
+    # hook of the process with the loop held (an APM tracer's stop and
+    # restart of its threads, a metrics client's flush): 20-50 ms per op in
+    # a worker of 1-2 GiB. _Reaper reaps sh.
+    #
+    # Should the start fail once sh runs (nothing can reap it), the clone's
+    # lock, which every member that can write in the clone holds (all but
+    # ssh), says when the group is gone: sh's watchdog kills it as its stdin
+    # closes, and sh is reaped then.
+    proc: Optional[subprocess.Popen] = None
     try:
-        proc = await asyncio.create_subprocess_exec(
-            _SH,
-            "-c",
-            _STATUS_SCRIPT,
-            "sh",
-            git,
-            *args,
+        proc = subprocess.Popen(
+            [_SH, "-c", _STATUS_SCRIPT, "sh", git, *args],
             stdin=watched,
             stdout=status_write,
             stderr=stderr_write,
@@ -2626,20 +2630,21 @@ async def _run_git(
             start_new_session=True,
             pass_fds=(op.lock_fd,),
         )
+        reaper = _Reaper(proc)
     except BaseException as e:
-        # asyncio, giving up on a start, kills sh only; sh's watchdog, if sh
-        # got that far, kills the rest of the group as its stdin closes.
         os.close(watching)
         status.close()
         stderr.close()
         _keep(op.finish_once_unlocked())
+        if proc is not None:
+            _keep(_reap_once_gone(proc))
         if isinstance(e, OSError):
             raise GitCliLocalError(127, redact(f"could not start git: {e}")) from None
         raise
     finally:
         for fd in (watched, status_write, stderr_write):
             os.close(fd)
-    group = _Group(proc, watching, status, stderr)
+    group = _Group(proc, reaper, watching, status, stderr)
     limit = _timeout_or_none(timeout)
     try:
         finished = await group.wait(limit)
@@ -2662,6 +2667,134 @@ async def _run_git(
             f"status. {group.stderr_tail(redact)}".strip(),
         )
     raise GitCliError(status, group.stderr_tail(redact))
+
+
+class _Reaper:
+    """Reaps sh and hands its exit status to the event loop (``reaped``).
+
+    Where the kernel gives a pidfd (Linux), the loop watches sh's: it
+    costs the loop nothing until sh exits, and sh is then reaped with a
+    waitpid that does not block. Elsewhere (macOS), or where pidfd_open
+    fails, a thread of its own waits for sh. A start of that thread can
+    hold the loop's thread for tens of milliseconds while other threads
+    hold the GIL.
+
+    sh is reaped whatever becomes of the event loop: once the loop ends
+    (abandon), a thread waits for it. A child that another reaper took
+    first (the gunicorn master's SIGCHLD handler) reads 0, which is why
+    git's status is read from sh's stdout. A wait that fails is logged
+    and reads -1: the op goes on by sh's pipes and its group.
+
+    Raises:
+        OSError: no pidfd could be watched and no thread started (EAGAIN).
+    """
+
+    def __init__(self, proc: subprocess.Popen) -> None:
+        self._proc = proc
+        self._loop = asyncio.get_running_loop()
+        self.reaped: "asyncio.Future[int]" = self._loop.create_future()
+        self._pidfd: Optional[int] = None
+        if not self._watch():
+            self._wait_on_a_thread()
+
+    def _watch(self) -> bool:
+        """Watch sh's pidfd on the loop; whether it is watched (or found reaped
+        already)."""
+        pidfd_open = getattr(os, "pidfd_open", None)
+        if pidfd_open is None:
+            return False
+        try:
+            pidfd = pidfd_open(self._proc.pid)
+        except ProcessLookupError:
+            # Gone already: another reaper took it (it reads 0).
+            returncode = self._poll()
+            self._done(-1 if returncode is None else returncode)
+            return True
+        except OSError:  # ENOSYS, EPERM (a seccomp filter): a thread instead
+            return False
+        try:
+            self._loop.add_reader(pidfd, self._readable)
+        except OSError:  # a loop that cannot poll a pidfd: a thread instead
+            os.close(pidfd)
+            return False
+        except BaseException:
+            os.close(pidfd)
+            raise
+        self._pidfd = pidfd
+        return True
+
+    def _readable(self) -> None:
+        returncode = self._poll()
+        if returncode is None:
+            return
+        self._stop_watching()
+        self._done(returncode)
+
+    def _poll(self) -> Optional[int]:
+        try:
+            return self._proc.poll()
+        except Exception as e:
+            logger.error(
+                "Could not reap the sh of git (pid {pid}): {err!r}",
+                pid=self._proc.pid,
+                err=e,
+            )
+            return -1
+
+    def _stop_watching(self) -> None:
+        pidfd, self._pidfd = self._pidfd, None
+        if pidfd is not None:
+            self._loop.remove_reader(pidfd)
+            os.close(pidfd)
+
+    def _done(self, returncode: int) -> None:
+        if not self.reaped.done():
+            self.reaped.set_result(returncode)
+
+    def _wait_on_a_thread(self) -> None:
+        try:
+            threading.Thread(
+                target=self._wait, name=f"git-sh-{self._proc.pid}", daemon=True
+            ).start()
+        except RuntimeError as e:  # no thread can be started
+            raise OSError(
+                errno.EAGAIN, f"cannot start a thread to reap sh: {e}"
+            ) from None
+
+    def _wait(self) -> None:
+        try:
+            returncode = self._proc.wait()
+        except BaseException as e:
+            logger.error(
+                "Could not wait for the sh of git (pid {pid}): {err!r}",
+                pid=self._proc.pid,
+                err=e,
+            )
+            returncode = -1
+        try:
+            self._loop.call_soon_threadsafe(self._done, returncode)
+        except RuntimeError:  # the loop is closed: nothing waits for it
+            pass
+
+    def abandon(self) -> None:
+        """The event loop is ending: stop watching sh on it, and have a thread
+        reap sh once it exits. Nothing waits for its status any more."""
+        if self._pidfd is None:
+            return
+        self._stop_watching()
+        if self._poll() is None:
+            try:
+                self._wait_on_a_thread()
+            except OSError:
+                # Left to subprocess's own clean-up at a later start.
+                pass
+
+
+async def _reap_once_gone(proc: subprocess.Popen) -> None:
+    """Reap a sh whose start was given up on, once its watchdog has ended its
+    group (as its stdin closes)."""
+    while proc.poll() is None:
+        await asyncio.sleep(_GROUP_POLL_SECONDS)
 
 
 def _background_stop(group: _Group, op: _Op) -> "asyncio.Future[bool]":

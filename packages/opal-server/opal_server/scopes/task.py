@@ -1,6 +1,5 @@
 import asyncio
 import datetime
-import logging
 import math
 import time
 from dataclasses import dataclass
@@ -40,14 +39,6 @@ from opal_server.scopes.purge import LeaderScopePurger
 from opal_server.scopes.readiness import required_clones, validate_required_repos
 from opal_server.scopes.scope_repository import ScopeRepository
 from opal_server.scopes.service import ScopesService
-
-
-class _UnknownChildWarningFilter(logging.Filter):
-    """Drops asyncio's warning about a child reaped before it got to it."""
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        return "will report returncode 255" not in record.getMessage()
-
 
 # Upper bound on the shutdown drain of in-flight scope purges. The drain is
 # best-effort: a purge's rmtree runs on a worker thread and completes whether or
@@ -562,17 +553,9 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                             "are forked"
                         )
 
-            # The gunicorn master's SIGCHLD handler reaps every child, so
-            # asyncio finds each git command-line op's process reaped already
-            # and warns. git_cli reads git's exit status from the process's
-            # output instead, so the warning means nothing here.
-            unknown_child = _UnknownChildWarningFilter()
-            asyncio_logger = logging.getLogger("asyncio")
-            asyncio_logger.addFilter(unknown_child)
             try:
                 asyncio.run(_preload_and_close())
             finally:
-                asyncio_logger.removeFilter(unknown_child)
                 # A clone's lock left open here would be held in every forked
                 # worker for as long as it lives.
                 close_leftover_lock_fds()

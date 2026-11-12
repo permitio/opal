@@ -597,9 +597,9 @@ def git_groups(monkeypatch):
     """Every group git_cli makes, as it makes it.
 
     A group is there once its op's start is over: a test that stops an
-    op with a cancel waits for one, as a cancel during the start is a
-    stop of another kind (asyncio kills sh, and the watchdog the rest:
-    no SIGTERM, no grace).
+    op with a cancel waits for one, so that the cancel stops git
+    (SIGTERM, then the grace) rather than an op that has not started it
+    yet.
     """
     from opal_server import git_cli
 

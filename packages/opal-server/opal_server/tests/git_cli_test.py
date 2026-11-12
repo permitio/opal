@@ -1752,23 +1752,38 @@ def test_a_member_listed_after_another_user_s_process_still_counts(monkeypatch):
 
 @pytest.fixture
 def reaped_elsewhere(monkeypatch):
-    """Every child asyncio reaps was already reaped by someone else, as when
-    the gunicorn master's SIGCHLD handler gets to it first: asyncio then
-    reports 255 for it (with asyncio's pidfd child watching, for every child).
+    """Every child is reaped by someone else as it exits, before the wait for
+    it, as when the gunicorn master's SIGCHLD handler gets to it first: the
+    wait (a blocking one, or a poll once its pidfd is readable) fails with
+    ECHILD, and subprocess then reads 0 for the child.
 
     The pids taken are recorded.
     """
     real_waitpid = os.waitpid
+    real_poll = subprocess.Popen.poll
     taken = []
 
     def _waitpid(pid, options):
         result = real_waitpid(pid, options)
-        if pid > 0 and options == 0:
+        if pid > 0 and result[0] == pid:
             taken.append(pid)
             raise ChildProcessError(errno.ECHILD, os.strerror(errno.ECHILD))
         return result
 
+    def _poll(self):
+        # subprocess's poll calls the waitpid it was defined with, which the
+        # patch above does not reach: the other reaper goes first here.
+        if self.returncode is None:
+            try:
+                pid, _ = real_waitpid(self.pid, os.WNOHANG)
+            except ChildProcessError:
+                pid = 0
+            if pid == self.pid:
+                taken.append(pid)
+        return real_poll(self)
+
     monkeypatch.setattr(os, "waitpid", _waitpid)
+    monkeypatch.setattr(subprocess.Popen, "poll", _poll)
     return taken
 
 
