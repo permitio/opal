@@ -51,8 +51,30 @@ class _Redis:
         self.gets.append(key)
         return self.values.get(key)
 
+    def pipeline(self, transaction=True):
+        return _Pipeline(self)
+
     async def set(self, key, value, **kwargs):
         self.values[key.encode()] = value.encode()
+
+
+class _Pipeline:
+    def __init__(self, redis: _Redis) -> None:
+        self._redis = redis
+        self._keys: List[bytes] = []
+
+    async def __aenter__(self) -> "_Pipeline":
+        return self
+
+    async def __aexit__(self, *exc) -> None:
+        pass
+
+    def get(self, key) -> "_Pipeline":
+        self._keys.append(key)
+        return self
+
+    async def execute(self) -> List[Optional[bytes]]:
+        return [await self._redis.get(key) for key in self._keys]
 
 
 def _scope(scope_id: str) -> Scope:

@@ -1,5 +1,6 @@
 from typing import List
 
+from opal_common.async_utils import run_sync
 from opal_common.schemas.scopes import Scope
 from opal_server.redis_utils import RedisDB
 
@@ -18,6 +19,11 @@ class ScopeNotFoundError(Exception):
 _IDS_SCAN_COUNT = 1000
 
 
+def _parse_scopes(values: List[bytes]) -> List[Scope]:
+    """Every record parsed; a record that does not parse raises."""
+    return [Scope.model_validate_json(value) for value in values]
+
+
 class ScopeRepository:
     def __init__(self, redis_db: RedisDB):
         self._redis_db = redis_db
@@ -28,8 +34,7 @@ class ScopeRepository:
         return self._redis_db
 
     async def all(self) -> List[Scope]:
-        scopes = []
-
+        values = []
         async for value in self._redis_db.scan(f"{self._prefix}:*"):
             if not value:
                 # The scan lists keys and then reads each one, so a scope
@@ -45,10 +50,10 @@ class ScopeRepository:
                 # parse still raises, because that is corruption and should not
                 # be silently skipped.
                 continue
-            scope = Scope.model_validate_json(value)
-            scopes.append(scope)
-
-        return scopes
+            values.append(value)
+        # On a thread: a sync pass starts here, and parsing thousands of
+        # records on the loop holds it for as long.
+        return await run_sync(_parse_scopes, values)
 
     async def ids(self) -> List[str]:
         """The id of every stored scope, sorted, from the names of the keys
