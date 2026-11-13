@@ -5,7 +5,8 @@ documentation/
 rego_clone/
 .github/
 docker/
-# ...but the server-test stage's pinned test requirements.
+# ...but the lock the images install, and the server-test stage's pinned test requirements.
+!docker/lock/requirements.txt
 !docker/server-test-requirements.txt
 Makefile
 Dockerfile

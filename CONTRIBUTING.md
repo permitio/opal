@@ -141,6 +141,15 @@ make docker-build-client-cedar  # with inline cedar agent engine
 make docker-build-client-standalone  # without inline engine
 ```
 
+The images install their Python packages from `docker/lock/requirements.txt`, a hash-locked
+compile of the packages' `requires.txt` files. After you change a `requires.txt`, regenerate it
+from the repository root (the `pip-compile` hook fails until you do):
+```bash
+uv pip compile --no-config --directory docker/lock --python-version 3.14 \
+  --python-platform x86_64-unknown-linux-gnu --generate-hashes requirements.in \
+  --output-file requirements.txt
+```
+
 ### Running the Documentation Locally
 
 When contributing to the documentation, you can run the documentation locally and preview your changes live.

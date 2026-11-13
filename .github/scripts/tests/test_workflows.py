@@ -483,6 +483,50 @@ class TestGitCliInImage:
             assert (self.TESTS / name).is_file(), name
 
 
+class TestImageLock:
+    """The images install their Python packages from the hashed lock
+    docker/lock/requirements.txt, which one Dependabot entry updates."""
+
+    ROOT = WORKFLOWS.parents[1]
+    DOCKERFILE = ROOT / "docker" / "Dockerfile"
+
+    @pytest.fixture
+    def code(self):
+        """The lines of docker/Dockerfile that are not comments."""
+        lines = self.DOCKERFILE.read_text().splitlines()
+        return [line.strip() for line in lines if not line.lstrip().startswith("#")]
+
+    def test_pip_installs_only_the_lock_and_the_test_requirements(self, code):
+        installs = [re.search(r"pip install [^&]*", line) for line in code]
+
+        assert [m.group().strip() for m in installs if m] == [
+            "pip install --no-cache-dir --require-hashes --no-deps --only-binary :all:"
+            " -r ./requirements.txt",
+            "pip install --no-cache-dir --require-hashes -r /tmp/server-test-requirements.txt",
+        ]
+        assert "COPY docker/lock/requirements.txt ./requirements.txt" in code
+
+    def test_pip_check_follows_every_opal_package_install(self, code):
+        installs = [line for line in code if "setup.py install" in line]
+
+        assert len(installs) == 3
+        for line in installs:
+            assert line.endswith("python setup.py install && pip check")
+
+    def test_one_dependabot_entry_updates_the_lock_with_uv(self):
+        updates = load(self.ROOT / ".github" / "dependabot.yml")["updates"]
+        owners = []
+        for update in updates:
+            directories = update.get("directories", [update.get("directory")])
+            python = update["package-ecosystem"] in ("pip", "uv")
+            if python and {"/docker", "/docker/lock"} & set(directories):
+                owners.append((update["package-ecosystem"], directories))
+
+        assert owners == [("uv", ["/docker/lock"])]
+        (lock,) = [u for u in updates if u.get("directory") == "/docker/lock"]
+        assert lock["versioning-strategy"] == "lockfile-only"
+
+
 class TestE2eScopes:
     """tests.yml: the scope bed runs on each fetch backend, set explicitly by
     an override file."""

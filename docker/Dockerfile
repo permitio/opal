@@ -29,21 +29,22 @@ FROM python-base AS build-stage
 ARG PYTHON_VERSION
 # from now on, work in the /app directory
 WORKDIR /app/
-# Layer dependency install (for caching)
-COPY ./packages/requires.txt ./base_requires.txt
-COPY ./packages/opal-common/requires.txt ./common_requires.txt
-COPY ./packages/opal-client/requires.txt ./client_requires.txt
-COPY ./packages/opal-server/requires.txt ./server_requires.txt
+# The packages' requires.txt files are ranges, which would take the newest release each build.
+# The images install docker/lock/requirements.txt instead (see docker/lock/requirements.in): one
+# version of every package, with its files' hashes, so every build of a commit installs the same
+# packages and a new release reaches them only through a reviewed change of the lock.
+COPY docker/lock/requirements.txt ./requirements.txt
 # OPAL and its dependencies go into a venv, apart from the packages apk owns.
 # --system-site-packages keeps the user site on sys.path, so `pip install --user` in an image
 # built FROM these (the documented way to add a fetch provider) keeps working.
 RUN "python${PYTHON_VERSION}" -m venv --system-site-packages /opt/venv
 ENV PATH=/opt/venv/bin:$PATH
-# install python deps. setuptools is installed explicitly, at packages/requires.txt's floor or
-# newer, since a new venv holds none. Capped at the major: the images still install OPAL with the
-# deprecated `setup.py install`, so a new setuptools major could break an unchanged rebuild (82
-# already dropped pkg_resources).
-RUN pip install --no-cache-dir --upgrade pip 'setuptools>=84.1.0,<85' && pip install --no-cache-dir -r ./base_requires.txt -r ./common_requires.txt -r ./client_requires.txt -r ./server_requires.txt
+# --require-hashes refuses a file whose hash the lock does not list, and --no-deps installs the
+# lock as it is, resolving nothing. --only-binary :all: runs no package's build code here: a build
+# from an sdist would also fetch its build backend, unhashed. The lock holds setuptools as well,
+# which a new venv lacks and the deprecated `setup.py install` below needs, so a setuptools major
+# (82 dropped pkg_resources) arrives only as a lock change whose image build tests it.
+RUN pip install --no-cache-dir --require-hashes --no-deps --only-binary :all: -r ./requirements.txt
 
 # COMMON IMAGE --------------------------------------
 # ---------------------------------------------------
@@ -87,8 +88,10 @@ COPY ./README.md .
 # certificates, and a search of the image's files for them would report it, even though
 # nothing trusts it.
 COPY --exclude=**/tests/*.pem ./packages ./packages/
-# install the opal-common package
-RUN cd ./packages/opal-common && python setup.py install
+# install the opal-common package. setup.py install installs none of its requirements (setuptools
+# no longer has easy_install): they all come from the lock. pip check fails the build when a
+# requires.txt range admits no version the lock pins, or names a package the lock lacks.
+RUN cd ./packages/opal-common && python setup.py install && pip check
 # With OPAL_ENABLE_DATADOG_APM, start.sh runs gunicorn under ddtrace-run. ddtrace 4 traces every
 # websocket message by default (3.x did not), which would turn each pub/sub update into spans.
 # Keep the 3.x behaviour; set it to true to opt in. configure_apm applies the same default.
@@ -102,7 +105,7 @@ CMD ["./start.sh"]
 FROM common AS client-standalone
 # uvicorn config ------------------------------------
 # install the opal-client package
-RUN cd ./packages/opal-client && python setup.py install
+RUN cd ./packages/opal-client && python setup.py install && pip check
 
 # WARNING: do not change the number of workers on the opal client!
 # only one worker is currently supported for the client.
@@ -295,7 +298,7 @@ RUN if [ "$TRUST_POLICY_REPO_HOST_SSH_FINGERPRINT" = "true" ] ; then \
 USER root
 
 # install the opal-server package
-RUN cd ./packages/opal-server && python setup.py install
+RUN cd ./packages/opal-server && python setup.py install && pip check
 
 # uvicorn config ------------------------------------
 

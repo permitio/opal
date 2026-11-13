@@ -3,8 +3,8 @@
 # describes the options.
 #
 # - Every entry runs weekly on Monday with at most 5 open pull requests. The cooldown holds a
-#   new release back for 7 days, and a major release for 14 on pip and npm, the ecosystems that
-#   support per-level days, so a broken or malicious release has time to be pulled first.
+#   new release back for 7 days, and a major release for 14 on pip, uv and npm, the ecosystems
+#   that support per-level days, so a broken or malicious release has time to be pulled first.
 # - The version update groups take minor and patch releases only: a major release gets a pull
 #   request of its own.
 # - Security updates are a repository setting. The security group of an entry puts all of its
@@ -59,6 +59,34 @@ updates:
         applies-to: version-updates
         patterns: [aiohttp, click, gitpython, pyjwt, tenacity]
         update-types: [major]
+      security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  # The images' lock: docker/lock/requirements.txt, which uv pip compile writes from
+  # docker/lock/requirements.in (the four requires.txt files, pip and setuptools), with every
+  # file's hash. The uv ecosystem compiles it again with uv and the options its header records,
+  # so the hashes stay complete; the pip ecosystem would compile it with pip-compile instead.
+  # /docker/lock is two levels down, out of reach of the "/" entry above, so this entry is the
+  # lock's only one. lockfile-only: the ranges belong to the entry above, and a release outside a
+  # range reaches the lock after that entry widens the range.
+  - package-ecosystem: uv
+    directory: /docker/lock
+    versioning-strategy: lockfile-only
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: deps
+    groups:
+      minor-and-patch:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: [minor, patch]
       security:
         applies-to: security-updates
         patterns: ["*"]

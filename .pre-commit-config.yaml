@@ -74,3 +74,16 @@ repos:
     rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e  # frozen: v8.30.1
     hooks:
       - id: gitleaks
+  # The images' lock, docker/lock/requirements.txt. When the lock, its requirements.in or one of
+  # the requires.txt files changes, the hook compiles the lock again with the command its header
+  # records and fails if the result differs, so a range cannot change without the lock following.
+  # It needs the network.
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: d1df990f871e616da38bb602a2671d5e840b9989  # frozen: 0.13.7
+    hooks:
+      - id: pip-compile
+        name: uv pip compile docker/lock
+        args: [--no-config, --directory, docker/lock, --python-version, "3.14", --python-platform,
+               x86_64-unknown-linux-gnu, --generate-hashes, requirements.in, --output-file,
+               requirements.txt]
+        files: ^(packages/(opal-[a-z]+/)?requires\.txt|docker/lock/requirements\.(in|txt))$
