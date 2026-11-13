@@ -77,6 +77,20 @@ async def test_a_refusing_redis_is_retried_until_the_scope_is_stored(
     assert any(level == "info" and "after" in m for level, m, _ in logs), logs
 
 
+@pytest.mark.parametrize(
+    "outcomes, said", [([], []), (["refuse"], [2])], ids=["first-try", "second-try"]
+)
+@pytest.mark.asyncio
+async def test_a_store_after_a_retry_says_how_many_tries_it_took(
+    default_scope, quick, logs, outcomes, said
+):
+    await load_scopes(_Store(outcomes))
+
+    assert [
+        k["attempt"] for level, m, k in logs if level == "info" and "tries" in m
+    ] == said
+
+
 @pytest.mark.asyncio
 async def test_a_hanging_redis_is_given_up_on_after_the_limit_and_retried(
     default_scope, quick, logs

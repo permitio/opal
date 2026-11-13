@@ -128,6 +128,14 @@ def test_a_pattern_that_matches_no_file_of_the_first_bundle_fails(tmp_path):
         _commit_bundles(tmp_path, [{"data.json": "{}"}], pattern="*.rego")
 
 
+def test_a_failed_git_add_says_what_git_said(tmp_path):
+    """The error carries git's own message, not only its command and status."""
+    with pytest.raises(GitCommandError) as failed:
+        _commit_bundles(tmp_path, [{"data.json": "{}"}], pattern="*.rego")
+
+    assert "did not match any files" in failed.value.stderr
+
+
 def test_a_pattern_that_starts_with_a_dash_is_a_pathspec(tmp_path):
     files = {"-n": "package dash", "a.rego": "package a"}
 

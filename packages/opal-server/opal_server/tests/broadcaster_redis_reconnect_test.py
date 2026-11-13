@@ -10,6 +10,7 @@ client that does not speak RESP sends.
 import asyncio
 import datetime
 import ipaddress
+import re
 import socket
 import ssl
 import struct
@@ -603,6 +604,57 @@ def test_the_resubscribe_backoff_stays_within_its_bounds(attempt):
     assert 0 < delay <= broadcast_redis.RESUBSCRIBE_BACKOFF_MAX_SECONDS
     if attempt >= 6:
         assert delay >= broadcast_redis.RESUBSCRIBE_BACKOFF_MAX_SECONDS / 2
+
+
+@pytest.mark.parametrize("jitter", ["top", "bottom"])
+def test_the_resubscribe_backoff_doubles_from_its_floor_to_its_cap(jitter, monkeypatch):
+    """At the top of its jitter, the wait is 0.5 s, then twice the one before,
+    up to 30 s; at the bottom, half of that."""
+    monkeypatch.setattr(
+        broadcast_redis.random,
+        "uniform",
+        lambda low, high: high if jitter == "top" else low,
+    )
+    bases = [0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 30.0, 30.0]
+
+    waits = [broadcast_redis._resubscribe_backoff_seconds(n) for n in range(8)]
+
+    assert waits == (bases if jitter == "top" else [base / 2 for base in bases])
+
+
+def _numbers(logs, pattern: str) -> List[int]:
+    return [int(found[1]) for line in logs.text if (found := re.search(pattern, line))]
+
+
+@pytest.mark.filterwarnings("ignore:The `parse_raw` method is deprecated")
+@pytest.mark.filterwarnings("ignore:`load_str_bytes` is deprecated")
+@pytest.mark.asyncio
+async def test_the_resubscribe_attempts_are_counted_one_by_one(monkeypatch):
+    """Each failed try to subscribe again is logged as the next attempt, and
+    the one that works as the one after the last failure."""
+    monkeypatch.setattr(broadcast_redis, "RESUBSCRIBE_BACKOFF_MIN_SECONDS", 0.05)
+    monkeypatch.setattr(broadcast_redis, "RESUBSCRIBE_BACKOFF_MAX_SECONDS", 0.05)
+    failed = r"subscribing again failed \(attempt (\d+)\)"
+    done = r"subscribed again after (\d+) attempt"
+    async with FakeRedis() as fake:
+        broadcaster = EventBroadcaster(
+            fake.url(),
+            notifier=_Notifier(),
+            channel="EventNotifier",
+            broadcast_type=ResubscribingBroadcast,
+        )
+        with capture_logs() as logs:
+            async with broadcaster.get_listening_context():
+                await _wait_for(lambda: fake.subscribes == 1 and fake.sessions)
+                fake.on_accept = "close"
+                fake.drop()
+                await _wait_for(lambda: len(_numbers(logs, failed)) >= 2)
+                fake.on_accept = "serve"
+                await _wait_for(lambda: _numbers(logs, done))
+
+    failures = _numbers(logs, failed)
+    assert failures == list(range(1, len(failures) + 1))
+    assert _numbers(logs, done) == [len(failures) + 1]
 
 
 @pytest.mark.asyncio

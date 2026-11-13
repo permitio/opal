@@ -14,6 +14,7 @@ import math
 import os
 import shutil
 import time
+from dataclasses import asdict
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set
 
@@ -526,6 +527,29 @@ async def test_a_store_error_decides_nothing(tmp_path, clones, clock, sent):
 
 
 @pytest.mark.asyncio
+async def test_a_look_counts_nothing_it_did_not_do(tmp_path, clones, clock):
+    """A look at no clone, and one that a store error stops, report 0 for each
+    thing they did not do."""
+    empty = await _sweeper(tmp_path, FakeStore(), clock).sweep_once()
+    store, _, _ = _live_and_orphans(clones, live=1, unused=1)
+    store.error = ConnectionError("store down")
+    stopped = await _sweeper(tmp_path, store, clock).sweep_once()
+
+    nothing_done = {
+        "counted": 0,
+        "unused": 0,
+        "removed": 0,
+        "failed": 0,
+        "busy": 0,
+        "used_again": 0,
+        "waiting": 0,
+        "marks_removed": 0,
+    }
+    assert asdict(empty) == {**nothing_done, "outcome": "nothing"}
+    assert asdict(stopped) == {**nothing_done, "outcome": "store_error", "counted": 2}
+
+
+@pytest.mark.asyncio
 async def test_a_record_that_does_not_parse_decides_nothing(tmp_path, clones, clock):
     store, _, (orphan,) = _live_and_orphans(clones, live=1, unused=1)
     sweeper = _sweeper(tmp_path, store, clock)
@@ -599,6 +623,28 @@ async def test_a_failed_read_of_a_listed_scope_is_a_store_error(
 
     assert first.outcome == second.outcome == "store_error"
     assert (clones / orphan).is_dir()
+
+
+@pytest.mark.asyncio
+async def test_as_many_listed_scopes_as_the_reads_allow_are_each_read(
+    tmp_path, clones, clock
+):
+    """Up to _MAX_LISTING_GAP_READS scopes listed by key and missing from the
+    records are read one by one; deleted meanwhile, they count as deleted."""
+    store, _, (orphan,) = _live_and_orphans(clones, live=1, unused=1)
+    gap = {f"deleted-{i}" for i in range(orphans._MAX_LISTING_GAP_READS)}
+
+    class DeletedBetweenReads(FakeStore):
+        async def ids(self):
+            return sorted(set(await super().ids()) | gap)
+
+    racing = DeletedBetweenReads(store.scopes.values())
+    sweeper = _sweeper(tmp_path, racing, clock)
+
+    _, second = await _two_sightings(sweeper, clock)
+
+    assert second.outcome == "removed" and not (clones / orphan).exists()
+    assert set(racing.reads) == gap
 
 
 @pytest.mark.asyncio
@@ -1214,6 +1260,22 @@ def test_fetch_marks_through_a_symlink_are_left(tmp_path, clones):
 
     assert remove_stale_fetch_marks(clone, set(), 1e12) == 0
     assert stale.exists()
+
+
+def test_a_mark_s_name_on_what_is_not_a_file_is_left(tmp_path, clones):
+    """A directory, or a symlink to a file elsewhere, named like a stale mark
+    is not a mark."""
+    clone = _make_clone(clones, "f" * 64 + "-4")
+    marks = _marks(clone)
+    outside = _mark(tmp_path, "outside", 1.0)
+    linked = marks / _fetch_mark_name("linked")
+    linked.symlink_to(outside)
+    directory = marks / _fetch_mark_name("directory")
+    directory.mkdir()
+    os.utime(directory, (1.0, 1.0))
+
+    assert remove_stale_fetch_marks(clone, set(), 1e12) == 0
+    assert linked.is_symlink() and directory.is_dir() and outside.exists()
 
 
 def test_no_marks_directory_removes_nothing(tmp_path, clones):

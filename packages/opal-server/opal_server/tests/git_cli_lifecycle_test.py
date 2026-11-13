@@ -2264,7 +2264,7 @@ def test_the_lock_of_a_clone_whose_leftovers_stay_is_kept(
 ):
     """A directory a clone was being made in that cannot be removed keeps the
     dead op recorded in the lock file, for the next op to try again: the lock
-    file stays with it.
+    file stays with it, and is not counted among those removed.
 
     Mutation: removing the lock file whatever the leftovers' removal says.
     """
@@ -2280,11 +2280,15 @@ def test_the_lock_of_a_clone_whose_leftovers_stay_is_kept(
 
     monkeypatch.setattr(git_cli, "remove_tree", _remove_tree)
 
-    git_fetcher_module.sweep_scope_clone_leftovers(base)
+    with capture_records() as logs:
+        git_fetcher_module.sweep_scope_clone_leftovers(base)
 
     assert paths["half made"].exists()
     assert clone_lock_path(clones / "half").exists()
     assert not clone_lock_path(clones / "gone").exists()
+    assert [r["message"] for r in logs.emitted if "lock file" in r["message"]] == [
+        f"Removed 2 lock files of clones no longer in {clones}"
+    ]
 
 
 @pytest.mark.parametrize("code", [errno.ENOLCK, errno.EBADF], ids=["ENOLCK", "EBADF"])
@@ -2304,11 +2308,15 @@ def test_lock_files_stay_where_the_sweep_cannot_lock_them(
     assert [p for p in paths["removed"] + paths["kept"] if not p.exists()] == []
 
 
-@pytest.mark.parametrize("stray", [".lock", "..clone-0123456789abcdef"])
+@pytest.mark.parametrize(
+    "stray", [".lock", "..dotted.lock", "..clone-0123456789abcdef"]
+)
 def test_a_stray_name_with_no_source_id_is_not_swept_as_a_clone(tmp_path, stray):
-    """A file named ``.lock``, or a directory named like a clone being made for
-    an empty source id, names no clone: the sweep leaves it, and never takes
-    the clones directory itself for one (no ``.git_sources.lock`` beside it).
+    """A file named ``.lock``, or ``..dotted.lock`` (the lock name of an id
+    with a dot, which no source id has), or a directory named like a clone
+    being made for an empty source id, names no clone: the sweep leaves it, and
+    never takes the clones directory itself for one (no ``.git_sources.lock``
+    beside it).
 
     Mutation: accepting an empty source id sweeps git_sources as a clone.
     """
@@ -2316,7 +2324,7 @@ def test_a_stray_name_with_no_source_id_is_not_swept_as_a_clone(tmp_path, stray)
     clones = GitPolicyFetcher.base_dir(base)
     clones.mkdir(parents=True)
     path = clones / stray
-    if stray == ".lock":
+    if stray.endswith(".lock"):
         path.write_text("")
     else:
         path.mkdir()

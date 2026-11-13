@@ -24,7 +24,11 @@ from opal_common.schemas.policy_source import GitPolicyScopeSource, SSHAuthData
 from opal_server import git_cli
 from opal_server import git_fetcher as git_fetcher_module
 from opal_server.config import opal_server_config
-from opal_server.git_cli import host_key_record, validate_git_cli_settings
+from opal_server.git_cli import (
+    GitCliLocalError,
+    host_key_record,
+    validate_git_cli_settings,
+)
 from opal_server.git_fetcher import (
     LIBGIT2_HOME,
     GitCallback,
@@ -32,6 +36,7 @@ from opal_server.git_fetcher import (
     PolicyFetcherCallbacks,
     libgit2_known_hosts,
     prepare_libgit2_ssh,
+    ssh_host_port,
 )
 
 pytestmark = pytest.mark.skipif(
@@ -205,6 +210,30 @@ async def test_deleting_the_record_lets_the_next_op_record_the_host_key_again(
     assert _failures(emitted) == [{"op": "clone", "reason": "host_key"}]
     assert fetcher.callbacks.updates
     assert _key_of(record, sshd) == {sshd.public_key("host_key")}
+
+
+@pytest.mark.fetch_backend("cli")
+@pytest.mark.asyncio
+async def test_an_empty_record_is_no_record_and_the_first_op_fills_and_logs_it(
+    sshd, make_origin, tmp_path, emitted, log_lines
+):
+    """A record file with nothing in it (a write that never happened) holds no
+    host key: the op that records one logs it."""
+    origin = make_origin(tmp_path / "served" / "repo.git")
+    source = _source(sshd, origin)
+    record = _record(source, "cli")
+    record.parent.mkdir(parents=True, exist_ok=True)
+    record.write_text("")
+
+    await _sync(source)
+
+    assert _failures(emitted) == []
+    assert _key_of(record, sshd) == {sshd.public_key("host_key")}
+    recorded = [m for m in log_lines("INFO") if "Recorded the SSH host key" in m]
+    assert recorded == [
+        f"Recorded the SSH host key of {_name(sshd)} for "
+        f"{GitPolicyFetcher.source_id(source)} in {record}"
+    ]
 
 
 @pytest.mark.fetch_backend("both")
@@ -642,6 +671,66 @@ def test_libgit2_records_a_capitalised_host_under_the_name_libgit2_looks_up(
     assert prepare_libgit2_ssh(clones, url) is None
 
     assert libgit2_known_hosts(clones).read_text() == f"[GitS.Example]:2222 {_A_KEY}\n"
+
+
+@pytest.mark.parametrize(
+    "before",
+    ["", "\n", "#", f"other.example {_A_KEY}\n", f"other.example {_A_KEY}"],
+    ids=["empty", "a-newline", "one-character", "lines", "no-last-newline"],
+)
+def test_libgit2_records_a_host_on_a_line_of_its_own_after_what_is_there(
+    before, tmp_path, monkeypatch
+):
+    """Whatever the store ends with, the host's keys start a line of their own,
+    and no blank line comes before them."""
+    _keyscan_shim(tmp_path, monkeypatch, f'echo "h.example {_A_KEY}"')
+    clones = tmp_path / "git_sources"
+    store = libgit2_known_hosts(clones)
+    store.parent.mkdir(parents=True)
+    store.write_text(before)
+
+    assert prepare_libgit2_ssh(clones, "ssh://git@h.example/r.git") == "h.example"
+
+    separator = "\n" if before and not before.endswith("\n") else ""
+    assert store.read_text() == f"{before}{separator}h.example {_A_KEY}\n"
+
+
+def test_an_unreadable_known_hosts_file_fails_a_libgit2_ssh_op_as_local(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        opal_server_config, "SCOPES_GIT_SSH_KNOWN_HOSTS", str(tmp_path / "missing")
+    )
+
+    with pytest.raises(GitCliLocalError, match="no readable file there") as failed:
+        prepare_libgit2_ssh(tmp_path / "git_sources", "ssh://git@h.example/r.git")
+
+    assert failed.value.returncode == 128
+
+
+@pytest.mark.parametrize(
+    "url, host_port",
+    [
+        ("ssh://git@h.example/r.git", ("h.example", 22)),
+        ("git+ssh://h.example:2222/r.git", ("h.example", 2222)),
+        ("ssh+git://git@[2001:db8::1]:2222/r.git", ("2001:db8::1", 2222)),
+        ("git@h.example:org/r.git", ("h.example", 22)),
+        ("h:r.git", ("h", 22)),
+        ("git@[2001:db8::1]:r.git", ("2001:db8::1", 22)),
+        ("https://h.example/r.git", None),
+        ("ssh://git@/r.git", None),
+        (":r.git", None),
+        ("git@:r.git", None),
+        ("./a:b", None),
+        ("/srv/repos/r.git", None),
+        ("git@[2001:db8::1]r.git", None),
+    ],
+)
+def test_the_host_and_port_of_an_ssh_url(url, host_port):
+    """ssh://, git+ssh://, ssh+git:// and git's scp-like form name an SSH host,
+    one character long included; a local path, a URL of another scheme, or
+    one with no host does not."""
+    assert ssh_host_port(url) == host_port
 
 
 def test_an_scp_like_host_with_capitals_is_scanned_once(tmp_path, monkeypatch):

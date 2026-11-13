@@ -444,6 +444,18 @@ def test_the_cap_is_the_most_branches_a_fetch_names(tmp_path, monkeypatch):
         assert fetcher._requested_branches() is None
 
 
+def test_a_cap_of_1_names_a_lone_branch(tmp_path, monkeypatch):
+    url = "https://git.example/repo.git"
+    fetcher = GitPolicyFetcher(tmp_path, "s", _source(url, "own"))
+    monkeypatch.setattr(
+        opal_server_config, "SCOPES_GIT_CLI_NARROW_FETCH_MAX_BRANCHES", 1
+    )
+
+    assert fetcher._requested_branches() == frozenset({"own"})
+    with GitPolicyFetcher.sync_pass({_source_id(url): {"a"}}):
+        assert fetcher._requested_branches() is None
+
+
 @pytest.mark.parametrize("length, can", [(1003, True), (1004, False)])
 def test_a_branch_whose_tracking_ref_is_1024_bytes_cannot_be_asked_for(
     length, can, tmp_path
@@ -511,10 +523,11 @@ def test_a_branch_whose_ref_cannot_be_looked_up_is_left_out_with_one_warning(
 
 @pytest.mark.asyncio
 async def test_a_fetch_with_no_branch_left_to_ask_for_is_a_local_failure(
-    tmp_path, url, origin, git_http, fetches, monkeypatch
+    tmp_path, url, origin, git_http, fetches, monkeypatch, records
 ):
     """Every requested branch's ref failed to look up: the fetch is not run (it
-    would fetch no ref), and the sync counts a failure on this server."""
+    would fetch no ref), and the sync counts a failure on this server, with
+    git's status for a fatal error."""
     service = await _cloned(tmp_path, url, git_http, ("master", "b1"))
     monkeypatch.setattr(
         GitPolicyFetcher,
@@ -526,6 +539,13 @@ async def test_a_fetch_with_no_branch_left_to_ask_for_is_a_local_failure(
 
     assert fetches.calls == []
     assert _source_id(url) not in GitPolicyFetcher.source_backoff
+    (logged,) = [
+        r["message"] for r in records if "a problem on this server" in r["message"]
+    ]
+    assert (
+        "git exited with status 128: fatal: no branch this fetch asks for can be "
+        "looked up" in logged
+    )
 
 
 @pytest.mark.fetch_backend("libgit2")
@@ -696,6 +716,29 @@ async def test_a_failed_stand_in_past_the_longest_wait_is_left_to_the_backoff(
         for r in records
         if r["message"].startswith("Not fetching") and "backed off" in r["message"]
     ]
+
+
+@pytest.mark.asyncio
+async def test_a_sync_that_fetched_for_itself_does_not_fetch_again_for_its_stand_in(
+    tmp_path, url, origin, git_http, fetches, records
+):
+    """A forced sync whose commit hint the clone lacks fetches for itself, even
+    though a fetch that started after its request failed at the remote: once,
+    and not once more for that failure."""
+    service = await _cloned(tmp_path, url, git_http, ("master", "b1"))
+    _push(origin, "b1")
+    await _refresh(service, "s-b1")
+    asked = datetime.datetime.now()
+    fetches.refuse = {1}
+    await _refresh(service, "s-b1")
+    GitPolicyFetcher.source_backoff.clear()
+
+    await service.sync_scope(
+        scope_id="s-b1", hinted_hash="0" * 40, force_fetch=True, req_time=asked
+    )
+
+    assert len(fetches.calls) == 3
+    assert not [r for r in records if "waited for failed" in r["message"]]
 
 
 @pytest.mark.asyncio

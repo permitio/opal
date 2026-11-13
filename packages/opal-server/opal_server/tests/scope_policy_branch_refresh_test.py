@@ -1771,6 +1771,32 @@ async def test_a_publish_that_took_time_and_failed_reports_that_time(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_a_clone_repair_asks_for_no_sync_while_the_publishes_are_at_the_bound(
+    monkeypatch, emitted
+):
+    """As for a missing branch: with as many publishes pending as the bound,
+    a clone that lacks its branch's commit starts none and claims nothing."""
+    monkeypatch.setattr(scopes_api, "_BRANCH_REFRESH_PUBLISHES_MAX", 1)
+    release = asyncio.Event()
+    first = asyncio.ensure_future(release.wait())
+    scopes_api._branch_refresh_publishes.add(first)
+    first.add_done_callback(scopes_api._branch_refresh_publishes.discard)
+
+    async def _unexpected():
+        raise AssertionError("a publish started at the bound")
+
+    key = ("commit", "live", "source", "main")
+    now = asyncio.get_running_loop().time()
+    await scopes_api._request_clone_repair(key, _unexpected, now, WAIT, scope_id="live")
+
+    assert key not in scopes_api._branch_refresh_requested
+    assert _refreshes(emitted) == ["publish_backlog"]
+    release.set()
+    await first
+    await asyncio.sleep(0)  # its done callback
+
+
+@pytest.mark.asyncio
 async def test_a_stuck_broadcast_backend_does_not_pile_up_publishes(
     monkeypatch, emitted
 ):

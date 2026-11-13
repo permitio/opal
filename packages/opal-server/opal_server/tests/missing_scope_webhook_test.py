@@ -14,6 +14,7 @@ The receiver is a real HTTP server on localhost.
 
 import asyncio
 import datetime
+import json
 import socket
 import time
 from typing import Callable, List
@@ -26,7 +27,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from opal_common.monitoring import metrics
 from opal_common.tests.redaction_fixtures import capture_logs
-from opal_server.config import opal_server_config
+from opal_server.config import OpalServerConfig, opal_server_config
 from opal_server.scopes import missing_scope
 from opal_server.scopes.api import init_scope_router
 from opal_server.scopes.scope_repository import ScopeNotFoundError
@@ -315,6 +316,24 @@ def test_the_cap_is_a_hundred():
     assert missing_scope._WEBHOOK_MAX_INFLIGHT == 100
     assert missing_scope._WEBHOOK_WINDOW_SECONDS == 300.0
     assert missing_scope._WEBHOOK_TIMEOUT_SECONDS == 5.0
+
+
+def test_the_printed_configuration_shows_neither_the_url_nor_the_token(monkeypatch):
+    """A URL's path can hold its secret, which no credential pattern finds, so
+    the configuration prints both settings as <redacted>."""
+    monkeypatch.setenv(
+        "OPAL_PRINT_TEST_SCOPES_MISSING_SCOPE_WEBHOOK_URL",
+        f"https://backend.example.test{_SECRET_PATH}",
+    )
+    monkeypatch.setenv("OPAL_PRINT_TEST_SCOPES_MISSING_SCOPE_WEBHOOK_TOKEN", _TOKEN)
+
+    config = OpalServerConfig(prefix="OPAL_PRINT_TEST_")
+    printed = json.loads(repr(config))
+
+    assert config.SCOPES_MISSING_SCOPE_WEBHOOK_URL.endswith(_SECRET_PATH)
+    assert printed["SCOPES_MISSING_SCOPE_WEBHOOK_URL"] == "<redacted>"
+    assert printed["SCOPES_MISSING_SCOPE_WEBHOOK_TOKEN"] == "<redacted>"
+    assert "path-secret-value" not in config.debug_repr()
 
 
 @pytest.mark.asyncio

@@ -1101,6 +1101,25 @@ async def test_a_branch_pushed_after_the_clone_is_served_by_the_fetch(
     assert _outcomes(emitted) == ["fetched"]
 
 
+@pytest.mark.asyncio
+async def test_with_no_cap_on_held_requests_none_is_shed(
+    tmp_path, git_http, make_origin, emitted, monkeypatch
+):
+    """SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT=0: no cap, so the request waits
+    for the fetch."""
+    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT", 0)
+    bed, origin, _ = await _bed(tmp_path, git_http, make_origin, branch="later")
+    origin.branch("later")
+    head = origin.commit("later")
+    bed.leader.on_publish = bed.sync_after(0.1)
+
+    r = await _get(bed)
+
+    assert r.status_code == 200, r.text
+    assert r.json()["hash"] == head
+    assert _outcomes(emitted) == ["fetched"]
+
+
 # --- when it does not wait --------------------------------------------------------
 
 
@@ -1233,6 +1252,26 @@ def test_the_wait_is_clamped_like_the_clone_wait(configured, used, monkeypatch):
         opal_server_config, "SCOPES_POLICY_FRESH_FETCH_WAIT_SECONDS", configured
     )
     assert scopes_api._bounded_fresh_fetch_wait() == used
+
+
+@pytest.mark.parametrize("configured, warnings", [(100.0, 1), (55.0, 0)])
+def test_a_wait_past_the_ceiling_is_logged_once(
+    configured, warnings, monkeypatch, records
+):
+    """The ceiling itself is no clamp."""
+    monkeypatch.setattr(
+        opal_server_config, "SCOPES_POLICY_FRESH_FETCH_WAIT_SECONDS", configured
+    )
+
+    assert [scopes_api._bounded_fresh_fetch_wait() for _ in range(3)] == [55.0] * 3
+
+    warned = [r["message"] for r in records if r["level"].name == "WARNING"]
+    clamped = (
+        f"SCOPES_POLICY_FRESH_FETCH_WAIT_SECONDS={configured}s exceeds the 55.0s "
+        "ceiling and is clamped: a hold longer than the load balancer's idle "
+        "timeout is served as a 504, not as a bundle"
+    )
+    assert warned == [clamped] * warnings
 
 
 def test_the_wait_defaults_to_10_seconds():
