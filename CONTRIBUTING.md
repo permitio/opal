@@ -64,6 +64,8 @@ Please follow these guidelines:
     ```
 6. **Submit PR**: Open a pull request, linking to the issue and explaining your changes clearly.
 
+Mutation testing of a PR's changed lines runs when the PR has the `mutation` label, which a maintainer can add; a weekly run covers the whole code base and only reports.
+
 We aim to review all PRs promptly. After you submit a PR, here’s what you can expect:
 1. **Initial Review:** A maintainer will review your PR within a few days. If there are any issues, they will provide feedback.
 2. **Feedback:** If changes are needed, please make the necessary updates and push them to your branch. The PR will be updated automatically.

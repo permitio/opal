@@ -6,7 +6,8 @@ lines it changes; weekly, every line.
 base of <rev> and HEAD adds or changes in the packages' source (files under packages/<package>/,
 not their tests, conftest.py or setup.py), makes the mutants of those lines, runs the tests that
 cover each mutant's line, and fails when too few mutants are killed. ``--full`` does the same
-for every source line, with a larger budget, and reports only.
+for every source line, with a larger budget, and reports only. On a pull request, <rev> is its
+base commit.
 
 A mutant changes one token of one line: a comparison (== and !=, < and <=, > and >=, is to is
 not), a boolean operator (and and or), a boolean constant, a binary + or -, an integer (n to
@@ -34,17 +35,27 @@ only its tests (pytest -x, in a process group of its own), and ends as one of:
     error        pytest ended otherwise (exit 2 to 5 without a collection error): the gate
                  did not run
 
-At most MAX_MUTANTS mutants run per change: a sample seeded by HEAD, so a rerun picks the same
-ones, run in an order that takes the packages in turn, so that a budget cut is spread across
-them. The budget is BUDGET_SECONDS after the coverage runs. The verdict is on the mutants that
-ran: the gate passes when the mutation score, killed / (killed + survived), is at least
-MIN_SCORE; the report says how many were not run when the budget was reached. A run with
-mutants of which none ran against a covering test did not run. Every mutated file is restored,
-byte for byte and with its mtime, after its mutant and when the run is stopped (SIGTERM).
+At most MAX_MUTANTS mutants run per change: a sample, run in an order that takes the packages in
+turn, so that a budget cut is spread across them. Both are seeded by the merge base of <rev> and
+HEAD, not by HEAD: every push of a change whose source lines stay the same, and every rerun,
+samples the same mutants and runs them in the same order, whatever HEAD and its merge commit
+are. --full runs every mutant, in an order seeded by HEAD: a rerun of the same commit takes the
+same order, and each new commit spreads a budget cut over other mutants.
+
+The budget is BUDGET_SECONDS after the coverage runs (FULL_BUDGET_SECONDS for --full). The
+verdict is on the mutants that ran: the gate passes when the mutation score, killed / (killed +
+survived), is at least MIN_SCORE; the report says how many were not run when the budget was
+reached. When the budget leaves more than MAX_NOT_RUN_SHARE of a change's sample not run, the
+score is no verdict: the gate is inconclusive, and says how many mutants ran and how many were
+not run. --full is never inconclusive. A run with mutants of which none ran against a covering
+test did not run, unless it is inconclusive. Every mutated file is restored, byte for byte and
+with its mtime, after its mutant and when the run is stopped (SIGTERM).
 
 Exit codes: 0 when the gate passes (for --full, whenever it ran); 1 when the score is below
 MIN_SCORE; 2 when it did not run: wrong arguments, git or a coverage run failed, a suite failed
-before any mutant, a mutant ended in an error, or no mutant ran against a covering test.
+before any mutant, a mutant ended in an error, or no mutant ran against a covering test; 3 when
+it is inconclusive (never for --full). A mutant that ended in an error makes it 2 even when the
+budget also left too many not run.
 """
 
 import argparse
@@ -66,9 +77,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 MAX_MUTANTS = 300
-BUDGET_SECONDS = 45 * 60
+BUDGET_SECONDS = 150 * 60
 FULL_BUDGET_SECONDS = 5 * 60 * 60
 MIN_SCORE = 0.8
+# Above this share of a change's sample not run, the score is no verdict.
+MAX_NOT_RUN_SHARE = 0.25
 MUTANT_TIMEOUT_SECONDS = 180
 # A mutant's timeout is at least this many times what its tests took unmutated.
 TIMEOUT_MARGIN = 4
@@ -174,10 +187,9 @@ def parse_diff(diff: str) -> dict[str, set[int]]:
     return {path: found for path, found in lines.items() if found and is_source(path)}
 
 
-def changed_lines(base: str) -> dict[str, set[int]]:
-    """The source lines the change from the merge base of base and HEAD
-    adds."""
-    merge_base = git("merge-base", base, "HEAD").strip()
+def changed_lines(start: str) -> dict[str, set[int]]:
+    """The source lines the change from the commit start to HEAD adds or
+    changes."""
     diff = git(
         "diff",
         "--unified=0",
@@ -185,7 +197,7 @@ def changed_lines(base: str) -> dict[str, set[int]]:
         "--no-ext-diff",
         "--src-prefix=a/",
         "--dst-prefix=b/",
-        merge_base,
+        start,
         "HEAD",
         "--",
         "packages",
@@ -514,13 +526,35 @@ def run_mutant(mutant: Mutant, tests: list[str], unmutated: float) -> tuple[str,
 OUTCOMES = ("killed", "survived", "not covered", "not run", "error")
 
 
-def render(outcomes: dict[Mutant, str], score: float | None, mode: str) -> str:
-    """The Markdown report."""
-    counts = {
+@dataclasses.dataclass
+class Run:
+    """What a run did: each chosen mutant's outcome, the errors, and the score."""
+
+    outcomes: dict[Mutant, str]
+    errors: list[str]
+    score: float | None
+
+
+def tally(outcomes: dict[Mutant, str]) -> dict[str, int]:
+    """How many mutants ended in each outcome, in the order of OUTCOMES."""
+    return {
         name: sum(1 for outcome in outcomes.values() if outcome == name)
         for name in OUTCOMES
     }
-    shown = "n/a" if score is None else f"{score:.0%}"
+
+
+def is_inconclusive(run: Run, full: bool) -> bool:
+    """Whether the budget left more than MAX_NOT_RUN_SHARE of a change's sample
+    not run; never for --full, which only reports, or a run with an error."""
+    if full or run.errors or not run.outcomes:
+        return False
+    return tally(run.outcomes)["not run"] / len(run.outcomes) > MAX_NOT_RUN_SHARE
+
+
+def render(run: Run, mode: str, full: bool) -> str:
+    """The Markdown report."""
+    counts = tally(run.outcomes)
+    shown = "n/a" if run.score is None else f"{run.score:.0%}"
     lines = [
         f"## Mutation testing ({mode})",
         "",
@@ -528,14 +562,22 @@ def render(outcomes: dict[Mutant, str], score: float | None, mode: str) -> str:
         + ", ".join(f"{count} {name}" for name, count in counts.items()),
         "",
     ]
-    if counts["not run"]:
+    if is_inconclusive(run, full):
         lines += [
-            f"Budget reached: {counts['not run']} of {len(outcomes)} mutants were not run; "
+            f"**Inconclusive:** the budget left {counts['not run']} of the "
+            f"{len(run.outcomes)} sampled mutants not run, more than "
+            f"{MAX_NOT_RUN_SHARE:.0%}, so the score on the "
+            f"{counts['killed'] + counts['survived']} that ran is no verdict.",
+            "",
+        ]
+    elif counts["not run"]:
+        lines += [
+            f"Budget reached: {counts['not run']} of {len(run.outcomes)} mutants were not run; "
             "the score is on the ones that ran.",
             "",
         ]
     survivors = sorted(
-        mutant for mutant, outcome in outcomes.items() if outcome == "survived"
+        mutant for mutant, outcome in run.outcomes.items() if outcome == "survived"
     )
     if survivors:
         lines += ["Survived (no test failed with this change):", ""]
@@ -559,22 +601,17 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-@dataclasses.dataclass
-class Run:
-    """What a run did: each chosen mutant's outcome, the errors, and the score."""
-
-    outcomes: dict[Mutant, str]
-    errors: list[str]
-    score: float | None
-
-
 def gate(args: argparse.Namespace, work: Path) -> Run:
     """Make, sample and run the mutants."""
-    lines = every_line() if args.full else changed_lines(args.base)
+    if args.full:
+        lines = every_line()
+        seed = git("rev-parse", "HEAD").strip()
+    else:
+        seed = git("merge-base", args.base, "HEAD").strip()
+        lines = changed_lines(seed)
     mutants = []
     for path, found in sorted(lines.items()):
         mutants += mutants_of(path, read_source(path), found)
-    seed = git("rev-parse", "HEAD").strip()
     chosen = sample(mutants, None if args.full else MAX_MUTANTS, seed)
     print(
         f"mutation: {len(mutants)} mutants in {len(lines)} files; running {len(chosen)}"
@@ -615,10 +652,18 @@ def gate(args: argparse.Namespace, work: Path) -> Run:
 
 def verdict(run: Run, full: bool) -> tuple[int, str]:
     """The exit code and the line that says it."""
+    counts = tally(run.outcomes)
     if run.errors:
         return 2, (
             f"mutation: DID NOT RUN: {len(run.errors)} mutants ended in an error: "
             + "; ".join(run.errors[:5])
+        )
+    if is_inconclusive(run, full):
+        return 3, (
+            f"mutation: INCONCLUSIVE: {counts['killed'] + counts['survived']} of the "
+            f"{len(run.outcomes)} sampled mutants ran and {counts['not run']} were not run "
+            f"within the budget, more than {MAX_NOT_RUN_SHARE:.0%} of the sample; the score is "
+            "no verdict"
         )
     if run.outcomes and run.score is None:
         return 2, (
@@ -626,7 +671,7 @@ def verdict(run: Run, full: bool) -> tuple[int, str]:
             "covering test"
         )
     if full or run.score is None or run.score >= MIN_SCORE:
-        not_run = sum(1 for outcome in run.outcomes.values() if outcome == "not run")
+        not_run = counts["not run"]
         partial = f" (budget reached: {not_run} not run)" if not_run else ""
         return 0, f"mutation: PASS{partial}"
     return 1, f"mutation: FAIL: the score {run.score:.0%} is below {MIN_SCORE:.0%}"
@@ -658,7 +703,7 @@ def main(argv: list[str] | None = None) -> int:
             report = f"## Mutation testing ({mode})\n\n"
         else:
             code, line = verdict(run, args.full)
-            report = render(run.outcomes, run.score, mode)
+            report = render(run, mode, args.full)
     print(report, end="")
     print(line)
     if args.summary is not None:

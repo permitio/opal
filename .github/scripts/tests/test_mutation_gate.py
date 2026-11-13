@@ -1,6 +1,7 @@
 """Tests of .github/scripts/mutation_gate.py: which lines it mutates and how,
-the sample and the report, and whole runs on a throwaway repository with a
-small package whose tests do or do not kill its mutants.
+the sample, its seed and the report, the verdict and its exit code, and whole
+runs on a throwaway repository with a small package whose tests do or do not
+kill its mutants.
 
 The whole runs use real git, pytest and pytest-cov (from the pinned
 requirements of these tests) on the throwaway copy only.
@@ -8,12 +9,15 @@ requirements of these tests) on the throwaway copy only.
 
 import importlib.util
 import os
+import re
+import signal
 import subprocess
 import sys
 import time
 from pathlib import Path
 
 import pytest
+import yaml
 
 SCRIPT = ".github/scripts/mutation_gate.py"
 SPEC = importlib.util.spec_from_file_location(
@@ -163,7 +167,9 @@ def test_the_report_lists_survivors_up_to_a_limit():
     }
     outcomes[gate.Mutant("p.py", 99, 0, "1", "2")] = "killed"
 
-    report = gate.render(outcomes, 1 / 61, "lines changed since main")
+    report = gate.render(
+        gate.Run(outcomes, [], 1 / 61), "lines changed since main", full=False
+    )
 
     assert (
         "Score 2% (gate 80%): 1 killed, 60 survived, 0 not covered, 0 not run, 0 error"
@@ -358,7 +364,7 @@ def test_mutants_past_the_budget_are_not_run(repository, monkeypatch, tmp_path):
 
     assert set(run.outcomes.values()) == {"not run"}
     assert run.score is None
-    assert gate.verdict(run, full=False)[0] == 2
+    assert gate.verdict(run, full=False)[0] == 3
 
 
 def test_no_more_mutants_than_the_cap_run(repository, monkeypatch, tmp_path):
@@ -373,17 +379,114 @@ def test_no_more_mutants_than_the_cap_run(repository, monkeypatch, tmp_path):
     assert run.score == 1
 
 
+def outcomes_of(**counts: int) -> dict:
+    """Outcomes with as many mutants of each as asked, such as killed=3 or
+    not_run=1."""
+    outcomes = {}
+    for name, count in counts.items():
+        for _ in range(count):
+            mutant = gate.Mutant("p.py", len(outcomes) + 1, 0, "1", "2")
+            outcomes[mutant] = name.replace("_", " ")
+    return outcomes
+
+
+def run_of(**counts: int):
+    """A run with no error whose score follows from its outcomes."""
+    outcomes = outcomes_of(**counts)
+    ran = counts.get("killed", 0) + counts.get("survived", 0)
+    return gate.Run(outcomes, [], counts.get("killed", 0) / ran if ran else None)
+
+
 def test_the_report_says_when_the_budget_was_reached():
-    outcomes = {gate.Mutant("p.py", 1, 0, "1", "2"): "killed"}
-    outcomes[gate.Mutant("p.py", 2, 0, "1", "2")] = "not run"
-    outcomes[gate.Mutant("p.py", 3, 0, "1", "2")] = "not run"
+    run = run_of(killed=3, not_run=1)
 
-    report = gate.render(outcomes, 1.0, "lines changed since main")
+    report = gate.render(run, "lines changed since main", full=False)
 
-    assert "Budget reached: 2 of 3 mutants were not run" in report
-    assert gate.verdict(gate.Run(outcomes, [], 1.0), full=False) == (
+    assert "Budget reached: 1 of 4 mutants were not run" in report
+    assert "Inconclusive" not in report
+    assert gate.verdict(run, full=False) == (
         0,
-        "mutation: PASS (budget reached: 2 not run)",
+        "mutation: PASS (budget reached: 1 not run)",
+    )
+
+
+def test_the_report_says_when_too_many_were_not_run_for_a_verdict():
+    run = run_of(killed=110, survived=10, not_covered=30, not_run=150)
+
+    report = gate.render(run, "lines changed since main", full=False)
+
+    assert (
+        "Score 92% (gate 80%): 110 killed, 10 survived, 30 not covered, 150 not run, 0 error"
+        in report
+    )
+    assert (
+        "**Inconclusive:** the budget left 150 of the 300 sampled mutants not run, more than "
+        "25%, so the score on the 120 that ran is no verdict." in report
+    )
+    assert "Budget reached" not in report
+    assert gate.verdict(run, full=False) == (
+        3,
+        "mutation: INCONCLUSIVE: 120 of the 300 sampled mutants ran and 150 were not run "
+        "within the budget, more than 25% of the sample; the score is no verdict",
+    )
+
+
+def test_the_full_run_reports_the_budget_and_is_never_inconclusive():
+    run = run_of(killed=1, survived=1, not_run=8)
+
+    report = gate.render(run, "every line", full=True)
+
+    assert "Budget reached: 8 of 10 mutants were not run" in report
+    assert "Inconclusive" not in report
+    assert gate.verdict(run, full=True) == (
+        0,
+        "mutation: PASS (budget reached: 8 not run)",
+    )
+
+
+@pytest.mark.parametrize(
+    ("counts", "code"),
+    [
+        pytest.param({"killed": 75, "not_run": 25}, 0, id="25% not run passes"),
+        pytest.param(
+            {"killed": 74, "not_run": 26}, 3, id="26% not run is inconclusive"
+        ),
+        pytest.param({"survived": 75, "not_run": 25}, 1, id="25% not run fails"),
+        pytest.param(
+            {"survived": 74, "not_run": 26}, 3, id="26% not run does not fail"
+        ),
+        pytest.param({"killed": 3, "not_run": 1}, 0, id="1 of 4 not run"),
+        pytest.param({"killed": 2, "not_run": 1}, 3, id="1 of 3 not run"),
+        pytest.param(
+            {"killed": 200, "not_covered": 100, "not_run": 100},
+            0,
+            id="100 of 400 not run",
+        ),
+        pytest.param(
+            {"killed": 200, "not_covered": 100, "not_run": 101},
+            3,
+            id="101 of 401 not run",
+        ),
+        pytest.param({"not_run": 4}, 3, id="none run"),
+        pytest.param(
+            {"not_covered": 3, "not_run": 2},
+            3,
+            id="none covered, too many not run",
+        ),
+        pytest.param({"not_covered": 4}, 2, id="none covered"),
+    ],
+)
+def test_more_than_a_quarter_of_the_sample_not_run_is_inconclusive(counts, code):
+    assert gate.verdict(run_of(**counts), full=False)[0] == code
+
+
+def test_a_mutant_in_error_did_not_run_however_many_were_not_run():
+    run = run_of(killed=1, not_run=3)
+    run.errors.append("p.py:1: 1 -> 2: pytest exited 3: INTERNALERROR")
+
+    assert gate.verdict(run, full=False)[0] == 2
+    assert "Inconclusive" not in gate.render(
+        run, "lines changed since main", full=False
     )
 
 
@@ -413,10 +516,54 @@ def test_the_report_says_when_the_budget_was_reached():
             2,
             id="an error in full",
         ),
+        pytest.param(run_of(killed=4, survived=1), False, 0, id="a change at the gate"),
+        pytest.param(
+            run_of(killed=3, survived=1, not_run=1),
+            False,
+            1,
+            id="a change below the gate with 20% not run",
+        ),
+        pytest.param(run_of(killed=1, not_run=1), False, 3, id="a change inconclusive"),
+        pytest.param(
+            run_of(survived=1, not_run=1), True, 0, id="full with half not run"
+        ),
     ],
 )
 def test_the_verdict(run, full, code):
     assert gate.verdict(run, full)[0] == code
+
+
+@pytest.fixture
+def sigterm_handler():
+    """The SIGTERM handler of the tests' process, back after a test that runs
+    main(), which sets its own."""
+    previous = signal.getsignal(signal.SIGTERM)
+    yield
+    signal.signal(signal.SIGTERM, previous)
+
+
+@pytest.mark.usefixtures("sigterm_handler")
+def test_an_inconclusive_run_exits_3_and_says_so_in_the_summary(
+    repository, monkeypatch, tmp_path
+):
+    repository.change(CALC_HEAD, WEAK_TESTS)
+    monkeypatch.setattr(gate, "ROOT", repository.repo.root)
+    monkeypatch.setattr(gate, "BUDGET_SECONDS", 0)
+    monkeypatch.chdir(repository.repo.root)
+    summary = tmp_path / "summary.md"
+
+    code = gate.main(["--base", "main~1", "--summary", str(summary)])
+
+    assert code == 3
+    written = summary.read_text()
+    assert (
+        "**Inconclusive:** the budget left 2 of the 2 sampled mutants not run"
+        in written
+    )
+    assert written.splitlines()[-1] == (
+        "INCONCLUSIVE: 0 of the 2 sampled mutants ran and 2 were not run within the budget, "
+        "more than 25% of the sample; the score is no verdict"
+    )
 
 
 def test_the_run_order_takes_the_packages_in_turn_and_is_seeded():
@@ -440,6 +587,46 @@ def test_the_run_order_takes_the_packages_in_turn_and_is_seeded():
         "packages/c",
     ]
     assert order != gate.run_order(mutants, "other seed")
+
+
+MANY_MUTANTS = "".join(
+    f"\n\ndef over_{n}(x):\n    return x > {n} and x != {n + 7}\n" for n in range(1, 9)
+)
+
+
+def test_a_change_samples_and_orders_its_mutants_by_its_base_whatever_head_is(
+    repository, monkeypatch, tmp_path, capsys
+):
+    """Three HEADs with the same changed source lines: the change itself, a
+    later commit that changes no source, and a merge commit of the base and
+    the change, as a pull request's checkout is."""
+    base = repository.git("rev-parse", "HEAD").strip()
+    repository.change(
+        CALC_BASE + MANY_MUTANTS,
+        "from demo.calc import double\n\n\ndef test_double():\n    assert double(2) == 4\n",
+    )
+    change = repository.git("rev-parse", "HEAD").strip()
+    monkeypatch.setattr(gate, "ROOT", repository.repo.root)
+    monkeypatch.setattr(gate, "BUDGET_SECONDS", 0)
+    monkeypatch.setattr(gate, "MAX_MUTANTS", 10)
+    monkeypatch.chdir(repository.repo.root)
+
+    def chosen(name: str) -> list:
+        work = tmp_path / name
+        work.mkdir()
+        run = gate.gate(gate.parse_args(["--base", base]), work)
+        return list(run.outcomes)
+
+    first = chosen("change")
+    assert "mutation: 40 mutants in 1 files; running 10" in capsys.readouterr().out
+    repository.repo.write("README.md", "a commit with no source\n")
+    repository.commit("docs")
+    later = chosen("later")
+    repository.git("checkout", "-q", "--detach", base)
+    repository.git("merge", "-q", "--no-ff", "-m", "merge", change)
+    merged = chosen("merge")
+
+    assert first == later == merged
 
 
 def test_a_diff_path_with_a_space_keeps_its_name():
@@ -683,3 +870,22 @@ def test_sigterm_restores_the_mutated_file(repository):
 
     assert calc.read_bytes() == original
     assert calc.stat().st_mtime_ns == mtime
+
+
+def test_the_pull_request_timeout_holds_the_budget_and_what_comes_around_it():
+    """What mutation.yml's comment adds up: the install (5 minutes), the
+    coverage runs (15) and the last mutant to start (TIMEOUT_MARGIN times 6),
+    around the budget, within the job's timeout and GitHub's 360."""
+    workflow = yaml.safe_load(
+        (Path(__file__).resolve().parents[2] / "workflows" / "mutation.yml").read_text()
+    )
+    found = re.fullmatch(
+        r"\$\{\{ github\.event_name == 'pull_request' && (\d+) \|\| (\d+) \}\}",
+        workflow["jobs"]["mutation"]["timeout-minutes"],
+    )
+    assert found is not None
+    pull_request, full = int(found[1]), int(found[2])
+    around = 5 + 15 + gate.TIMEOUT_MARGIN * 6
+
+    assert gate.BUDGET_SECONDS / 60 + around <= pull_request
+    assert gate.FULL_BUDGET_SECONDS / 60 + around <= full <= 360

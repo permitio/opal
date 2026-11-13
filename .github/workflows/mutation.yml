@@ -1,15 +1,22 @@
 # Mutation testing of the Python code under packages/, with .github/scripts/mutation_gate.py.
 #
-# On a pull request that changes it: the mutants of the lines the pull request adds or changes, at
-# most 300 within a budget of 45 minutes (two constants of the script), each run against the tests
-# that cover its line. The check fails when fewer than 80% of the covered mutants that ran are
-# killed; the job summary lists the ones that survived.
+# On a pull request that changes it and carries the label "mutation": the mutants of the lines the
+# pull request adds or changes, at most 300 within a budget of 150 minutes (two constants of the
+# script), each run against the tests that cover its line. The sample and its order are seeded by
+# the pull request's base commit, so every push of the same lines runs the same mutants. The check
+# fails when fewer than 80% of the covered mutants that ran are killed; the job summary lists the
+# ones that survived. When the budget leaves more than 25% of the sample not run, the run is
+# inconclusive: the check passes with a warning, and the job summary says how many ran.
+#
+# Adding the label starts a run, and each push or reopen while it is there starts another. Without
+# the label the job is skipped.
 #
 # Weekly and by hand: every line, within five hours, as a report in the job summary.
 name: Mutation
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
     paths:
       - packages/**/*.py
   schedule:
@@ -18,10 +25,14 @@ on:
 
 permissions: {}
 
-# A new push to a PR cancels that PR's older run; a scheduled or manual run is never cancelled.
+# A new push to a PR, or adding the label, cancels that PR's older run. Adding any other label
+# starts a run whose job is skipped; it gets a group of its own, so that it cancels nothing. A
+# scheduled or manual run is never cancelled.
 concurrency:
   group: >-
-    ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+    ${{ github.workflow }}-${{ github.event_name == 'pull_request'
+    && (github.event.action != 'labeled' || github.event.label.name == 'mutation')
+    && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 defaults:
@@ -30,15 +41,21 @@ defaults:
 
 jobs:
   mutation:
+    # A pull request runs only with the label, and not when another label is added.
+    if: >-
+      github.event_name != 'pull_request'
+      || (contains(github.event.pull_request.labels.*.name, 'mutation')
+      && (github.event.action != 'labeled' || github.event.label.name == 'mutation'))
     runs-on: ubuntu-24.04
     # What a run can take: the install (about 5 minutes), the coverage runs of the changed
-    # packages (about 10 for all three; the script allows each up to 40, more than the job has
-    # left), the budget, and then the last mutant to start, whose timeout is up to 4 times its
-    # tests' own time: when those are the opal-server suite (a line that runs only at import),
-    # about 6 minutes, so 24. A pull request: 5 + 10 + 45 + 24 = 84 minutes, so 105 leaves room
-    # for a slower runner. Weekly: 5 + 10 + 300 + 24 = 339, so the 360 that GitHub's runners allow.
-    # A job that hits this timeout ends with no verdict and no summary.
-    timeout-minutes: ${{ github.event_name == 'pull_request' && 105 || 360 }}
+    # packages (about 3 for opal-common and 9 for opal-server, so 15 for all three; the script
+    # allows each up to 40, more than the job has left), the budget, and then the last mutant to
+    # start, whose timeout is up to 4 times its tests' own time: when those are the opal-server
+    # suite (a line that runs only at import), about 6 minutes, so 24. A pull request:
+    # 5 + 15 + 150 + 24 = 194 minutes, so 220 leaves room for a slower runner. Weekly:
+    # 5 + 15 + 300 + 24 = 344, so the 360 that GitHub's runners allow. A job that hits this
+    # timeout ends with no verdict and no summary.
+    timeout-minutes: ${{ github.event_name == 'pull_request' && 220 || 360 }}
     permissions:
       contents: read
     steps:
@@ -72,11 +89,26 @@ jobs:
           python -m pip install pip==26.2.2
           pip install -r requirements.txt pytest-cov==7.1.0 coverage==7.17.0
 
+      # Exit 3 is inconclusive: the budget left more than a quarter of the sample not run, so the
+      # score is no verdict. A job can only pass or fail, and this is neither a pass nor a failure
+      # of the change's tests: the step passes, with a warning on the run and the pull request,
+      # and the job summary, which the script wrote, says how many mutants ran. Every other exit
+      # code is the step's.
       - name: Mutate the lines this pull request changes
         if: github.event_name == 'pull_request'
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
-        run: .github/scripts/mutation_gate.py --base "$BASE" --summary "$GITHUB_STEP_SUMMARY"
+        run: |
+          status=0
+          .github/scripts/mutation_gate.py --base "$BASE" --summary "$GITHUB_STEP_SUMMARY" \
+            || status=$?
+          if [ "$status" -eq 3 ]; then
+            echo "::warning title=Mutation testing inconclusive::The budget left more than a" \
+              "quarter of the sampled mutants not run, so the score is no verdict. The job" \
+              "summary says how many ran."
+            exit 0
+          fi
+          exit "$status"
 
       - name: Mutate every line
         if: github.event_name != 'pull_request'

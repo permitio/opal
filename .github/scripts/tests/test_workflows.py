@@ -1052,9 +1052,74 @@ def test_the_overlay_keeps_the_release_and_labels_it():
     assert dockerfile.rstrip().endswith("USER opal")
 
 
+_PROPERTY = re.compile(r"\b[a-z_]+(?:\.(?:[a-z_]+|\*))+")
+
+
+def _lookup(value, keys: list[str]):
+    """A property of a context, with GitHub's .* filter over a list; a missing
+    property is null."""
+    for index, key in enumerate(keys):
+        if key == "*":
+            return [_lookup(item, keys[index + 1 :]) for item in value or []]
+        value = value.get(key) if isinstance(value, dict) else None
+    return value
+
+
+def evaluate(expression: str, context: dict):
+    """The value of a GitHub Actions expression, for the subset mutation.yml
+    uses: properties, string literals, ==, !=, &&, ||, parentheses and
+    contains() on a list. A value that is one ${{ }} is its expression's value,
+    and a value with other text around its ${{ }} parts is a string."""
+    whole = re.fullmatch(r"\s*\$\{\{(.*?)\}\}\s*", expression, flags=re.S)
+    if whole and "${{" not in whole[1]:
+        return evaluate(whole[1], context)
+    if "${{" in expression:
+        parts = re.split(r"\$\{\{(.*?)\}\}", expression, flags=re.S)
+        return "".join(
+            str(evaluate(part, context)) if odd else part
+            for odd, part in zip([False, True] * len(parts), parts)
+        )
+    python = _PROPERTY.sub(
+        lambda found: f"lookup(context, {found[0].split('.')!r})", expression
+    )
+    python = python.replace("&&", " and ").replace("||", " or ")
+    # Only the workflow's own expressions reach here, in this subset of the syntax.
+    return eval(  # noqa: S307
+        " ".join(python.split()),
+        {
+            "lookup": _lookup,
+            "context": context,
+            "contains": lambda items, item: item in items,
+        },
+    )
+
+
+def mutation_event(event_name: str, action: str = "", labels=(), label: str = ""):
+    """The github context of a run of mutation.yml: on pull request 7 for a
+    pull_request event."""
+    pull_request = event_name == "pull_request"
+    event: dict = {}
+    if pull_request:
+        event = {
+            "action": action,
+            "pull_request": {"labels": [{"name": name} for name in labels]},
+        }
+        if label:
+            event["label"] = {"name": label}
+    return {
+        "github": {
+            "workflow": "Mutation",
+            "event_name": event_name,
+            "event": event,
+            "ref": "refs/pull/7/merge" if pull_request else "refs/heads/master",
+            "run_id": "1234",
+        }
+    }
+
+
 class TestMutation:
-    """mutation.yml: the capped gate on a pull request's lines, and the weekly
-    full run."""
+    """mutation.yml: the capped gate on the lines of a pull request that
+    carries the label "mutation", and the weekly full run."""
 
     @pytest.fixture
     def workflow(self):
@@ -1065,25 +1130,136 @@ class TestMutation:
 
         assert set(triggers) == {"pull_request", "schedule", "workflow_dispatch"}
         assert triggers["pull_request"]["paths"] == ["packages/**/*.py"]
+        assert set(triggers["pull_request"]["types"]) == {
+            "opened",
+            "synchronize",
+            "reopened",
+            "labeled",
+        }
 
-    def test_a_pull_request_runs_the_gate_on_its_lines_and_the_rest_runs_in_full(
-        self, workflow
+    @pytest.mark.parametrize(
+        ("context", "runs", "group"),
+        [
+            pytest.param(
+                mutation_event("pull_request", "labeled", ["mutation"], "mutation"),
+                True,
+                "Mutation-refs/pull/7/merge",
+                id="the label added",
+            ),
+            pytest.param(
+                mutation_event("pull_request", "synchronize", ["bug", "mutation"]),
+                True,
+                "Mutation-refs/pull/7/merge",
+                id="a push with the label",
+            ),
+            pytest.param(
+                mutation_event("pull_request", "opened", ["mutation"]),
+                True,
+                "Mutation-refs/pull/7/merge",
+                id="opened with the label",
+            ),
+            pytest.param(
+                mutation_event("pull_request", "reopened", ["mutation"]),
+                True,
+                "Mutation-refs/pull/7/merge",
+                id="reopened with the label",
+            ),
+            pytest.param(
+                mutation_event("pull_request", "synchronize", ["bug"]),
+                False,
+                "Mutation-refs/pull/7/merge",
+                id="a push without the label",
+            ),
+            pytest.param(
+                mutation_event("pull_request", "opened"),
+                False,
+                "Mutation-refs/pull/7/merge",
+                id="opened without the label",
+            ),
+            pytest.param(
+                mutation_event("pull_request", "labeled", ["mutation", "bug"], "bug"),
+                False,
+                "Mutation-1234",
+                id="another label added beside it",
+            ),
+            pytest.param(
+                mutation_event("pull_request", "labeled", ["bug"], "bug"),
+                False,
+                "Mutation-1234",
+                id="another label added alone",
+            ),
+            pytest.param(
+                mutation_event("schedule"), True, "Mutation-1234", id="weekly"
+            ),
+            pytest.param(
+                mutation_event("workflow_dispatch"), True, "Mutation-1234", id="by hand"
+            ),
+        ],
+    )
+    def test_a_pull_request_runs_only_with_the_label_and_another_label_cancels_nothing(
+        self, workflow, context, runs, group
     ):
-        runs = {
-            step["if"]: step["run"]
-            for step in steps_of(workflow["jobs"]["mutation"])
-            if "mutation_gate.py" in step.get("run", "")
-        }
+        concurrency = workflow["concurrency"]
+        pull_request = context["github"]["event_name"] == "pull_request"
 
-        assert runs == {
-            "github.event_name == 'pull_request'": (
-                '.github/scripts/mutation_gate.py --base "$BASE" --summary '
-                '"$GITHUB_STEP_SUMMARY"'
-            ),
-            "github.event_name != 'pull_request'": (
-                '.github/scripts/mutation_gate.py --full --summary "$GITHUB_STEP_SUMMARY"'
-            ),
-        }
+        assert bool(evaluate(workflow["jobs"]["mutation"]["if"], context)) is runs
+        assert evaluate(concurrency["group"], context) == group
+        assert evaluate(concurrency["cancel-in-progress"], context) is pull_request
+
+    def test_the_full_run_reports_with_the_scripts_own_exit_code(self, workflow):
+        (step,) = [
+            step
+            for step in steps_of(workflow["jobs"]["mutation"])
+            if step.get("if") == "github.event_name != 'pull_request'"
+        ]
+
+        assert step["run"] == (
+            '.github/scripts/mutation_gate.py --full --summary "$GITHUB_STEP_SUMMARY"'
+        )
+
+    @pytest.mark.parametrize(
+        ("gate_exit", "step_exit"), [(0, 0), (1, 1), (2, 2), (3, 0), (143, 143)]
+    )
+    def test_a_pull_request_step_passes_an_inconclusive_gate_with_a_warning(
+        self, workflow, throwaway_repo, gate_exit, step_exit
+    ):
+        """The step runs the gate on the pull request's base; exit 3,
+        inconclusive, passes the step with a warning annotation, and every
+        other exit code is the step's own."""
+        (step,) = [
+            step
+            for step in steps_of(workflow["jobs"]["mutation"])
+            if step.get("if") == "github.event_name == 'pull_request'"
+        ]
+        assert step["env"] == {"BASE": "${{ github.event.pull_request.base.sha }}"}
+        throwaway_repo.write(
+            ".github/scripts/mutation_gate.py",
+            f'#!/usr/bin/env bash\necho "gate: $*"\nexit {gate_exit}\n',
+            executable=True,
+        )
+        throwaway_repo.write("step.sh", step["run"])
+        shell = workflow["defaults"]["run"]["shell"].replace("{0}", "step.sh")
+        throwaway_repo.write(
+            "run-step.sh", f"#!/usr/bin/env bash\nexec {shell}\n", executable=True
+        )
+
+        result = throwaway_repo.run(
+            "run-step.sh", env={"BASE": "abc123", "GITHUB_STEP_SUMMARY": "summary.md"}
+        )
+
+        assert result.returncode == step_exit, result.output
+        assert "gate: --base abc123 --summary summary.md" in result.stdout
+        warnings = [
+            line for line in result.stdout.splitlines() if line.startswith("::warning")
+        ]
+        if gate_exit == 3:
+            assert warnings == [
+                "::warning title=Mutation testing inconclusive::The budget left more than a "
+                "quarter of the sampled mutants not run, so the score is no verdict. The job "
+                "summary says how many ran."
+            ]
+        else:
+            assert warnings == []
 
     def test_installs_the_coverage_tools_the_script_tests_pin(self, workflow):
         pinned = (
