@@ -333,7 +333,7 @@ USER opal
 # ---------------------------------------------------
 FROM server AS server-test
 USER root
-COPY docker/server-test-requirements.txt /tmp/server-test-requirements.txt
+COPY docker/server-test/requirements.txt /tmp/server-test-requirements.txt
 RUN apk add --no-cache git-daemon openssh-server openssh-keygen openssl && \
   python check_trust_store.py && \
   pip install --no-cache-dir --require-hashes -r /tmp/server-test-requirements.txt

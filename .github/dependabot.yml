@@ -18,13 +18,14 @@
 # - An ignore entry needs a comment that says why, and when it can go.
 version: 2
 updates:
-  # The published packages' requirements. Each setup.py reads its install_requires from
+  # The hand-written requirement files: the published packages' ranges and the root
+  # requirements.txt (dev and test tools). Each setup.py reads its install_requires from
   # packages/requires.txt and packages/<pkg>/requires.txt. Dependabot's pip fetcher reads every
-  # *.txt in a configured directory and its immediate subdirectories whose lines parse as
-  # requirements, so "/" covers requirements.txt (dev and test tools), packages/requires.txt,
-  # app-tests/requirements.txt and docker/server-test-requirements.txt, and each package
-  # directory covers its own requires.txt. /app-tests/git-leak is two levels down, so it is
-  # listed for the scope bed's requirements.
+  # *.txt and *.in in a configured directory and its immediate subdirectories whose lines parse
+  # as requirements, so "/" covers requirements.txt and packages/requires.txt, and each package
+  # directory covers its own requires.txt. The locks that uv pip compile writes belong to the uv
+  # entries below: exclude-paths keeps app-tests' lock out of "/", and the other locks sit two or
+  # more levels down, out of its reach.
   #
   # These are library ranges, which every downstream install resolves, so a floor must not rise
   # just because a newer release exists: increase-if-necessary leaves a requirement alone while
@@ -36,7 +37,8 @@ updates:
       - /packages/opal-common
       - /packages/opal-client
       - /packages/opal-server
-      - /app-tests/git-leak
+    exclude-paths:
+      - app-tests/requirements.*
     versioning-strategy: increase-if-necessary
     schedule:
       interval: weekly
@@ -82,6 +84,37 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: deps
+    groups:
+      minor-and-patch:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: [minor, patch]
+      security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  # The test and CI tools' locks, each compiled with uv pip compile from the requirements.in beside
+  # it, which pins the tools exactly: app-tests (the E2E suite) and app-tests/git-leak (the scope
+  # bed), which the /app-tests job both reads, docker/server-test (the server-test image) and
+  # .github/scripts/tests (the workflow scripts' tests). As for the images' lock, the uv ecosystem
+  # compiles a lock again with uv and the options its header records. Each header's command runs
+  # in the directory of the job that owns the lock, so the "via" paths Dependabot writes are the
+  # ones in the file. increase moves the exact pins in the requirements.in files.
+  - package-ecosystem: uv
+    directories:
+      - /app-tests
+      - /docker/server-test
+      - /.github/scripts/tests
+    versioning-strategy: increase
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: deps-dev
     groups:
       minor-and-patch:
         applies-to: version-updates

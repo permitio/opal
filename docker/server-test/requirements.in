@@ -1,0 +1,11 @@
+# The server-test image (docker/Dockerfile) installs these, from requirements.txt with
+# --require-hashes: the versions the root requirements.txt pins for the unit tests.
+# requirements.txt is generated from this file, from the repository root, with:
+#   uv pip compile --no-config --directory docker/server-test --python-version 3.14 --universal \
+#     --generate-hashes requirements.in --output-file requirements.txt
+# --directory keeps the file's "via" paths the same as when Dependabot compiles it in this
+# directory. The pip-compile hook in .pre-commit-config.yaml runs that command and fails when the
+# file changes.
+pytest==9.2.0
+pytest-asyncio==1.4.1
+pytest-rerunfailures==16.7

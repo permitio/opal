@@ -7,7 +7,7 @@ rego_clone/
 docker/
 # ...but the lock the images install, and the server-test stage's pinned test requirements.
 !docker/lock/requirements.txt
-!docker/server-test-requirements.txt
+!docker/server-test/requirements.txt
 Makefile
 Dockerfile
 .dockerignore

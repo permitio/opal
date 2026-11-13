@@ -1,8 +1,0 @@
-# The server-test image (docker/Dockerfile) installs these, from server-test-requirements.txt
-# with --require-hashes: the versions the root requirements.txt pins for the unit tests.
-# server-test-requirements.txt is generated from this file with:
-#   uv pip compile --generate-hashes --python-version 3.14 --universal \
-#     docker/server-test-requirements.in -o docker/server-test-requirements.txt
-pytest==9.2.0
-pytest-asyncio==1.4.1
-pytest-rerunfailures==16.7
