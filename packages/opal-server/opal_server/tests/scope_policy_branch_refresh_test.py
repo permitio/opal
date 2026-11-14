@@ -18,6 +18,7 @@ scope's clients even when the clone's scope ref already equals the branch
 head, which is what a move back to a repository the scope used before looks
 like.
 """
+
 import asyncio
 import datetime
 import re
@@ -625,9 +626,9 @@ async def test_a_client_that_hangs_up_during_a_branch_wait_is_not_reported(
     assert not [
         r["message"] for r in logs.emitted if r["level"].name in ("WARNING", "ERROR")
     ]
-    assert not [
-        t for t, _ in emitted["event"] if t == "ScopePolicyUnavailable"
-    ], "a client that had hung up still produced a 409 event"
+    assert not [t for t, _ in emitted["event"] if t == "ScopePolicyUnavailable"], (
+        "a client that had hung up still produced a 409 event"
+    )
 
 
 def test_the_claims_are_bounded(monkeypatch):
@@ -996,9 +997,9 @@ async def test_a_burst_for_a_missing_branch_costs_one_fetch(monkeypatch, tmp_pat
     GitPolicyFetcher.repos_last_fetched.pop(fetcher._source_id, None)
     try:
         assert await fetcher._should_fetch(None, req_time=asked) is True
-        GitPolicyFetcher.repos_last_fetched[
-            fetcher._source_id
-        ] = asked + datetime.timedelta(seconds=1)
+        GitPolicyFetcher.repos_last_fetched[fetcher._source_id] = (
+            asked + datetime.timedelta(seconds=1)
+        )
         assert await fetcher._should_fetch(None, req_time=asked) is False
         # Without a request time (a pass), the missing branch is still fetched.
         assert await fetcher._should_fetch(None) is True
@@ -1175,9 +1176,9 @@ async def test_a_coalesced_sync_finds_a_branch_another_scopes_fetch_brought(
 
     await service.sync_scope(scope_id="s2", req_time=asked, honor_backoff=True)
 
-    assert (
-        GitPolicyFetcher.repos_last_fetched[source_id] == fetched_at
-    ), "the coalesced sync fetched again"
+    assert GitPolicyFetcher.repos_last_fetched[source_id] == fetched_at, (
+        "the coalesced sync fetched again"
+    )
     assert len(pubsub.published) == published + 1, "s2's clients were not told"
     clone = git.Repo(
         GitPolicyFetcher.repo_clone_path(tmp_path, scopes._scopes["s2"].policy)

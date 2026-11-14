@@ -103,9 +103,7 @@ class CallbacksReporter:
                     )
                 if isinstance(
                     result, aiohttp.ClientResponse
-                ) and is_http_error_response(
-                    result
-                ):  # error responses
+                ) and is_http_error_response(result):  # error responses
                     # Not necessarily JSON (e.g. an HTML page from a proxy), and
                     # result.json() would raise ContentTypeError for it.
                     body = await result.text(errors="replace")

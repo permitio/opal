@@ -125,9 +125,9 @@ async def test_building_the_notification_never_stalls_the_event_loop(
     [(topics, update)] = pubsub.published
     assert sorted(topics) == [f"{SCOPE_ID}:policy:.", f"{SCOPE_ID}:policy:policy"]
     assert update.new_policy_hash == new
-    assert (
-        lag < MAX_LAG_SECONDS
-    ), f"the event loop stalled {lag:.2f}s while the notification was built"
+    assert lag < MAX_LAG_SECONDS, (
+        f"the event loop stalled {lag:.2f}s while the notification was built"
+    )
 
 
 @pytest.mark.asyncio

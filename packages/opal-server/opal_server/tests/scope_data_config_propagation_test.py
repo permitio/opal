@@ -189,9 +189,9 @@ def test_absent_scope_does_not_serve_default_data_config():
     # The only correct config for a not-yet-synced scope is an empty one — the
     # server has no scope-specific data to serve, and must not borrow another
     # scope's / the global default's topic.
-    assert (
-        payload.get("entries", []) == []
-    ), f"absent scope must yield an empty data config, got: {payload}"
+    assert payload.get("entries", []) == [], (
+        f"absent scope must yield an empty data config, got: {payload}"
+    )
 
 
 def test_present_scope_serves_its_own_data_with_namespaced_topics():
@@ -210,9 +210,9 @@ def test_present_scope_serves_its_own_data_with_namespaced_topics():
     urls = [entry.get("url") for entry in payload.get("entries", [])]
     topics = _topics_in_response(payload)
 
-    assert (
-        SCOPE_DATA_URL in urls
-    ), f"expected the scope's configured data source ({SCOPE_DATA_URL}); got: {payload}"
+    assert SCOPE_DATA_URL in urls, (
+        f"expected the scope's configured data source ({SCOPE_DATA_URL}); got: {payload}"
+    )
     assert f"{SCOPE_ID}:data:{SCOPE_DATA_TOPIC}" in topics, topics
     assert SCOPE_DATA_TOPIC not in topics  # bare form would be discarded
     assert DEFAULT_DATA_TOPIC not in topics

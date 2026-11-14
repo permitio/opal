@@ -139,9 +139,9 @@ def test_every_workflow_sets_read_only_top_level_permissions(path):
 )
 def test_every_job_sets_its_permissions(workflow, job_id, job):
     assert "permissions" in job, f"{workflow}: job {job_id} has no permissions block"
-    assert isinstance(
-        job["permissions"], dict
-    ), f"{workflow}: {job_id}: {job['permissions']!r}"
+    assert isinstance(job["permissions"], dict), (
+        f"{workflow}: {job_id}: {job['permissions']!r}"
+    )
 
 
 def test_only_the_known_jobs_can_write():
@@ -167,12 +167,12 @@ def test_every_remote_action_is_pinned_to_a_commit_with_its_version(path):
         ref = match["ref"]
         if ref.startswith("./"):
             continue
-        assert SHA_PIN.match(
-            ref
-        ), f"{path.name}: {ref} is not pinned to a full commit SHA"
-        assert VERSION_COMMENT.match(
-            match["rest"]
-        ), f"{path.name}: {ref} has no '# vX.Y.Z' comment on its line"
+        assert SHA_PIN.match(ref), (
+            f"{path.name}: {ref} is not pinned to a full commit SHA"
+        )
+        assert VERSION_COMMENT.match(match["rest"]), (
+            f"{path.name}: {ref} has no '# vX.Y.Z' comment on its line"
+        )
 
 
 def test_one_version_of_an_action_is_one_commit():
@@ -195,9 +195,9 @@ def test_every_checkout_keeps_no_credentials(path):
         for step in steps_of(job):
             if not step.get("uses", "").startswith("actions/checkout@"):
                 continue
-            assert (
-                step.get("with", {}).get("persist-credentials") is False
-            ), f"{path.name}: a checkout in {job_id} does not set persist-credentials: false"
+            assert step.get("with", {}).get("persist-credentials") is False, (
+                f"{path.name}: a checkout in {job_id} does not set persist-credentials: false"
+            )
 
 
 @pytest.mark.parametrize(("file_name", "check"), REQUIRED_CHECKS.items())
@@ -254,9 +254,9 @@ class TestCiJob:
         pull_request_jobs = set(env["PULL_REQUEST_JOBS"].split())
         conditional = {job_id for job_id in jobs["ci"]["needs"] if "if" in jobs[job_id]}
 
-        assert (
-            conditional == pull_request_jobs
-        ), "ci-aggregate.sh fails a skipped job that is not in PULL_REQUEST_JOBS"
+        assert conditional == pull_request_jobs, (
+            "ci-aggregate.sh fails a skipped job that is not in PULL_REQUEST_JOBS"
+        )
 
 
 @pytest.mark.parametrize("package", ["opal-common", "opal-client", "opal-server"])

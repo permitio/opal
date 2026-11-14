@@ -160,7 +160,7 @@ def _bounded_clone_wait() -> float:
 
     try:
         wait = float(opal_server_config.SCOPES_POLICY_CLONE_WAIT_SECONDS)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         # Belt and braces, and NOT the load-bearing half: Confi parses the
         # environment once, when this module is imported, so
         # OPAL_SCOPES_POLICY_CLONE_WAIT_SECONDS=abc already fails the process
@@ -193,7 +193,7 @@ def _bounded_fresh_fetch_wait() -> float:
 
     try:
         wait = float(opal_server_config.SCOPES_POLICY_FRESH_FETCH_WAIT_SECONDS)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return 0.0
     if not math.isfinite(wait) or wait <= 0:
         return 0.0
@@ -235,7 +235,7 @@ def _bounded_branch_refresh_interval() -> float:
     """
     try:
         interval = float(opal_server_config.SCOPES_POLICY_BRANCH_REFRESH_INTERVAL)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return 0.0
     if not math.isfinite(interval) or interval <= 0:
         return 0.0
@@ -327,8 +327,7 @@ def _branch_refresh_failed(
             _branch_refresh_failed_claims.popitem(last=False)
     metrics.increment(_BRANCH_REFRESH_METRIC, tags={"outcome": "publish_failed"})
     logger.warning(
-        "Scope {scope_id} has no {missing}, and its sync could not be "
-        "requested: {exc}",
+        "Scope {scope_id} has no {missing}, and its sync could not be requested: {exc}",
         scope_id=scope_id,
         missing=_MISSING[key[0]],
         exc=redact_url_in_text(repr(exc)),
@@ -1642,8 +1641,7 @@ def init_scope_router(
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=(
-                    f"Policy clone for scope {scope_id} is being created, "
-                    "retry shortly"
+                    f"Policy clone for scope {scope_id} is being created, retry shortly"
                 ),
                 headers={"Retry-After": _RETRY_AFTER_CLONE_IN_PROGRESS},
             )

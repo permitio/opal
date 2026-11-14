@@ -140,7 +140,7 @@ async def _time_limit(seconds: float, failure: str) -> AsyncIterator[None]:
     try:
         async with asyncio.timeout(seconds):
             yield
-    except (TimeoutError, RedisTimeoutError):
+    except TimeoutError, RedisTimeoutError:
         raise RedisTimeoutError(f"{failure} within {seconds:g} s") from None
     except RedisConnectionError as error:
         if isinstance(error.__context__, ssl.SSLError):

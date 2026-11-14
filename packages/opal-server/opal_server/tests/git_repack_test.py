@@ -205,9 +205,9 @@ def test_repack_keeps_a_packed_object_no_ref_names_yet(tmp_path):
     _repack_clone(clone_path, timeout=60)
 
     assert _count_pack_files(clone_path) == 1
-    assert (
-        _git(clone_path, "cat-file", "-t", landing, check=False).returncode == 0
-    ), "the repack deleted an object a landing fetch is about to point a ref at"
+    assert _git(clone_path, "cat-file", "-t", landing, check=False).returncode == 0, (
+        "the repack deleted an object a landing fetch is about to point a ref at"
+    )
     _git(clone_path, "update-ref", "refs/heads/landed", landing)
     _git(clone_path, "fsck", "--no-progress")
 
@@ -485,9 +485,9 @@ def test_a_sigkill_stop_returns_once_nothing_of_the_group_holds_its_lock(tmp_pat
             stopped = git_fetcher._stop_repack(proc, 0.0)
             os.close(watching)
         assert stopped is True
-        assert _free_once_a_stop_returns(
-            lambda: _lock_is_free(lock_dir)
-        ), f"stop {i}: the lock is still held"
+        assert _free_once_a_stop_returns(lambda: _lock_is_free(lock_dir)), (
+            f"stop {i}: the lock is still held"
+        )
 
 
 def test_leftovers_of_a_dead_repack_are_removed_before_git_runs(tmp_path, monkeypatch):
@@ -1391,9 +1391,9 @@ async def test_sync_repacks_the_clone_once_its_packs_reach_the_limit(
     assert _count_pack_files(scope.clone_path) == 1
     # PDPs heard about the new commit before the repack started.
     assert scope.notified[-1][1:] == (tip, _LIMIT)
-    assert (
-        path not in GitPolicyFetcher.repos
-    ), "the cached handle was kept, holding the deleted packs open"
+    assert path not in GitPolicyFetcher.repos, (
+        "the cached handle was kept, holding the deleted packs open"
+    )
     assert freed == [path], "the cached handle was dropped but not free()'d"
     assert _repack_outcomes(emitted) == ["ok"]
     [(seconds, tags)] = _repack_seconds(emitted)
@@ -1676,9 +1676,9 @@ async def test_failed_repack_still_completes_the_sync_and_waits_out_an_hour(
     git_fetcher._repack_failed_at.update(saved)
 
     # Once the hour is up it is tried again.
-    git_fetcher._repack_failed_at[
-        scope.source_id
-    ] -= git_fetcher._REPACK_FAILURE_COOLDOWN_SECONDS
+    git_fetcher._repack_failed_at[scope.source_id] -= (
+        git_fetcher._REPACK_FAILURE_COOLDOWN_SECONDS
+    )
     # The marker counts from the start of the repack, for the cooldown plus
     # as long as that repack could have run.
     expired = time.time() - (
@@ -3012,9 +3012,9 @@ def test_index_seen_without_its_pack_for_a_minute_is_swept_with_companions(tmp_p
     assert "pack-old1.idx" in os.listdir(pack)
 
     path = os.fspath(pack / "pack-old1.idx")
-    git_fetcher._orphan_index_first_seen[
-        path
-    ] -= git_fetcher._ORPHAN_INDEX_MIN_AGE_SECONDS
+    git_fetcher._orphan_index_first_seen[path] -= (
+        git_fetcher._ORPHAN_INDEX_MIN_AGE_SECONDS
+    )
     git_fetcher._remove_repack_leftovers(pack, "test")
 
     assert sorted(os.listdir(pack)) == ["pack-live.idx", "pack-live.pack"]

@@ -413,7 +413,7 @@ def kill_grace_seconds() -> float:
     validate_git_cli_settings refuses at startup)."""
     try:
         grace = float(opal_server_config.SCOPES_GIT_CLI_KILL_GRACE)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return _DEFAULT_KILL_GRACE_SECONDS
     if not math.isfinite(grace) or grace < 0:
         return _DEFAULT_KILL_GRACE_SECONDS
@@ -528,7 +528,7 @@ def validate_git_cli_settings() -> None:
     grace = opal_server_config.SCOPES_GIT_CLI_KILL_GRACE
     try:
         valid_grace = math.isfinite(float(grace)) and float(grace) >= 0
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         valid_grace = False
     if not valid_grace:
         raise ValueError(
@@ -687,7 +687,7 @@ def _timeout_or_none(timeout: float) -> Optional[float]:
     finite, as run_in_git_executor reads it."""
     try:
         timeout = float(timeout)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     return timeout if math.isfinite(timeout) and timeout > 0 else None
 
@@ -963,7 +963,7 @@ def remove_dead_op_leftovers(repo_path: Path) -> bool:
     complete = True
     try:
         has_git_dir = stat.S_ISDIR(os.stat(git_dir).st_mode)
-    except (FileNotFoundError, NotADirectoryError):
+    except FileNotFoundError, NotADirectoryError:
         has_git_dir = False
     except OSError as e:
         logger.warning("Could not look at {path}: {err!r}", path=git_dir, err=e)
@@ -2082,7 +2082,7 @@ def _safe_directories() -> List[str]:
     ):
         try:
             found += open_config().get_multivar("safe.directory")
-        except (OSError, pygit2.GitError):
+        except OSError, pygit2.GitError:
             continue
     return found
 
@@ -2272,7 +2272,7 @@ def remove_dead_key_dirs() -> None:
                 continue
             try:
                 fd = _lock_key_dir(path)
-            except (BlockingIOError, FileNotFoundError):
+            except BlockingIOError, FileNotFoundError:
                 continue  # an op under way holds it, or it is gone meanwhile
             except OSError as e:
                 logger.warning(
@@ -2352,7 +2352,7 @@ def live_members(pgid: int) -> bool:
         try:
             with open(f"/proc/{name}/stat", encoding="utf-8", errors="replace") as f:
                 fields = f.read().rpartition(")")[2].split()
-        except (FileNotFoundError, ProcessLookupError):
+        except FileNotFoundError, ProcessLookupError:
             continue  # gone meanwhile
         except PermissionError:
             continue  # another user's (/proc's hidepid=1); git's are this one's
@@ -2387,7 +2387,7 @@ class _PipeReader:
         assert self._fd is not None
         try:
             chunk = os.read(self._fd, 65536)
-        except (BlockingIOError, InterruptedError):
+        except BlockingIOError, InterruptedError:
             return
         except OSError as e:
             logger.warning("Could not read from the sh git runs under: {err!r}", err=e)
@@ -2523,7 +2523,7 @@ class _Group:
         (it was killed first)."""
         try:
             return int(self._status.done.result().strip())
-        except (asyncio.CancelledError, Exception):
+        except asyncio.CancelledError, Exception:
             return None
 
     def stderr_tail(self, redact: Callable[[str], str]) -> str:
@@ -2532,7 +2532,7 @@ class _Group:
         of a host key it recorded."""
         try:
             raw = self._stderr.done.result()
-        except (asyncio.CancelledError, Exception):
+        except asyncio.CancelledError, Exception:
             return ""
         text = redact(raw.decode("utf-8", "replace"))
         if self._stderr.trimmed:

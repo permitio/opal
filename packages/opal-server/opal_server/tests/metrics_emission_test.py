@@ -5,6 +5,7 @@ regression is silent in production: the metric keeps flowing, it just stops
 meaning what the monitor built on it assumes. Each test names the wrong
 reading it prevents.
 """
+
 import asyncio
 
 import pytest

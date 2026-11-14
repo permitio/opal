@@ -58,8 +58,9 @@ class MasterLogs:
     def streams(self):
         """configure_logs() binds sys.stderr/stdout when it runs; pytest swaps
         them per test phase, so redirect only around the configuring call."""
-        with contextlib.redirect_stderr(self.stream), contextlib.redirect_stdout(
-            self.stream
+        with (
+            contextlib.redirect_stderr(self.stream),
+            contextlib.redirect_stdout(self.stream),
         ):
             yield
 

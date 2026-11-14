@@ -217,7 +217,7 @@ def redact_sensitive_text(text: str, url: str = "") -> str:
 
 
 def is_http_error_response(
-    response: Union[aiohttp.ClientResponse, httpx.Response]
+    response: Union[aiohttp.ClientResponse, httpx.Response],
 ) -> bool:
     """HTTP 400 and above are considered error responses."""
     status: int = (

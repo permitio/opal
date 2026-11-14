@@ -10,6 +10,7 @@ asserted — scopes clone lazily, so a just-created scope legitimately has
 no dir yet. Only the orphan direction (dir with no live scope) signals a
 leak.
 """
+
 import hashlib
 from typing import Optional
 

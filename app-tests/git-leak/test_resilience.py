@@ -147,9 +147,9 @@ def test_server_recovers_after_postgres_bounce(opal_multiworker, repo_count):
     post_bounce_repo, during_bounce_repo = list_seeded_repos(2)
 
     before = worker_pids()
-    assert (
-        len(before) == 2
-    ), f"expected 2 gunicorn workers for this test, got {sorted(before)}"
+    assert len(before) == 2, (
+        f"expected 2 gunicorn workers for this test, got {sorted(before)}"
+    )
     # baseline reader (re)connect count — assertion (b) requires it to increase
     before_connects = broadcaster_connect_count()
 
@@ -173,7 +173,7 @@ def test_server_recovers_after_postgres_bounce(opal_multiworker, repo_count):
             opal.wait_healthy(timeout=5)
             recovered = True
             break
-        except (requests.RequestException, RuntimeError):
+        except requests.RequestException, RuntimeError:
             # RequestException: HTTP not back yet; RuntimeError: wait_healthy timed out
             time.sleep(2)
     assert recovered, "server did not recover HTTP within 90s of a postgres bounce"

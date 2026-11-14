@@ -3,6 +3,7 @@
 Both are CHARACTERIZATION tests — they pin today's behavior. If one fails,
 the behavior changed: decide deliberately, don't just update the assert.
 """
+
 import pytest
 from helpers import GiteaAdmin, RepoMutator, gitea_repo_url, wait_until
 
@@ -24,9 +25,11 @@ def test_force_push_rewrite_recovers(opal, gitea_admin, tmp_path):
         opal.refresh_all()
 
         assert wait_until(
-            lambda: opal.get_scope_policy("fp").status_code == 200
-            and opal.get_scope_policy("fp").json().get("hash")
-            != old_bundle.get("hash"),
+            lambda: (
+                opal.get_scope_policy("fp").status_code == 200
+                and opal.get_scope_policy("fp").json().get("hash")
+                != old_bundle.get("hash")
+            ),
             timeout=300,
         ), "rewritten head never served after refresh"
     finally:

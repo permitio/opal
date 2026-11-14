@@ -144,13 +144,15 @@ class OpalServerConfig(Confi):
     )
 
     AUTH_PRIVATE_KEY = confi.delay(
-        lambda AUTH_PRIVATE_KEY_FORMAT=None, AUTH_PRIVATE_KEY_PASSPHRASE="": confi.private_key(
-            "AUTH_PRIVATE_KEY",
-            default=None,
-            key_format=AUTH_PRIVATE_KEY_FORMAT,
-            passphrase=AUTH_PRIVATE_KEY_PASSPHRASE,
-            description="The private key for authentication",
-            sensitive=True,
+        lambda AUTH_PRIVATE_KEY_FORMAT=None, AUTH_PRIVATE_KEY_PASSPHRASE="": (
+            confi.private_key(
+                "AUTH_PRIVATE_KEY",
+                default=None,
+                key_format=AUTH_PRIVATE_KEY_FORMAT,
+                passphrase=AUTH_PRIVATE_KEY_PASSPHRASE,
+                description="The private key for authentication",
+                sensitive=True,
+            )
         )
     )
 

@@ -2,6 +2,7 @@
 
 See docs/superpowers/specs/2026-07-13-scope-fetcher-lifecycle-tests-design.md.
 """
+
 import time
 
 import pytest
@@ -30,9 +31,9 @@ def test_delete_recreate_storm(opal, repo_count):
             lambda: opal.get_scope_policy("storm").status_code == 200, timeout=300
         ), f"round {i}: recreated scope never served"
         opal.delete_scope("storm")
-    assert wait_until(
-        lambda: opal.stats(samples=1)["repo_locks"] == 0, timeout=60
-    ), f"caches did not drain after the storm: {opal.stats()}"
+    assert wait_until(lambda: opal.stats(samples=1)["repo_locks"] == 0, timeout=60), (
+        f"caches did not drain after the storm: {opal.stats()}"
+    )
 
 
 @pytest.mark.timeout(1200)
@@ -83,13 +84,13 @@ def test_randomized_churn_holds_invariants(opal, repo_count):
                 live.pop(sid_)
         opal.delete_scope(f"ghost-{round_no}")  # delete-missing stays a 204 no-op
         drained = wait_until(
-            lambda: opal.stats(samples=1)["repo_locks"]
-            <= len({r for r in live.values()}),
+            lambda: (
+                opal.stats(samples=1)["repo_locks"] <= len({r for r in live.values()})
+            ),
             timeout=120,
         )
         assert drained, (
-            f"round {round_no}: locks exceed live sources (seed {seed}): "
-            f"{opal.stats()}"
+            f"round {round_no}: locks exceed live sources (seed {seed}): {opal.stats()}"
         )
 
 
@@ -118,9 +119,9 @@ def test_delete_during_hung_fetch_no_crash(opal):
             opal.delete_scope("hung-nc")
         except _requests.RequestException:
             pass  # a slow/blocked DELETE is the OTHER test's concern
-        assert (
-            worker_pids() == pids
-        ), "worker crashed/respawned during delete-vs-hung-fetch"
+        assert worker_pids() == pids, (
+            "worker crashed/respawned during delete-vs-hung-fetch"
+        )
     finally:
         opal.hard_reset()
 
@@ -141,9 +142,9 @@ def test_delete_during_hung_fetch_returns_bounded(opal):
     try:
         start = time.time()
         resp = _requests.delete(f"{opal.base_url}/scopes/hung-b", timeout=90)
-        assert (
-            resp.status_code in (200, 204) and time.time() - start < 90
-        ), "DELETE of a hung-fetch scope did not return in bounded time"
+        assert resp.status_code in (200, 204) and time.time() - start < 90, (
+            "DELETE of a hung-fetch scope did not return in bounded time"
+        )
     finally:
         opal.hard_reset()
 
@@ -289,9 +290,9 @@ def test_delete_reclaims_clone_when_the_purge_broadcast_is_lost(
     for i, repo in enumerate(list_seeded_repos(n)):
         opal.put_scope(f"lost-{i}", gitea_repo_url(repo))
 
-    assert wait_until(
-        lambda: len(clone_dirs() - baseline) >= n, timeout=600
-    ), f"clones never appeared on disk: {clone_dirs() - baseline}"
+    assert wait_until(lambda: len(clone_dirs() - baseline) >= n, timeout=600), (
+        f"clones never appeared on disk: {clone_dirs() - baseline}"
+    )
     ours = clone_dirs() - baseline
 
     def _delete_during_the_outage():

@@ -75,6 +75,7 @@ else does):
 All three are the orphan sweep's. The memory purge is unaffected by them: it is
 authorized by the leader's confirmation and is self-healing in both directions.
 """
+
 import asyncio
 from pathlib import Path
 from typing import Any, Optional
@@ -163,7 +164,7 @@ async def handle_purge_message(subscription, data: Any) -> None:
     """Every-worker subscriber for SCOPES_PURGE_CHANNEL."""
     try:
         cmd = ScopePurgeCommand(**data)
-    except (ValidationError, TypeError):
+    except ValidationError, TypeError:
         logger.warning("Ignoring malformed scope purge message: {data}", data=data)
         return
     if not cmd.confirmed:
@@ -273,13 +274,13 @@ class LeaderScopePurger:
             # (e.g. the confirmation publish hitting a broadcaster error)
             # surfaces only as asyncio's unretrieved-exception noise.
             logger.exception(
-                f"Background purge of source {cmd.source_id} " f"({cmd.reason}) failed"
+                f"Background purge of source {cmd.source_id} ({cmd.reason}) failed"
             )
 
     async def handle(self, subscription, data: Any):
         try:
             cmd = ScopePurgeCommand(**data)
-        except (ValidationError, TypeError):
+        except ValidationError, TypeError:
             # The worker-level handler already logged the malformed payload.
             return None
         if cmd.confirmed:

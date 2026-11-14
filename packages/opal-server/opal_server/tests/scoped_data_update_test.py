@@ -116,10 +116,10 @@ def test_scoped_data_update_entry_topics_match_the_scoped_client(tmp_path, monke
     assert len(pubsub.published) == 1
     channel_topics, payload = pubsub.published[0]
 
-    assert (
-        set(channel_topics) == client_data_topics
-    ), f"channel {channel_topics!r} is not the scoped client subscription"
+    assert set(channel_topics) == client_data_topics, (
+        f"channel {channel_topics!r} is not the scoped client subscription"
+    )
     entry_topics = set(payload["entries"][0]["topics"])
-    assert not entry_topics.isdisjoint(
-        client_data_topics
-    ), f"entry topics {entry_topics!r} would be skipped by the scoped client"
+    assert not entry_topics.isdisjoint(client_data_topics), (
+        f"entry topics {entry_topics!r} would be skipped by the scoped client"
+    )

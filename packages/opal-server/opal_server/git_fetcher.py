@@ -318,7 +318,7 @@ class _DaemonThreadPoolExecutor(ThreadPoolExecutor):
         try:
             if len(inspect.signature(worker).parameters) != 3:
                 return self._stdlib_adjust_thread_count()
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return self._stdlib_adjust_thread_count()
         # If idle threads are available, don't spin up new ones.
         if self._idle_semaphore.acquire(timeout=0):
@@ -530,7 +530,7 @@ def clone_says_it_landed(git_dir: Path) -> bool:
     try:
         config = pygit2.Config(str(git_dir / "config"))
         return _CLONED_KEY in config and config.get_bool(_CLONED_KEY)
-    except (OSError, pygit2.GitError):
+    except OSError, pygit2.GitError:
         return False
 
 
@@ -650,7 +650,7 @@ def _finite_positive_or_zero(value) -> float:
     """
     try:
         f = float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return 0.0
     if not math.isfinite(f) or f <= 0:
         return 0.0
@@ -3117,7 +3117,7 @@ def _bounded_fresh_within(seconds: object) -> Optional[float]:
     the sync of a client with no policy)."""
     try:
         value = float(seconds)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     if not math.isfinite(value) or value <= 0:
         return None
@@ -3198,7 +3198,7 @@ def remove_stale_fetch_marks(
         try:
             if not stat.S_ISDIR(os.lstat(directory).st_mode):
                 return 0
-        except (FileNotFoundError, NotADirectoryError):
+        except FileNotFoundError, NotADirectoryError:
             return 0
     tracked = {_fetch_mark_name(branch) for branch in branches}
     with os.scandir(marks) as entries:
@@ -3521,7 +3521,7 @@ class RepoInterface:
         try:
             repo.lookup_reference(f"refs/remotes/{remote}/{branch}")
             return True
-        except (KeyError, pygit2.InvalidSpecError, ValueError):
+        except KeyError, pygit2.InvalidSpecError, ValueError:
             # Nor one that cannot be a ref (an empty name, ``x~1``, a name
             # too long for libgit2: ValueError): no fetch brings it, so its
             # scope reports a missing branch.
@@ -3558,7 +3558,7 @@ class RepoInterface:
     def get_commit_hash(repo: Repository, branch: str, remote: str) -> Optional[str]:
         try:
             return str(RepoInterface.remote_branch_commit(repo, branch, remote).id)
-        except (pygit2.GitError, KeyError, ValueError):
+        except pygit2.GitError, KeyError, ValueError:
             # ValueError: a branch that cannot be a ref, as for
             # has_remote_branch: its scope reports a missing branch.
             return None
@@ -3726,8 +3726,7 @@ class GitPolicyFetcher(PolicyFetcher):
             else logger.debug
         )
         log(
-            "Backing off {url} for {delay:.0f}s after {n} consecutive "
-            "failures: {err}",
+            "Backing off {url} for {delay:.0f}s after {n} consecutive failures: {err}",
             url=redact_url(self._source.url),
             delay=delay,
             n=n,
@@ -4463,8 +4462,7 @@ class GitPolicyFetcher(PolicyFetcher):
                             # self-heals via the clone below (or next cycle).
                             removed = True
                             logger.warning(
-                                f"Failed to remove clone dir "
-                                f"{self._repo_path}: {e!r}"
+                                f"Failed to remove clone dir {self._repo_path}: {e!r}"
                             )
                         if not removed:
                             self._tried_in_this_pass("clone")
@@ -4849,8 +4847,7 @@ class GitPolicyFetcher(PolicyFetcher):
             )
             GitPolicyFetcher._keep_due(due, lock)
             logger.debug(
-                "Not repacking scope clone {path} now: a git op holds the clone's "
-                "lock",
+                "Not repacking scope clone {path} now: a git op holds the clone's lock",
                 path=path,
             )
             return
@@ -5416,7 +5413,7 @@ class GitPolicyFetcher(PolicyFetcher):
                     ref = probe.lookup_reference(
                         f"refs/remotes/{self._remote}/{self._source.branch}"
                     )
-                except (KeyError, pygit2.InvalidSpecError, ValueError):
+                except KeyError, pygit2.InvalidSpecError, ValueError:
                     # Branch not fetched yet — the fetch path handles that.
                     # Nor one that cannot be a ref (an empty name, ``x~1``, a
                     # name too long for libgit2: ValueError): raised, it
@@ -5504,7 +5501,7 @@ class GitPolicyFetcher(PolicyFetcher):
                 return False  # hinted commit was found, no need to fetch
             # InvalidSpecError: a hint that is no revision at all, taken for
             # one the clone does not have.
-            except (KeyError, pygit2.InvalidSpecError):
+            except KeyError, pygit2.InvalidSpecError:
                 logger.info(
                     "Hinted commit hash was not found in local clone, re-fetching the remote"
                 )
@@ -5712,7 +5709,7 @@ class GitPolicyFetcher(PolicyFetcher):
                             directories.append(Path(entry.path))
                         elif not entry.name.endswith(".lock"):
                             return True
-            except (FileNotFoundError, NotADirectoryError):
+            except FileNotFoundError, NotADirectoryError:
                 pass
         needle = f" refs/remotes/{self._remote}/"
         try:

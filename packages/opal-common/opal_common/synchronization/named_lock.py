@@ -85,7 +85,7 @@ class NamedLock:
         # try to acquire the lock, returns immediately
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except (IOError, OSError):
+        except IOError, OSError:
             os.close(fd)
         else:
             self._lock_file_fd = fd

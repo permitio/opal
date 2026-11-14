@@ -540,9 +540,9 @@ def test_after_fork_child_reset_reinits_held_lock_without_deadlock(
             try:
                 worker.start()
                 assert done.wait(2), "child reset deadlocked on the inherited-held lock"
-                assert gf._git_busy_lock.acquire(
-                    timeout=1
-                ), "lock still held after child reset"
+                assert gf._git_busy_lock.acquire(timeout=1), (
+                    "lock still held after child reset"
+                )
                 gf._git_busy_lock.release()
                 assert git_op_in_flight("stale-child-sid") is False
                 stand_ins.assert_reset()

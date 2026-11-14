@@ -3,6 +3,7 @@
 Used only by the off-by-default /internal stats endpoint so tests can
 observe the cache growth that the memory-leak fix (PR2) eliminates.
 """
+
 import os
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -17,7 +18,7 @@ def _read_rss_kb() -> int:
         for line in Path("/proc/self/status").read_text().splitlines():
             if line.startswith("VmRSS:"):
                 return int(line.split()[1])
-    except (OSError, ValueError, IndexError):
+    except OSError, ValueError, IndexError:
         return 0
     return 0
 

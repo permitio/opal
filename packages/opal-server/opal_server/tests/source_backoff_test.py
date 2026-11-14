@@ -9,6 +9,7 @@ source re-attempted it too (one repo with ~56 scopes accounted for 2,410 of
 them). Each test below names, in its docstring, the single-line mutation it
 catches; every one of them was run against the implementation.
 """
+
 import asyncio
 import datetime
 import math
@@ -271,9 +272,7 @@ async def test_a_source_failing_for_days_does_not_overflow(tmp_path, monkeypatch
     assert entry.consecutive_failures == 2001
     delay = entry.next_attempt_at - before
     assert math.isfinite(delay)
-    assert delay == pytest.approx(
-        _BASE * 2.0**64, rel=1e-6
-    )  # clamped, not overflowed
+    assert delay == pytest.approx(_BASE * 2.0**64, rel=1e-6)  # clamped, not overflowed
 
 
 @pytest.mark.asyncio
@@ -341,9 +340,9 @@ async def test_the_skip_happens_before_the_source_lock_is_taken(tmp_path, monkey
 
     await fetcher.fetch_and_notify_on_changes(honor_backoff=True)
 
-    assert (
-        GitPolicyFetcher.repo_locks == {}
-    ), "lock_source was entered for a source that is in backoff"
+    assert GitPolicyFetcher.repo_locks == {}, (
+        "lock_source was entered for a source that is in backoff"
+    )
 
 
 @pytest.mark.asyncio
@@ -632,9 +631,9 @@ def test_reset_caches_keeps_the_backoff(tmp_path):
     GitPolicyFetcher.reset_caches()
 
     assert "src" in GitPolicyFetcher.source_backoff
-    assert (
-        GitPolicyFetcher.repos_last_fetched == {}
-    ), "the other caches must still clear"
+    assert GitPolicyFetcher.repos_last_fetched == {}, (
+        "the other caches must still clear"
+    )
 
 
 def test_a_purged_source_forgets_its_backoff(tmp_path):

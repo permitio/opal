@@ -2,6 +2,7 @@
 time limit per try, and tries again until Redis answers: a Redis that is down
 or hangs when a worker becomes leader delays its first sync, and never ends or
 wedges its leadership."""
+
 import asyncio
 
 import pytest

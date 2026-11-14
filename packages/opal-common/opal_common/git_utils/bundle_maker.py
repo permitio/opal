@@ -125,7 +125,7 @@ class BundleMaker:
             manifest_file_path = dir.path / manifest_file_name
             _branch.append(str(manifest_file_path))
 
-            logger.debug(f"Compiling manifest file { ' -> '.join(_branch)}")
+            logger.debug(f"Compiling manifest file {' -> '.join(_branch)}")
             try:
                 manifest_file = viewer.get_file(dir.path / manifest_file_name)
                 if manifest_file is None:
@@ -262,8 +262,8 @@ class BundleMaker:
         manifest = []
 
         with CommitViewer(commit) as viewer:
-            filter = (
-                lambda f: self._has_extension(f)
+            filter = lambda f: (
+                self._has_extension(f)
                 and self._is_under_directories(f)
                 and self._find_ignore_match(f.path) == None
             )

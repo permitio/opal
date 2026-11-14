@@ -307,9 +307,9 @@ async def test_already_fetched_line_is_debug_and_missing_branch_line_stays_info(
     source = _source()
     fetcher = GitPolicyFetcher(tmp_path, SCOPE_ID, source)
     req_time = datetime.datetime.now()
-    GitPolicyFetcher.repos_last_fetched[
-        GitPolicyFetcher.source_id(source)
-    ] = req_time + datetime.timedelta(seconds=1)
+    GitPolicyFetcher.repos_last_fetched[GitPolicyFetcher.source_id(source)] = (
+        req_time + datetime.timedelta(seconds=1)
+    )
     # Empty: no remote-tracking branch, so the target-branch check fetches.
     repo = pygit2.init_repository(str(tmp_path / "clone"))
 
@@ -365,9 +365,9 @@ async def test_a_coalesced_sync_of_a_missing_branch(
     missing.branch = "no-such-branch"
     fetcher = GitPolicyFetcher(tmp_path / "opal", SCOPE_ID, missing)
     asked = datetime.datetime.now()
-    GitPolicyFetcher.repos_last_fetched[
-        fetcher._source_id
-    ] = asked + datetime.timedelta(seconds=1)
+    GitPolicyFetcher.repos_last_fetched[fetcher._source_id] = (
+        asked + datetime.timedelta(seconds=1)
+    )
 
     with capture_records() as logs:
         await fetcher.fetch_and_notify_on_changes(

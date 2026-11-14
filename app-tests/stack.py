@@ -136,9 +136,9 @@ def create_auth(home: Path, server_image: str) -> OpalAuth:
     try:
         published = run(["docker", "port", name, "7002"]).splitlines()[0]
         url = f"http://localhost:{published.rpartition(':')[2]}"
-        assert wait_until(
-            lambda: _answers(url), timeout=60
-        ), f"the keygen server ({server_image}) did not answer in 60 s"
+        assert wait_until(lambda: _answers(url), timeout=60), (
+            f"the keygen server ({server_image}) did not answer in 60 s"
+        )
         return replace(
             auth,
             client_token=_mint_token(url, auth.master_token, "client"),
@@ -162,9 +162,9 @@ def _mint_token(url: str, master_token: str, token_type: str) -> str:
         json={"type": token_type},
         timeout=30,
     )
-    assert (
-        response.ok
-    ), f"POST /token ({token_type}): {response.status_code} {response.text}"
+    assert response.ok, (
+        f"POST /token ({token_type}): {response.status_code} {response.text}"
+    )
     return response.json()["token"]
 
 
@@ -256,9 +256,9 @@ class Fleet:
             missing[:] = self.clients_missing(text)
             return not missing
 
-        assert wait_until(
-            everyone_logged, timeout
-        ), f"client(s) {missing} did not log {text!r} in {timeout} s"
+        assert wait_until(everyone_logged, timeout), (
+            f"client(s) {missing} did not log {text!r} in {timeout} s"
+        )
 
     def assert_not_logged(self, service: str, text: str) -> None:
         """Fail if any replica of ``service`` logged ``text``."""
@@ -285,9 +285,9 @@ class Fleet:
     def wait_for_servers(self, text: str, since: int = 0, timeout: float = 30) -> None:
         """Wait until the servers have logged more lines with ``text`` than
         ``since``."""
-        assert wait_until(
-            lambda: self.server_lines(text) > since, timeout
-        ), f"no server logged {text!r} in {timeout} s"
+        assert wait_until(lambda: self.server_lines(text) > since, timeout), (
+            f"no server logged {text!r} in {timeout} s"
+        )
 
     def worker_counts(self, *texts: str) -> Counter[tuple[int, int]]:
         """How many lines with any of ``texts`` each server worker logged, by
@@ -367,9 +367,9 @@ class Fleet:
         )
 
     def wait_for_broadcaster(self) -> None:
-        assert wait_until(
-            self.broadcaster_accepts_connections, timeout=30
-        ), "broadcast_channel did not accept connections in 30 s"
+        assert wait_until(self.broadcaster_accepts_connections, timeout=30), (
+            "broadcast_channel did not accept connections in 30 s"
+        )
 
     def wait_for_resync(self, since: Counter[tuple[int, int]]) -> None:
         """Wait until the fleet is back on the broadcast channel after a gap.
@@ -387,9 +387,9 @@ class Fleet:
             now = self._client_connections()
             if now == connections:
                 return
-            assert (
-                time.monotonic() < deadline
-            ), "clients kept reconnecting for 60 s after the resync"
+            assert time.monotonic() < deadline, (
+                "clients kept reconnecting for 60 s after the resync"
+            )
             connections = now
 
     def _client_connections(self) -> list[int]:
@@ -404,8 +404,7 @@ def git_environment(home: Path) -> dict[str, str]:
     stores no credential."""
     config = home / "gitconfig"
     config.write_text(
-        "[user]\n\tname = OPAL E2E\n\temail = e2e@opal.test\n"
-        "[credential]\n\thelper =\n"
+        "[user]\n\tname = OPAL E2E\n\temail = e2e@opal.test\n[credential]\n\thelper =\n"
     )
     return {
         **os.environ,
@@ -494,9 +493,9 @@ class Gitea:
             json={"name": self.REPO, "private": False, "auto_init": False},
             timeout=30,
         )
-        assert (
-            response.status_code == 201
-        ), f"creating the Gitea repo: {response.status_code} {response.text}"
+        assert response.status_code == 201, (
+            f"creating the Gitea repo: {response.status_code} {response.text}"
+        )
         workdir = home / "repo"
         shutil.copytree(POLICY_FILES, workdir)
         port = self.url.rpartition(":")[2]

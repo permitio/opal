@@ -7,6 +7,7 @@ is what cancels every client websocket in production). The final test is a negat
 control: the stock EventBroadcaster reader DOES complete on the same disconnect,
 proving these tests actually catch the regression.
 """
+
 import asyncio
 import json
 from contextlib import asynccontextmanager, suppress
@@ -621,9 +622,9 @@ async def test_malformed_broadcast_log_hides_payload(message):
         await broadcaster._handle_broadcast_event(_Event(message))
 
     assert notifier.notified == []
-    assert any(
-        "Dropping malformed incoming broadcast" in line for line in logs.text
-    ), logs.text
+    assert any("Dropping malformed incoming broadcast" in line for line in logs.text), (
+        logs.text
+    )
     assert _FAKE_AUTH_HEADER not in logs.combined
 
 

@@ -7,6 +7,7 @@ poll-only, and honours the source backoff only when every request does, so a
 refresh-all that joins a periodic request still gets a full pass without
 backoff.
 """
+
 import asyncio
 import contextlib
 

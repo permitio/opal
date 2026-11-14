@@ -30,6 +30,6 @@ def test_a_scope_clone_is_the_backends_clone(opal):
     if fetch_backend() == "cli":
         assert entries == [".git"], f"not a git command-line clone: {entries}"
     else:
-        assert (
-            ".git" in entries and len(entries) > 1
-        ), f"not a libgit2 clone (no checkout): {entries}"
+        assert ".git" in entries and len(entries) > 1, (
+            f"not a libgit2 clone (no checkout): {entries}"
+        )

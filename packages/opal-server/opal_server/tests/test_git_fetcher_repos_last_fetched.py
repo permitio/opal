@@ -45,9 +45,9 @@ async def test_fetched_after_is_per_source(tmp_path):
     fetcher_y = _make_fetcher(tmp_path, "scope_y", "https://example.com/repo-y.git")
 
     now = datetime.datetime.now()
-    GitPolicyFetcher.repos_last_fetched[
-        fetcher_x._source_id
-    ] = now + datetime.timedelta(seconds=1)
+    GitPolicyFetcher.repos_last_fetched[fetcher_x._source_id] = (
+        now + datetime.timedelta(seconds=1)
+    )
 
     assert fetcher_x._fetched_after("main", now) is True
     assert fetcher_y._fetched_after("main", now) is None
@@ -77,9 +77,9 @@ async def test_force_fetch_not_downgraded_by_sibling_source(monkeypatch, tmp_pat
     fetcher_y = _make_fetcher(tmp_path, "scope_y", "https://example.com/repo-y.git")
 
     req_time = datetime.datetime.now()
-    GitPolicyFetcher.repos_last_fetched[
-        fetcher_x._source_id
-    ] = req_time + datetime.timedelta(seconds=1)
+    GitPolicyFetcher.repos_last_fetched[fetcher_x._source_id] = (
+        req_time + datetime.timedelta(seconds=1)
+    )
 
     monkeypatch.setattr(
         "opal_server.git_fetcher.RepoInterface.has_remote_branch",

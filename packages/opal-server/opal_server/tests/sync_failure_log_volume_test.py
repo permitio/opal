@@ -7,6 +7,7 @@ markers were gone; in prod the same mechanism made opal-server the largest log
 producer in the org. The rule now: ERROR names the scope, remote and reason
 without a traceback; the traceback is emitted at DEBUG only.
 """
+
 import asyncio
 from pathlib import Path
 
@@ -107,9 +108,9 @@ async def test_failed_sync_logs_one_error_line_without_a_traceback(
         assert "gitops-http401-0" in msg and "broken.invalid" in msg, msg
         assert "ValueError" in msg and "invalid credential type" in msg, msg
         # The traceback is NOT on the ERROR record...
-        assert (
-            r["exception"] is None
-        ), "ERROR record carries a traceback again — the log firehose is back"
+        assert r["exception"] is None, (
+            "ERROR record carries a traceback again — the log firehose is back"
+        )
     # ...it is available at DEBUG for anyone chasing that source.
     tb = _debug_tracebacks(captured_logs)
     assert len(tb) == 2 and all("gitops-http401-0" in r["message"] for r in tb), [

@@ -12,7 +12,7 @@ class Formatter:
             if len(parts) > 2:
                 content = f"{parts[0]}...{parts[-1]}"
         if len(content) > length:
-            content = f"{content[:length-3]}..."
+            content = f"{content[: length - 3]}..."
         record[field] = content
 
     def format(self, record):

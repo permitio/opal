@@ -216,7 +216,7 @@ def _score(value: object) -> float | None:
         return None
     try:
         number = float(str(value).strip())
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     return number if number > 0 else None
 

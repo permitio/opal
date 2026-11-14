@@ -4,6 +4,7 @@ A delete landing DURING a sync must not let the sync re-clone the dead
 scope's repo (bed gate: the delete-vs-sync exclusion in
 test_randomized_churn_holds_invariants is lifted once this holds).
 """
+
 import asyncio
 
 import pytest

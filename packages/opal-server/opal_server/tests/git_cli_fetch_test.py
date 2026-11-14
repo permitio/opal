@@ -622,7 +622,7 @@ async def test_a_bundle_request_during_a_cli_clone_is_held_until_the_clone_lands
         "#!/bin/sh\n"
         f'case " $* " in *" clone "*) : > \'{started}\'; '
         f"while [ ! -e '{gate}' ]; do sleep 0.05; done;; esac\n"
-        f'exec \'{shutil.which("git")}\' "$@"\n'
+        f"exec '{shutil.which('git')}' \"$@\"\n"
     )
     (shims / "git").chmod(0o755)
     monkeypatch.setenv("PATH", f"{shims}{os.pathsep}{os.environ['PATH']}")

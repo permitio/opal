@@ -147,7 +147,7 @@ def provenance_problems(
     try:
         vcs = slsa["runDetails"]["metadata"]["buildkit_metadata"]["vcs"]
         args = slsa["buildDefinition"]["externalParameters"]["request"]["args"]
-    except (KeyError, TypeError):
+    except KeyError, TypeError:
         return ["the provenance has no VCS source or build args"]
     if not isinstance(vcs, dict) or not isinstance(args, dict):
         return ["the provenance has no VCS source or build args"]

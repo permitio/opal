@@ -9,6 +9,7 @@ config reference, so a paraphrase there is a doc bug that no reviewer
 should have to catch by hand a third time. Either side may be the one
 edited; the other has to get the same text in the same commit.
 """
+
 import re
 from pathlib import Path
 

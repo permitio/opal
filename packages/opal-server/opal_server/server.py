@@ -233,9 +233,9 @@ class OpalServer:
         #     stale repo_locks entries for the life of the process.
         # So the "global" listening context is held whenever either is on and a
         # broadcaster exists (single-process deployments have nothing to read).
-        self.broadcast_listening_context: Optional[
-            EventBroadcasterContextManager
-        ] = None
+        self.broadcast_listening_context: Optional[EventBroadcasterContextManager] = (
+            None
+        )
         wants_reader_for_scopes = False
         if self.broadcaster_uri is not None:
             # Legacy EventBroadcaster (BROADCAST_RECONNECT_ENABLED=false): its
@@ -494,9 +494,7 @@ class OpalServer:
                     try:
                         await self.broadcast_listening_context.__aenter__()
                         self.health.backbone_subscribed = True
-                    except (
-                        Exception
-                    ) as exc:  # noqa: BLE001 — everything below must still run
+                    except Exception as exc:  # noqa: BLE001 — everything below must still run
                         # Belt and braces for the eager-connect case the isinstance
                         # gate above should already exclude: an unreadable backbone
                         # must not cost this worker its purge subscription, the
@@ -582,8 +580,9 @@ class OpalServer:
                 )
                 # The heartbeat starts with the lock, before load_scopes reads
                 # Redis: liveness never waits on Redis or git.
-                async with self.leadership_lock, running_leader_heartbeat(
-                    self.health.expects_scopes_leader
+                async with (
+                    self.leadership_lock,
+                    running_leader_heartbeat(self.health.expects_scopes_leader),
                 ):
                     # only one worker gets here, the others block. in case the leader worker
                     # is terminated, another one will obtain the lock and become leader.

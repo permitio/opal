@@ -19,7 +19,7 @@ confi = Confi(is_model=False)
 
 # parse a string value from env-var, or '.env' '.ini' files
 # MY_HERO will contain a string read from env, or the default - 'Son Goku'
-MY_HERO = confi.str("MY_HERO", 'Son Goku')
+MY_HERO = confi.str("MY_HERO", "Son Goku")
 
 # parse an int
 POWER_LEVEL = confi.int("POWER_LEVEL", 9001, description="The scouter power reading")
@@ -29,18 +29,15 @@ POWER_LEVEL = confi.int("POWER_LEVEL", 9001, description="The scouter power read
 
 # define model
 from pydantic import BaseModel
+
+
 class MyPydantic(BaseModel):
     entries: List[int] = Field(..., description="list of integers")
     name: str
+
+
 # parse the model from JSON passed to env-var (or default)
-JSON = confi.model(
-    "JSON",
-    MyPydantic,
-    {
-        "entries":[ 1,3,43,5,7],
-        "name": "Moses"
-    }
-)
+JSON = confi.model("JSON", MyPydantic, {"entries": [1, 3, 43, 5, 7], "name": "Moses"})
 ```
 ### Add prefix to env vars
 ```python
@@ -62,12 +59,14 @@ The values are only loaded when the class is initialized.
 ```python
 from confi import Confi, confi
 
+
 class MyModel(Confi):
     # parse values
-    MY_HERO = confi.str("MY_HERO", 'Son Goku')
+    MY_HERO = confi.str("MY_HERO", "Son Goku")
     POWER_LEVEL = confi.int("POWER_LEVEL", 9001)
     # mix in real consts
     MY_CONST = "Bulma!"
+
 
 # get the parsed values into an object
 # can also apply prefix here
@@ -81,15 +80,17 @@ Delayed values can be default-value strings, default-value functions, or whole c
 
 ```python
 class MyModel(Confi):
-    MY_HERO = confi.str("MY_HERO", 'Son Goku')
+    MY_HERO = confi.str("MY_HERO", "Son Goku")
     POWER_LEVEL = confi.int("POWER_LEVEL", 9001)
     # delay loaded default-value string
     SHOUT = confi.delay("{MY_HERO} is over {POWER_LEVEL}")
     # delay loaded default-value function
-    EVENTS = confi.list("EVENTS", confi.delay(lambda MY_HERO="", SHOUT="": [MY_HERO, SHOUT]) )
+    EVENTS = confi.list(
+        "EVENTS", confi.delay(lambda MY_HERO="", SHOUT="": [MY_HERO, SHOUT])
+    )
     # delay loaded whole entry
-    HAS_LONG_SHOUT = confi.delay(lambda SHOUT="":
-        confi.bool("HAS_LONG_SHOUT", len(SHOUT) > 12 )
+    HAS_LONG_SHOUT = confi.delay(
+        lambda SHOUT="": confi.bool("HAS_LONG_SHOUT", len(SHOUT) > 12)
     )
 ```
 ## Confi cli parsing

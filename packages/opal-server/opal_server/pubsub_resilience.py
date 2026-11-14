@@ -36,6 +36,7 @@ consistency mechanisms so a backbone gap does not silently desync instances:
 worker's client connections (staggered) to drive the resync. All of this is a
 stop-gap until the fixes land in the upstream libraries (see Phase 2 of the plan).
 """
+
 import asyncio
 import random
 import time

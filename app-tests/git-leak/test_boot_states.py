@@ -2,6 +2,7 @@
 
 The cold-empty start (S1) is covered by test_boot.py.
 """
+
 import os
 import time
 from contextlib import contextmanager
@@ -46,9 +47,9 @@ def test_warm_boot_reuses_clones(opal, repo_count):
             lambda i=i: opal.get_scope_policy(f"warm-{i}").status_code == 200,
             timeout=300,
         ), f"warm-{i} not served after warm restart"
-    assert (
-        _clone_log_count() == clones_before
-    ), "warm boot re-cloned instead of reusing the on-disk clones"
+    assert _clone_log_count() == clones_before, (
+        "warm boot re-cloned instead of reusing the on-disk clones"
+    )
 
 
 @pytest.mark.timeout(900)
@@ -186,9 +187,9 @@ def test_orphan_clone_dir_is_reclaimed(opal):
             "-c",
             f"mkdir -p /opal/git_sources/{fake_sid} && touch /opal/git_sources/{fake_sid}/junk",
         )
-        assert wait_until(
-            lambda: fake_sid not in clone_dirs(), timeout=60
-        ), "orphan clone dir never reclaimed by the orphan sweep"
+        assert wait_until(lambda: fake_sid not in clone_dirs(), timeout=60), (
+            "orphan clone dir never reclaimed by the orphan sweep"
+        )
         assert clone_dirs() >= live, "the sweep removed a live scope's clone"
         assert opal.get_scope_policy("orphan-live").status_code == 200
 

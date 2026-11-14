@@ -136,7 +136,7 @@ def test_bundle_maker_can_filter_on_directories(local_repo: Repo, helpers):
 
 
 def test_bundle_maker_detects_changes_in_source_files(
-    repo_with_diffs: Tuple[Repo, Commit, Commit]
+    repo_with_diffs: Tuple[Repo, Commit, Commit],
 ):
     """See that making changes to the repo results in different bundles."""
     repo, previous_head, new_head = repo_with_diffs

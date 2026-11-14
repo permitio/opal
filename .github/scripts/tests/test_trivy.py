@@ -250,9 +250,9 @@ def test_a_package_count_that_does_not_match_the_pins(trivy, packages):
         in result.stdout
     )
     assert last_line(result.stdout) == "trivy: DID NOT RUN"
-    assert (
-        not trivy.findings.exists()
-    ), "the findings file is written only when the scan counts"
+    assert not trivy.findings.exists(), (
+        "the findings file is written only when the scan counts"
+    )
 
 
 @pytest.mark.parametrize(

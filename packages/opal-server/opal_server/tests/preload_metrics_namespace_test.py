@@ -7,6 +7,7 @@ Observed after the 0.9.9-rc.2 staging rollout: ``opal_server.scopes.count`` /
 DogStatsD client, so its gauges went out bare and no dashboard/monitor built on
 the namespaced names could see the boot phase.
 """
+
 import datadog
 import opal_common.logger as opal_common_logger
 import pytest
@@ -61,9 +62,9 @@ def test_configure_server_metrics_is_fail_silent_when_disabled(
 ):
     monkeypatch.setattr(opal_common_config, "ENABLE_METRICS", False)
     metrics_setup.configure_server_metrics()
-    assert (
-        datadog.statsd.namespace is None
-    ), "disabled metrics must not touch the client"
+    assert datadog.statsd.namespace is None, (
+        "disabled metrics must not touch the client"
+    )
 
 
 def test_gauge_after_configure_is_namespaced_on_the_wire(monkeypatch, statsd_reset):

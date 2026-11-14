@@ -7,6 +7,7 @@ where it should have stopped git. The fetch metrics carry what the old
 FETCH_HEAD probe scripts measured, as gauges for monitors instead of a
 restart.
 """
+
 import asyncio
 import json
 import os
@@ -16,9 +17,8 @@ from pathlib import Path
 import pytest
 from opal_common.monitoring import metrics
 from opal_common.schemas.policy_source import GitPolicyScopeSource, NoAuthData
-from opal_server import git_cli
+from opal_server import git_cli, health
 from opal_server import git_fetcher as git_fetcher_module
-from opal_server import health
 from opal_server.config import opal_server_config
 from opal_server.git_fetcher import GitPolicyFetcher, cli_ops_past_bound, run_git_cli_op
 from opal_server.health import (

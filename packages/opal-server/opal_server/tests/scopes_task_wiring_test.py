@@ -2,6 +2,7 @@
 actually do — the periodic-polling timer, the fire-and-forget sync wrapper, the
 boot and refresh-all sync paths, and the leader purge subscription's separate
 subscriber id. Unit-pins them so a refactor can't silently drop one."""
+
 import asyncio
 
 import pytest
@@ -265,9 +266,9 @@ async def test_stop_does_not_unsubscribe_the_every_worker_purge_handler(
     await endpoint.publish(
         [opal_server_config.SCOPES_PURGE_CHANNEL], _purge_cmd(sid, True)
     )
-    assert (
-        cached_path not in GitPolicyFetcher.repos
-    ), "stop() also unsubscribed the every-worker purge handler"
+    assert cached_path not in GitPolicyFetcher.repos, (
+        "stop() also unsubscribed the every-worker purge handler"
+    )
 
 
 @pytest.mark.asyncio
@@ -334,9 +335,9 @@ async def test_stop_cancels_lock_holders_before_draining_purges(
 
     await asyncio.wait_for(t.stop(), timeout=2)
 
-    assert [
-        d for d in pubsub.published if d.get("confirmed")
-    ], "the drained purge never completed"
+    assert [d for d in pubsub.published if d.get("confirmed")], (
+        "the drained purge never completed"
+    )
 
 
 @pytest.mark.asyncio
@@ -614,9 +615,9 @@ async def test_stop_cancels_a_pass_holding_a_clone_lock_before_draining_purges(
 
     await asyncio.wait_for(t.stop(), timeout=2)
 
-    assert [
-        d for d in pubsub.published if d.get("confirmed")
-    ], "the drained purge never completed"
+    assert [d for d in pubsub.published if d.get("confirmed")], (
+        "the drained purge never completed"
+    )
 
 
 # --- The leader's sync pass after a broadcaster backbone gap. ---

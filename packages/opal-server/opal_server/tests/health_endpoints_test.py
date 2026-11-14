@@ -7,6 +7,7 @@ heartbeat; /healthz/started (startup) turns 200 once and stays there;
 scopes mode, the worker's own backbone subscription. None of them reads
 a git remote, Redis or the backbone.
 """
+
 import asyncio
 import dataclasses
 import json
@@ -20,9 +21,8 @@ from pathlib import Path
 import pytest
 from opal_common.config import opal_common_config
 from opal_common.schemas.policy_source import GitPolicyScopeSource, NoAuthData
-from opal_server import git_cli
+from opal_server import git_cli, health
 from opal_server import git_fetcher as git_fetcher_module
-from opal_server import health
 from opal_server import server as server_module
 from opal_server.config import opal_server_config
 from opal_server.git_fetcher import GitPolicyFetcher, cli_ops_past_bound

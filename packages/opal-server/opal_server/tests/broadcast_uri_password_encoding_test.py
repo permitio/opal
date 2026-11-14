@@ -12,6 +12,7 @@ so the code cannot un-break existing URIs; what it can do is tell an
 operator at startup when the password decodes to something no password
 holds, a control character, without warning about a correctly escaped one.
 """
+
 from urllib.parse import quote
 
 import pytest

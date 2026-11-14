@@ -4,6 +4,7 @@ libgit2 writes one pack file per fetch and never merges them, so without
 the repack a scope clone's objects/pack dir holds one pack per fetch that
 brought something, forever.
 """
+
 import os
 import re
 import time

@@ -5,6 +5,7 @@ these tests pin the route-side contract. Two PR2-era tests are kept verbatim
 at the bottom: the lock_source waiter-retry invariant and the stale-snapshot
 sync skip — both still hold unchanged.
 """
+
 import asyncio
 import pathlib
 
@@ -587,9 +588,9 @@ async def test_shutdown_drains_the_routers_scopes_service(tmp_path, monkeypatch)
     app = FastAPI()
     server._configure_api_routes(app)
 
-    assert (
-        captured["service"] is server._scopes_service
-    ), "the drained instance is not the one the router serves DELETE on"
+    assert captured["service"] is server._scopes_service, (
+        "the drained instance is not the one the router serves DELETE on"
+    )
 
     # a real pending floor task on that instance must be awaited by shutdown
     drained = []
@@ -636,9 +637,9 @@ async def test_floor_keeps_a_live_siblings_repo_lock_entry(tmp_path):
     await _drain_floor(svc)
 
     assert clone.exists(), "purged a clone a live sibling still shares"
-    assert (
-        sid in GitPolicyFetcher.repo_locks
-    ), "drained the lock entry of a source a live sibling is actively using"
+    assert sid in GitPolicyFetcher.repo_locks, (
+        "drained the lock entry of a source a live sibling is actively using"
+    )
 
 
 @pytest.mark.asyncio

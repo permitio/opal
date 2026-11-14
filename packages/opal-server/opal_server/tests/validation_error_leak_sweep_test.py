@@ -145,9 +145,9 @@ def test_route_still_reports_useful_validation_errors(app_name, method, path):
         pytest.skip(f"[{app_name}] {method} {path} did not reach body validation")
 
     detail = response.json().get("detail")
-    assert (
-        isinstance(detail, list) and detail
-    ), f"no error detail: {response.text[:200]}"
+    assert isinstance(detail, list) and detail, (
+        f"no error detail: {response.text[:200]}"
+    )
     for error in detail:
         assert {"loc", "msg", "type"} <= set(error), f"lost diagnostics: {error}"
         for unsafe in ("input", "ctx", "url"):

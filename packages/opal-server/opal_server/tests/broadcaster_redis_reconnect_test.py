@@ -7,6 +7,7 @@ close or reset, drop every session, reject a password, or leave a command
 unanswered. It serves TLS when given a server context, and records what a
 client that does not speak RESP sends.
 """
+
 import asyncio
 import datetime
 import ipaddress
@@ -202,7 +203,7 @@ class FakeRedis:
                     continue
                 writer.write(self._answer(session, command))
                 await writer.drain()
-        except (ConnectionError, asyncio.IncompleteReadError):
+        except ConnectionError, asyncio.IncompleteReadError:
             pass
         finally:
             self.sessions.remove(session)

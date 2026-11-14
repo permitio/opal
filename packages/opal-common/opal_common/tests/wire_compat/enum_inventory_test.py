@@ -312,7 +312,7 @@ def test_exclusions_still_exist():
             continue
         try:
             getattr(importlib.import_module(module_path), class_name)
-        except (ImportError, AttributeError):
+        except ImportError, AttributeError:
             missing.append(dotted)
 
     assert not missing, (

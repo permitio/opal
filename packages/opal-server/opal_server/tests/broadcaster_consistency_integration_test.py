@@ -8,6 +8,7 @@ which an update is published, **all instances converge to the same state** — v
 replay buffer (B) when possible, and via the resync hook (A) when delivery could not
 be guaranteed.
 """
+
 import asyncio
 
 import pytest
@@ -169,7 +170,7 @@ class Instance:
             self._reader.cancel()
             try:
                 await self._reader
-            except (asyncio.CancelledError, Exception):
+            except asyncio.CancelledError, Exception:
                 pass
 
 

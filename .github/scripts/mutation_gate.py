@@ -249,7 +249,7 @@ def mutants_of(path: str, source: str, lines: set[int]) -> list[Mutant]:
         tokens = list(
             tokenize.generate_tokens(io.StringIO(source, newline="").readline)
         )
-    except (tokenize.TokenError, SyntaxError):
+    except tokenize.TokenError, SyntaxError:
         return []
     found = []
     previous = None
@@ -308,7 +308,7 @@ def compiles(source: str) -> bool:
         warnings.simplefilter("ignore", SyntaxWarning)
         try:
             compile(source, "<mutant>", "exec")
-        except (SyntaxError, ValueError):
+        except SyntaxError, ValueError:
             return False
     return True
 

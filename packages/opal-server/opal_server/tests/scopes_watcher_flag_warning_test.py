@@ -7,6 +7,7 @@ registered 2160 scopes, stayed Ready and never cloned a thing (env B
 bring-up, 2026-08-18). The server now says so loudly at startup; it does
 not refuse to boot.
 """
+
 import pytest
 from opal_server import server as server_module
 from opal_server.config import opal_server_config

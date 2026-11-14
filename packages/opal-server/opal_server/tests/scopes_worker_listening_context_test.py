@@ -12,6 +12,7 @@ GitPolicyFetcher caches for the life of the process (staging, 2026-08-18: 5 of
   * SCOPES on AND STATISTICS on -> still exactly once (no double-enter);
   * no broadcaster (single process) -> no context at all.
 """
+
 import asyncio
 
 import pytest
@@ -197,7 +198,7 @@ async def _run_until_entered(server, ctx, monkeypatch, timeout=5.0):
         task.cancel()
         try:
             await task
-        except (asyncio.CancelledError, Exception):
+        except asyncio.CancelledError, Exception:
             pass
     return subscribed
 
@@ -238,17 +239,17 @@ async def test_scopes_worker_enters_the_listening_context_without_statistics(
 ):
     statistics(False)
     server = _build("postgres://localhost/test")
-    assert (
-        server.broadcast_listening_context is not None
-    ), "with SCOPES on and a broadcaster, every worker must hold the global listening context"
+    assert server.broadcast_listening_context is not None, (
+        "with SCOPES on and a broadcaster, every worker must hold the global listening context"
+    )
     ctx = _FakeListeningContext()
     server.broadcast_listening_context = ctx
 
     subscribed = await _run_until_entered(server, ctx, monkeypatch)
 
-    assert (
-        ctx.entered == 1
-    ), "client-less worker never started reading the backbone: fleet purges would not reach it"
+    assert ctx.entered == 1, (
+        "client-less worker never started reading the backbone: fleet purges would not reach it"
+    )
     assert subscribed, "purge handler subscription must still be registered"
 
 
@@ -265,17 +266,17 @@ async def test_scopes_and_statistics_enter_the_context_exactly_once(
 
     await _run_until_entered(server, ctx, monkeypatch)
 
-    assert (
-        ctx.entered == 1
-    ), "the context must be entered once even when both statistics and scopes want it"
+    assert ctx.entered == 1, (
+        "the context must be entered once even when both statistics and scopes want it"
+    )
 
 
 def test_no_broadcaster_means_no_listening_context(scopes_config, statistics):
     statistics(False)
     server = _build(None)
-    assert (
-        server.broadcast_listening_context is None
-    ), "single-process deployment: nothing to read from"
+    assert server.broadcast_listening_context is None, (
+        "single-process deployment: nothing to read from"
+    )
 
 
 @pytest.mark.asyncio
@@ -339,9 +340,9 @@ async def test_a_raising_enter_is_logged_and_the_rest_of_the_background_task_sti
 
     assert ctx.entered == 1
     assert subscribed, "purge subscription must still happen after a failed enter"
-    assert (
-        _GrantingLock.acquired == 1
-    ), "leadership must still be attempted after a failed enter"
+    assert _GrantingLock.acquired == 1, (
+        "leadership must still be attempted after a failed enter"
+    )
     assert server.broadcast_listening_context is None
     assert any(
         "Could not start listening on the broadcast channel" in m for m in warnings
@@ -461,9 +462,9 @@ async def test_statistics_off_attaches_no_reader_done_callback(
 
     await _run_until_entered(server, ctx, monkeypatch)
 
-    assert (
-        ctx._event_broadcaster.reader_task.callbacks == []
-    ), "with statistics off no done-callback may be attached to the reader"
+    assert ctx._event_broadcaster.reader_task.callbacks == [], (
+        "with statistics off no done-callback may be attached to the reader"
+    )
 
 
 @pytest.mark.asyncio
@@ -489,12 +490,12 @@ async def test_clean_exit_with_statistics_does_not_restart_the_worker(
     await _run_to_completion(server, monkeypatch)
 
     assert ctx.exited == 1, "the exit path must leave the context"
-    assert (
-        ctx._event_broadcaster.reader_task.cancelled()
-    ), "the last __aexit__ cancels the reader (library behaviour the double mirrors)"
-    assert (
-        shutdowns == []
-    ), "clean cancellation on the exit path must not trigger a worker restart"
+    assert ctx._event_broadcaster.reader_task.cancelled(), (
+        "the last __aexit__ cancels the reader (library behaviour the double mirrors)"
+    )
+    assert shutdowns == [], (
+        "clean cancellation on the exit path must not trigger a worker restart"
+    )
 
 
 @pytest.mark.asyncio
@@ -514,11 +515,11 @@ async def test_reader_death_with_statistics_still_restarts_the_worker(
     monkeypatch.setattr(server, "_graceful_shutdown", lambda: shutdowns.append(1))
 
     await _run_until_entered(server, ctx, monkeypatch)
-    assert (
-        ctx._event_broadcaster.reader_task.callbacks
-    ), "with statistics on, the restart callback must be attached"
+    assert ctx._event_broadcaster.reader_task.callbacks, (
+        "with statistics on, the restart callback must be attached"
+    )
     ctx._event_broadcaster.reader_task.complete(cancelled=False)
 
-    assert shutdowns == [
-        1
-    ], "a reader that died (not cancelled) must still restart the worker"
+    assert shutdowns == [1], (
+        "a reader that died (not cancelled) must still restart the worker"
+    )

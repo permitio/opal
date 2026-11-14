@@ -77,9 +77,9 @@ def test_opa_cli_argv_never_renders_an_enum_repr(options: OpaServerOptions):
     argv = [f"{k}={v}" for k, v in options.get_cli_options_dict().items()]
 
     for arg in argv:
-        assert "." not in arg.split("=", 1)[1] or arg.startswith(
-            "--addr="
-        ), f"enum repr leaked into argv: {arg}"
+        assert "." not in arg.split("=", 1)[1] or arg.startswith("--addr="), (
+            f"enum repr leaked into argv: {arg}"
+        )
 
 
 def test_opa_cli_argv_for_all_defaults():

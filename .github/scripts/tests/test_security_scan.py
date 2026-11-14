@@ -360,7 +360,7 @@ def test_a_verified_secret_fails_the_scan_and_is_listed_in_slack_only(
         "verified_secrets": 1,
     }
     fake = scan.fake_trufflehog(
-        f"echo '{json.dumps(secret)}'\n" f"echo '{json.dumps(finished)}' >&2\n"
+        f"echo '{json.dumps(secret)}'\necho '{json.dumps(finished)}' >&2\n"
     )
     result = scan.run(fake_trufflehog=fake)
     assert result.returncode == 1, result.output

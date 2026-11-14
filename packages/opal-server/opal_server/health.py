@@ -13,6 +13,7 @@
 Each route is a sync handler that reads attributes and local files only:
 no git remote, no Redis, no backbone, no lock.
 """
+
 import asyncio
 import json
 import os
@@ -294,7 +295,7 @@ def emit_repo_fetch_metrics(base_dir: Path) -> None:
 def _fetch_head_age(fetch_head: Path, now: float) -> Optional[float]:
     try:
         mtime = os.stat(fetch_head).st_mtime
-    except (FileNotFoundError, NotADirectoryError):
+    except FileNotFoundError, NotADirectoryError:
         return None
     except OSError as e:
         logger.warning(
