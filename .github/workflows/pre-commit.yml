@@ -33,15 +33,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      # The job runs on 3.14, the one Python of OPAL 0.10, which the workflow scripts' tests below
-      # use. The Python hooks still run on 3.12 (default_language_version in
-      # .pre-commit-config.yaml): the pinned formatters do not run on 3.13 or later. setup-python
-      # makes the last version listed the default python.
+      # 3.14, the one Python of OPAL, runs the Python hooks and the workflow scripts' tests below.
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
-          python-version: |
-            3.12.x
-            3.14.x
+          python-version: 3.14.x
       - name: Install prek
         run: |
           token=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')

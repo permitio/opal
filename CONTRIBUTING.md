@@ -91,7 +91,7 @@ We are excited to have you onboard as a contributor to OPAL! 🎉
 ### Setting up Your Development Environment
 
 #### Prerequisites
-- [Python](https://www.python.org/downloads/)
+- [Python 3.14](https://www.python.org/downloads/)
 - [Docker](https://docs.docker.com/get-docker/)
 - [OPA](https://www.openpolicyagent.org/docs/latest/#running-opa)
 

@@ -527,7 +527,7 @@ def test_the_poll_interval_matches_what_the_docs_promise():
     assert scopes_api._CLONE_WAIT_POLL_SECONDS == 1.0
 
     # Adjacent string literals wrapped across source lines are joined first:
-    # black splits the description mid-sentence, so the phrase exists in the
+    # the formatter splits the description mid-sentence, so the phrase exists in the
     # value but not in the raw bytes.
     config_py = re.sub(
         r'"\s*\n\s*"', "", Path(server_config_module.__file__).read_text()

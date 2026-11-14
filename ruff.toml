@@ -1,0 +1,10 @@
+# ruff runs as hooks (.pre-commit-config.yaml): it formats the code and sorts the imports, and
+# fails on syntax errors and undefined names.
+target-version = "py314"
+
+[lint]
+select = ["E9", "F63", "F7", "F82", "I"]
+
+[lint.isort]
+# An OPAL package's own imports sort among the third-party ones, as isort sorted them.
+detect-same-package = false
