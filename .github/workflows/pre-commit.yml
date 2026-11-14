@@ -21,7 +21,7 @@ defaults:
 
 env:
   # The number of hooks in .pre-commit-config.yaml; change it when a hook is added or removed.
-  EXPECTED_HOOKS: "17"
+  EXPECTED_HOOKS: "16"
 
 jobs:
   pre-commit:

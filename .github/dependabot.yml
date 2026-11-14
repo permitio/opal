@@ -242,4 +242,3 @@ updates:
       # formatting only in minor releases, so its patch releases still come through.
       - dependency-name: https://github.com/astral-sh/ruff-pre-commit
         update-types: ["version-update:semver-minor", "version-update:semver-major"]
-      - dependency-name: https://github.com/PyCQA/docformatter
