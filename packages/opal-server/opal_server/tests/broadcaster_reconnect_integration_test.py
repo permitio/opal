@@ -15,6 +15,7 @@ to a fault-injectable in-memory backbone and asserts:
 It runs fully in-process, driving the actual ``PubSubEndpoint`` / ``WebsocketRPCEndpoint``
 code paths with a fake websocket, so it is deterministic and needs no real backbone.
 """
+
 import asyncio
 from types import SimpleNamespace
 
@@ -146,7 +147,7 @@ async def _shutdown(websocket, client_task):
     client_task.cancel()
     try:
         await client_task
-    except (asyncio.CancelledError, Exception):
+    except asyncio.CancelledError, Exception:
         pass
 
 

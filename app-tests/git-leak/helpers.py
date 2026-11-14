@@ -1,8 +1,10 @@
 """HTTP + infra helpers for the git-leak test bed."""
+
+import json
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import requests
 
@@ -145,10 +147,10 @@ class OpalServerClient:
             # check can't catch a transient minted-not-yet-popped lock (a flaky
             # I4 on the offline-repo test).
             #
-            # NOTE: this does NOT wait for clone dirs to be reclaimed — nothing
-            # reclaims them. The flushed scopes' dirs stay on disk (no
-            # reconciliation in this PR; PER-15612), which is why the tests that
-            # call hard_reset carry an I1 exemption.
+            # NOTE: this does NOT wait for clone dirs to be reclaimed. The
+            # flushed scopes' dirs stay on disk: the orphan sweep is off in
+            # this bed (and refuses a store with no scope), which is why the
+            # tests that call hard_reset carry an I1 exemption.
             deadline = time.time() + 30
             settled = False
             last_err = None
@@ -400,18 +402,53 @@ def compose(*args: str, timeout: int = 1200) -> subprocess.CompletedProcess:
     return proc
 
 
+def server_environment(service: str = "opal_server") -> Dict[str, Optional[str]]:
+    """The service's environment as the compose files set it, with the override
+    files in COMPOSE_FILE and the variables of this process applied (``docker
+    compose config``)."""
+    config = json.loads(compose("config", "--format", "json").stdout)
+    return config["services"][service].get("environment") or {}
+
+
+def clone_shards() -> int:
+    """The server's SCOPES_REPO_CLONES_SHARDS, as the compose files set it."""
+    return int(server_environment().get("OPAL_SCOPES_REPO_CLONES_SHARDS") or 1)
+
+
+def fetch_backend() -> str:
+    """The scope fetch backend the bed asks for, "cli" or "libgit2".
+
+    It is OPAL_SCOPES_GIT_FETCH_WITH_CLI as the compose files set it, or
+    the server's default where they leave it unset. It is what the
+    server should run, so a server that runs the other backend fails the
+    bed's backend test.
+    """
+    value = server_environment().get("OPAL_SCOPES_GIT_FETCH_WITH_CLI")
+    if value is None:
+        value = compose(
+            "exec",
+            "-T",
+            "opal_server",
+            "python",
+            "-c",
+            "from opal_server.config import opal_server_config as c; "
+            "print(c.SCOPES_GIT_FETCH_WITH_CLI)",
+        ).stdout.split()[-1]
+    return "cli" if value.lower() in ("true", "1") else "libgit2"
+
+
 def worker_pids(service: str = "opal_server") -> set:
     """Return the set of gunicorn *worker* PIDs running inside ``service``.
 
     The server runs ``gunicorn`` (master) + ``UvicornWorker`` children (see
     ``scripts/start.sh``). When a worker's broadcaster reader gives up on a
     backbone disconnect it triggers a graceful shutdown and gunicorn respawns
-    the worker with a *new* PID; the reconnecting broadcaster (PER-15065 / #915)
-    instead recovers the reader in place and the worker keeps its PID. Comparing
+    the worker with a *new* PID; the reconnecting broadcaster (#915) instead
+    recovers the reader in place and the worker keeps its PID. Comparing
     this set across a transient bounce is how the broadcaster test tells an
     in-place reconnect apart from a worker respawn.
 
-    Implemented over ``/proc`` (no ``ps`` in the slim image): every gunicorn
+    Implemented over ``/proc``, which needs no ``ps`` in the image: every gunicorn
     process' ``cmdline`` contains "gunicorn", and the master is the lowest PID
     (it exists before it forks any worker), so the workers are the rest. The
     match is done **host-side in Python**, not with ``grep gunicorn`` in the
@@ -444,7 +481,7 @@ def worker_pids(service: str = "opal_server") -> set:
     return set(pids[1:])  # drop the master (lowest PID); the rest are workers
 
 
-# The reconnecting broadcaster (PER-15065 / #915) logs this line every time its
+# The reconnecting broadcaster (#915) logs this line every time its
 # reader (re)connects to the backbone channel — once at boot, and once more on
 # each reconnect after a backbone drop (pubsub_resilience.py `_reader_loop` ->
 # `_ensure_connected`). Counting it across a Postgres bounce positively proves a
@@ -461,7 +498,7 @@ def broadcaster_connect_count(service: str = "opal_server") -> int:
     future Postgres shutdown-signal change, connection pooling, etc.) would leave
     the worker PIDs unchanged and pass the gate vacuously. Paired with
     ``worker_pids()`` unchanged (which proves the recovery was *in place*, not a
-    respawn), the two together pin down the PER-15065 property.
+    respawn), the two together pin down the in-place reconnect.
     """
     # --no-log-prefix strips the "service | " column so the marker matches cleanly.
     out = compose("logs", "--no-log-prefix", service).stdout

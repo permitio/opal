@@ -3,6 +3,7 @@
 Used only by the off-by-default /internal stats endpoint so tests can
 observe the cache growth that the memory-leak fix (PR2) eliminates.
 """
+
 import os
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -17,15 +18,17 @@ def _read_rss_kb() -> int:
         for line in Path("/proc/self/status").read_text().splitlines():
             if line.startswith("VmRSS:"):
                 return int(line.split()[1])
-    except (OSError, ValueError, IndexError):
+    except OSError, ValueError, IndexError:
         return 0
     return 0
 
 
 def git_fetcher_cache_stats() -> Dict:
-    """Sizes + keys of the three process-global GitPolicyFetcher caches, RSS,
-    and the worker pid (per-process caches: the pid identifies WHICH worker
-    answered, so multi-worker bed tests can assert per-worker drain)."""
+    """Sizes + keys of the process-global GitPolicyFetcher caches (the three
+    the leak tests drain, and the git command-line fetch's batches and branch
+    attempts, per source), RSS, and the worker pid (per-process caches: the pid
+    identifies WHICH worker answered, so multi-worker bed tests can assert per-
+    worker drain)."""
     # Snapshot each cache once (dict.copy() is a single C-level operation,
     # atomic under the GIL): this handler runs on a Starlette worker thread
     # while the caches are mutated on the event-loop/executor threads, so
@@ -35,6 +38,8 @@ def git_fetcher_cache_stats() -> Dict:
     repo_locks = GitPolicyFetcher.repo_locks.copy()
     repos = GitPolicyFetcher.repos.copy()
     repos_last_fetched = GitPolicyFetcher.repos_last_fetched.copy()
+    pending_branches = GitPolicyFetcher.pending_branches.copy()
+    branch_attempts = GitPolicyFetcher.branch_attempts.copy()
     return {
         "pid": os.getpid(),
         "repo_locks": len(repo_locks),
@@ -44,6 +49,8 @@ def git_fetcher_cache_stats() -> Dict:
         "repo_locks_keys": sorted(repo_locks.keys()),
         "repos_keys": sorted(repos.keys()),
         "repos_last_fetched_keys": sorted(repos_last_fetched.keys()),
+        "pending_branches_keys": sorted(pending_branches.keys()),
+        "branch_attempts_keys": sorted(branch_attempts.keys()),
     }
 
 

@@ -1,6 +1,8 @@
 import asyncio
 import datetime
+import os
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from pathlib import Path
 from typing import List, Optional, Set, cast
@@ -34,6 +36,7 @@ from opal_server.scopes.purge import (
     confined_clone_path,
     find_scope_sharing_source,
 )
+from opal_server.scopes.readiness import warn_unmatched_required_repos
 from opal_server.scopes.scope_repository import (
     Scope,
     ScopeNotFoundError,
@@ -63,6 +66,45 @@ def is_rego_source_file(
     return f.path.suffix in extensions
 
 
+# Change notifications are built on a pool of their own, of a few threads. On
+# the loop's default executor a pass's builds (SCOPES_GIT_MAX_WORKERS clones at
+# once) queued policy bundle requests behind them and took the GIL from them:
+# in a cold pass of 2,000 scopes, bundles took p50 63-78 ms there against 28
+# ms with the builds on the loop, and 32 ms with 2 threads of their own (62 ms
+# with 20).
+_NOTIFICATION_BUILD_THREADS = 2
+_notification_builds: Optional[ThreadPoolExecutor] = None
+_notification_builds_pid = 0
+
+
+def _notification_build_pool() -> ThreadPoolExecutor:
+    """This process's pool for change notification builds.
+
+    Made on first use in each process: a pool made before a fork has no
+    threads in the child.
+    """
+    global _notification_builds, _notification_builds_pid
+    if _notification_builds is None or _notification_builds_pid != os.getpid():
+        _notification_builds = ThreadPoolExecutor(
+            max_workers=_NOTIFICATION_BUILD_THREADS,
+            thread_name_prefix="scope-notification",
+        )
+        _notification_builds_pid = os.getpid()
+    return _notification_builds
+
+
+async def _wait_out(work: "asyncio.Future") -> None:
+    """Wait until ``work`` (on a thread, which no cancel stops) is done,
+    whatever cancels come meanwhile; what it raised is dropped."""
+    while not work.done():
+        try:
+            await asyncio.wait({work})
+        except asyncio.CancelledError:
+            continue
+    if not work.cancelled():
+        work.exception()
+
+
 class NewCommitsCallbacks(PolicyFetcherCallbacks):
     def __init__(
         self,
@@ -90,11 +132,40 @@ class NewCommitsCallbacks(PolicyFetcherCallbacks):
         logger.debug(
             f"scope '{self._scope_id}': Found new commits: old HEAD was '{previous_head}', new HEAD is '{head}'"
         )
+        # Built on a thread: building it reads the clone through git processes
+        # (a diff of the two heads, or a walk of the head's whole tree) for as
+        # long as the diff or the tree is large, and on the loop that would
+        # stall every request this worker serves. The sync awaiting this holds
+        # the clone's lock_source, which keeps this process's other git work
+        # off the clone meanwhile: a cancel waits for the thread to be done
+        # with the clone before it goes on.
+        build = asyncio.get_running_loop().run_in_executor(
+            _notification_build_pool(),
+            self._build_notification,
+            previous_head,
+            head,
+        )
+        try:
+            notification = await asyncio.shield(build)
+        except asyncio.CancelledError:
+            await _wait_out(build)
+            raise
+        if notification is not None:
+            await self.trigger_notification(notification)
+
+    def _build_notification(
+        self, previous_head: Optional[str], head: str
+    ) -> Optional[PolicyUpdateMessageNotification]:
+        """Build the notification of the scope's change to ``head``; blocking.
+
+        Returns None when there is nothing to publish, or when the clone
+        cannot be read (logged).
+        """
         if not self._scope_repo_dir.exists():
             logger.error(
                 f"on_update({self._scope_id}) was triggered, but repo path is not found: {self._scope_repo_dir}"
             )
-            return
+            return None
 
         try:
             repo = git.Repo(self._scope_repo_dir)
@@ -102,7 +173,7 @@ class NewCommitsCallbacks(PolicyFetcherCallbacks):
             logger.error(
                 f"Got exception for repo in path: {self._scope_repo_dir}, scope_id: {self._scope_id}, error: {exc}"
             )
-            return
+            return None
 
         notification: Optional[PolicyUpdateMessageNotification] = None
         predicate = partial(is_rego_source_file, extensions=self._source.extensions)
@@ -111,7 +182,7 @@ class NewCommitsCallbacks(PolicyFetcherCallbacks):
         # until the garbage collector gets to it, a repack's deleted ones too.
         with repo:
             if previous_head is None or self._notify_all:
-                notification = await create_update_all_directories_in_repo(
+                notification = create_update_all_directories_in_repo(
                     repo.commit(head), repo.commit(head), predicate=predicate
                 )
                 if self._notify_all and not notification.topics:
@@ -127,15 +198,13 @@ class NewCommitsCallbacks(PolicyFetcherCallbacks):
                 # serialized output (OPAL_LOG_SERIALIZE or a serialized file
                 # sink), not in the default plaintext format.
                 with logger.contextualize(scope_id=self._scope_id):
-                    notification = await create_policy_update(
+                    notification = create_policy_update(
                         repo.commit(previous_head),
                         repo.commit(head),
                         self._source.extensions,
                         predicate=predicate,
                     )
-
-        if notification is not None:
-            await self.trigger_notification(notification)
+        return notification
 
     async def trigger_notification(self, notification: PolicyUpdateMessageNotification):
         logger.info(
@@ -173,8 +242,13 @@ class ScopesService:
         notify_all: bool = False,
         *,
         expected_source_id: Optional[str] = None,
+        fresh_within: Optional[float] = None,
     ) -> Optional[str]:
         """Sync one scope's policy source.
+
+        ``fresh_within`` is set by the sync a policy bundle request with no
+        base_hash asks for, to that request's wait in seconds (see
+        GitPolicyFetcher.fetch_and_notify_on_changes).
 
         ``notify_all`` is set by a repoint (PUT /scopes that changes the source
         or its branch): once the sync has the head, the scope's clients are told
@@ -264,6 +338,7 @@ class ScopesService:
                     force_fetch=force_fetch,
                     req_time=req_time,
                     honor_backoff=honor_backoff,
+                    fresh_within=fresh_within,
                 )
             except GitConcurrencyLimitExceeded as e:
                 # Expected backpressure, not a fault: the zombie cap
@@ -398,9 +473,10 @@ class ScopesService:
         - the removal is skipped while a git op is in flight for the source.
           Master freed the handle unconditionally; freeing one a lingering
           timed-out pygit2 call still holds on a pool thread is the
-          use-after-free class 89e090be fixed. NOTHING else owns that case:
-          the leader does no disk work and the deferred retry was cut, so a
-          delete whose remote is hung leaves the dir until PER-15612.
+          use-after-free class 89e090be fixed. Only the orphan sweep (off by
+          default) owns that case: the leader's purge does no disk work and the
+          deferred retry was cut, so a delete whose remote is hung leaves the
+          dir until the sweep reclaims it.
         """
         # Every other destructive path in this series derives its target from
         # source_id via confined_clone_path and refuses a malformed id; this one
@@ -442,14 +518,15 @@ class ScopesService:
                         # sibling scope does share this source, deleting its clone
                         # takes a LIVE tenant's policy offline until the re-clone
                         # completes — and the trigger is a transient store blip.
-                        # The cost of keeping is an orphan dir (PER-15612): disk
-                        # against availability, and this is a best-effort floor,
-                        # so it takes the conservative branch when it cannot tell.
+                        # The cost of keeping is an orphan dir, the orphan
+                        # sweep's to reclaim: disk against availability, and this
+                        # is a best-effort floor, so it takes the conservative
+                        # branch when it cannot tell.
                         logger.warning(
                             f"Local sibling check for {deleted_source_id} failed "
                             f"after deleting scope {scope_id}; keeping this "
-                            f"worker's clone (it stays until PER-15612's sweep "
-                            f"lands): {e!r}"
+                            f"worker's clone (it stays until the orphan sweep "
+                            f"reclaims it): {e!r}"
                         )
                         return
                     if sharer is not None:
@@ -463,12 +540,13 @@ class ScopesService:
                         logger.info(
                             f"Skipping the local clone purge for "
                             f"{deleted_source_id}: a git operation is still in "
-                            "flight; the dir stays until PER-15612's sweep lands"
+                            "flight; the dir stays until the orphan sweep "
+                            "reclaims it"
                         )
                         return
                     GitPolicyFetcher.forget_repo(safe_path)
-                    GitPolicyFetcher.repos_last_fetched.pop(deleted_source_id, None)
-                    # Same reason as repos_last_fetched: no live scope on this
+                    GitPolicyFetcher.forget_fetches(deleted_source_id)
+                    # Same reason as the fetches: no live scope on this
                     # worker points at the source any more, so an entry kept
                     # here is counted in the sources_in_backoff gauge for the
                     # life of the process — and would suppress the first sync
@@ -517,8 +595,8 @@ class ScopesService:
 
         Without this a DELETE that returns 204 and is followed by SIGTERM loses
         its floor: the task is detached, nothing else references it, and the
-        clone dir it was about to remove survives with nothing left to reclaim
-        it (no reconciliation in this PR — PER-15612).
+        clone dir it was about to remove survives until the orphan sweep, when
+        on, reclaims it.
 
         Best-effort and expected to be bounded by the caller: each task takes
         lock_source, which a sync can hold across a whole clone/fetch. The
@@ -557,6 +635,7 @@ class ScopesService:
         """
         with tracer.trace("scopes_service.sync_scopes"):
             scopes = await self._scopes.all()
+            warn_unmatched_required_repos(scopes)
             # Emitted before the poll-updates filter below, so this is always the
             # true total rather than flapping with the caller's filter.
             metrics.gauge("opal_server.scopes.count", len(scopes))
@@ -568,6 +647,12 @@ class ScopesService:
                 (scope, GitPolicyFetcher.source_id(scope.policy)) for scope in scopes
             ]
             live_source_ids = {src_id for _, src_id in scopes_with_ids}
+            # Also from before the filter: a git command-line fetch of the pass
+            # asks for every branch the clone's scopes track, so that phase 2,
+            # and the scopes this pass does not poll, find theirs fetched.
+            tracked_branches: dict[str, set[str]] = defaultdict(set)
+            for scope, src_id in scopes_with_ids:
+                tracked_branches[src_id].add(scope.policy.branch)
             # Once per pass as well as on transitions: a DogStatsD gauge is
             # NO DATA between sends, and the steady state the backoff creates
             # (dead sources parked for the cap) has almost no transitions.
@@ -601,7 +686,7 @@ class ScopesService:
             # In flight until both phases are done, so that no repack starts
             # meanwhile (see GitPolicyFetcher.sync_pass), this pass's own
             # included.
-            with GitPolicyFetcher.sync_pass():
+            with GitPolicyFetcher.sync_pass(tracked_branches):
                 # Phase 1 clones/fetches every distinct repo; phase 2 then checks the
                 # duplicates against those now-present repos.
                 #

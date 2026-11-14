@@ -615,6 +615,7 @@ async def test_a_git_that_hangs_ends_phase_1_at_its_timeout_and_the_kill_grace(
     longer."""
     timeout, grace = 1.0, 0.5
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_TIMEOUT", timeout)
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_CLONE_TIMEOUT", timeout)
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_CLI_KILL_GRACE", grace)
     origin = _origin(tmp_path / "origin")
     marker = f"hung-{uuid.uuid4().hex}"

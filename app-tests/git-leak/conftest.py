@@ -82,9 +82,9 @@ def opal(stack, request) -> OpalServerClient:
     # opal_multiworker teardown failed to restore 1 worker, the per-process cache
     # reads would be nondeterministic here (a `== 0` drain could false-pass).
     # Fail loudly and ordering-independently rather than silently mis-measure.
-    assert (
-        len(worker_pids()) == 1
-    ), f"expected a single-worker stack, found workers {sorted(worker_pids())}"
+    assert len(worker_pids()) == 1, (
+        f"expected a single-worker stack, found workers {sorted(worker_pids())}"
+    )
     pids_before = worker_pids()
     yield stack
     stack.delete_all_scopes()
@@ -150,9 +150,9 @@ def opal_multiworker(stack, request) -> OpalServerClient:
         # did not (a botched recreate), fail loudly here rather than leave a
         # 2-worker stack that would silently break later single-worker cache
         # gates' determinism.
-        assert (
-            len(worker_pids()) == 1
-        ), f"opal_multiworker teardown left workers {sorted(worker_pids())}, expected 1"
+        assert len(worker_pids()) == 1, (
+            f"opal_multiworker teardown left workers {sorted(worker_pids())}, expected 1"
+        )
 
 
 @pytest.fixture(scope="session")

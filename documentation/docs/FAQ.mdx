@@ -119,7 +119,7 @@ You can read more about the mechanism **[here](/tutorials/healthcheck_policy_and
 
 ## Does OPAL provide health-check routes ?
 
-Yes both OPAL-server and OPAL-client serve a health check route at `"/healthcheck"`
+Yes. OPAL-server serves `/healthcheck` for a readiness probe, `/healthz/live` for a liveness probe and `/healthz/started` for a startup probe; OPAL-client serves `/healthcheck` and `/ready`.
 Read more about [monitoring OPAL](/tutorials/monitoring_opal)
 
 ## Does OPAL provide some kind of monitoring dashboard ?

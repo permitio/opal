@@ -7,6 +7,7 @@ is what cancels every client websocket in production). The final test is a negat
 control: the stock EventBroadcaster reader DOES complete on the same disconnect,
 proving these tests actually catch the regression.
 """
+
 import asyncio
 import json
 from contextlib import asynccontextmanager, suppress
@@ -261,6 +262,44 @@ def test_backoff_is_bounded():
     delays = [broadcaster._backoff_seconds(attempt) for attempt in range(0, 25)]
     assert all(0.0 <= delay <= 10.0 for delay in delays)
     assert max(delays) > 0
+
+
+@pytest.mark.parametrize("attempt", [1024, 1025, 1026, 100_000])
+def test_backoff_stays_capped_after_hours_of_failed_reconnects(attempt):
+    """With max retries 0 the reader retries for as long as the backbone is
+    down: past attempt 1024 (about 6.5 hours of 30-second waits) 2**attempt
+    no longer fits a float, and the OverflowError ended the reader for good.
+
+    Mutation: computing the uncapped power fails here.
+    """
+    broadcaster = ReconnectingBroadcaster(
+        "memory://",
+        notifier=FakeNotifier(),
+        reconnect_backoff_min=0.5,
+        reconnect_backoff_max=30.0,
+    )
+    assert 15.0 <= broadcaster._backoff_seconds(attempt) <= 30.0
+
+
+@pytest.mark.asyncio
+async def test_reader_outlives_more_than_1024_failed_reconnects():
+    bus = FakeBus(fail_connect=True)
+    broadcaster = ReconnectingBroadcaster(
+        "memory://",
+        notifier=FakeNotifier(),
+        channel="test",
+        broadcast_type=bus.channel_factory,
+        reconnect_backoff_min=0.0,
+        reconnect_backoff_max=0.0,
+    )
+    task = await broadcaster.start_reader_task()
+    try:
+        await _wait_for(lambda: bus.connects > 1100 or task.done(), timeout=60)
+        assert not task.done(), "the reader ended after its 1025th reconnect"
+    finally:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
 
 
 def _make_broadcaster():
@@ -583,9 +622,9 @@ async def test_malformed_broadcast_log_hides_payload(message):
         await broadcaster._handle_broadcast_event(_Event(message))
 
     assert notifier.notified == []
-    assert any(
-        "Dropping malformed incoming broadcast" in line for line in logs.text
-    ), logs.text
+    assert any("Dropping malformed incoming broadcast" in line for line in logs.text), (
+        logs.text
+    )
     assert _FAKE_AUTH_HEADER not in logs.combined
 
 
@@ -677,6 +716,65 @@ async def test_recovery_reruns_for_gap_during_late_phase():
     # The recovery looped exactly once more: the hook fired twice, then settled.
     assert fire_count == 2
     assert broadcaster._recovery_rerun_requested is False
+
+
+@pytest.mark.asyncio
+async def test_reconnect_listeners_run_after_recovery_and_a_raising_one_is_logged():
+    """Listeners run after the reconnect callback, in the order added; one that
+    raises is logged and the next still runs; a removed one no longer runs, and
+    removing it twice is harmless."""
+    broadcaster = _make_broadcaster()
+    broadcaster._resync_settle_seconds = 0
+    broadcaster.get_listening_context = _noop_listening_context
+    calls = []
+
+    async def on_reconnect():
+        calls.append("callback")
+
+    async def raising():
+        calls.append("raising")
+        raise RuntimeError("listener broke")
+
+    async def second():
+        calls.append("second")
+
+    async def removed():
+        calls.append("removed")
+
+    broadcaster.set_reconnect_callback(on_reconnect)
+    broadcaster.add_reconnect_listener(raising)
+    broadcaster.add_reconnect_listener(second)
+    remove = broadcaster.add_reconnect_listener(removed)
+    remove()
+    remove()
+
+    with capture_logs() as logs:
+        await broadcaster._recover_after_gap()
+
+    assert calls == ["callback", "raising", "second"]
+    errors = [
+        json.loads(line)["record"]
+        for line in logs.serialized
+        if json.loads(line)["record"]["level"]["name"] == "ERROR"
+    ]
+    assert len(errors) == 1
+    assert "listener" in errors[0]["message"]
+    assert "listener broke" in errors[0]["exception"]["value"]
+
+
+@pytest.mark.asyncio
+async def test_reconnect_listeners_run_without_a_reconnect_callback():
+    broadcaster = _make_broadcaster()
+    broadcaster._resync_settle_seconds = 0
+    broadcaster.get_listening_context = _noop_listening_context
+    calls = []
+
+    async def listener():
+        calls.append("listener")
+
+    broadcaster.add_reconnect_listener(listener)
+    await broadcaster._recover_after_gap()
+    assert calls == ["listener"]
 
 
 @pytest.mark.asyncio

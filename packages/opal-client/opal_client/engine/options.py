@@ -102,9 +102,9 @@ class OpaServerOptions(BaseModel):
         and defaults are not validated - so a field left at its default (the
         default production path: ``OpaServerOptions.model_validate({})``) keeps
         the enum member, and python-mode ``model_dump()`` does not unwrap it.
-        ``runner.py`` then f-strings the value into argv, which on python 3.11+
-        renders ``LogLevel.info`` rather than ``info`` (``Enum.__format__``
-        changed in 3.11) and OPA rejects the flag at parse time.
+        ``runner.py`` then f-strings the value into argv, which renders
+        ``LogLevel.info`` rather than ``info`` (``Enum.__format__`` changed in
+        3.11) and OPA rejects the flag at parse time.
         """
         return self.model_dump(
             mode="json",

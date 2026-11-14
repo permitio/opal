@@ -17,14 +17,15 @@ the same source in a sibling process on the same pod. Master had the identical
 exposure with no in-flight guard at all, so this is not a regression — but note
 the branch does not reclaim that orphan either: delivering the purge broadcast
 drains MEMORY on every worker and touches no disk. It is also not an invariant.
-Closing it cross-process is PER-15612.
+Across processes, the leader's orphan sweep (``scopes/orphans.py``, off by
+default) reclaims what this leaves, under the clone's lock and the repack lock.
 
-NOTE: the reconciliation sweep that reclaimed clone dirs referencing no live
-scope was split out of this PR and is tracked as PER-15612. What remains here is
-the purge driven by an actual scope delete/repoint.
+The reconciliation of clone dirs no live scope references is that sweep, on the
+leader's own timer. What is here is the purge driven by an actual scope
+delete/repoint.
 
-There is therefore NO reconciliation of any kind in this PR, and exactly ONE
-path RECLAIMS a clone dir — removes it and leaves it removed: the best-effort
+Besides the sweep, exactly ONE path RECLAIMS a clone dir — removes it and
+leaves it removed: the best-effort
 local floor ``ScopesService.delete_scope`` spawns on the worker serving the
 DELETE. That local floor is master's behaviour (master removed the dir
 inline there, with no broadcast involved), kept so a dropped broadcast does not
@@ -49,10 +50,15 @@ whose clone is gone and after each hung clone it deletes, and on every start
 with the setting off. Their paths
 come either from ``hung_marker_dir(self._repo_path)`` or from a ``git_sources``
 listing whose name, less the ``.hung`` suffix, matches ``SOURCE_ID_RE``, so they
-never leave ``git_sources``. An audit of "can caller-controlled input reach an
-rmtree?" has to account for all four clone sites and these marker removals.
+never leave ``git_sources``. The orphan sweep's removals
+(``git_fetcher.reclaim_clone_dir_unless_busy``) take their targets from a
+``git_sources`` listing too: real directories whose name matches
+``SOURCE_ID_RE``, and the files and directories named after them beside them.
+An audit of "can caller-controlled input reach an rmtree?" has to account for
+all five clone sites and these marker removals.
 
-What that leaves on disk, stated plainly because nothing else will reclaim it:
+What that leaves on disk, for the orphan sweep to reclaim when it is on (nothing
+else does):
 
 - a DELETE's dir on every pod EXCEPT the serving one, when the broadcast is
   lost. Since 0.9.9-rc.3 every worker keeps a backbone reader for the whole
@@ -66,9 +72,10 @@ What that leaves on disk, stated plainly because nothing else will reclaim it:
 - a dir whose source_id is unknowable because the prior record would not parse
   (see ``scopes/api.py``).
 
-All three are PER-15612. The memory purge is unaffected by them: it is
+All three are the orphan sweep's. The memory purge is unaffected by them: it is
 authorized by the leader's confirmation and is self-healing in both directions.
 """
+
 import asyncio
 from pathlib import Path
 from typing import Any, Optional
@@ -97,8 +104,8 @@ def confined_clone_path(base_dir, source_id: str):
     one remaining removal (``ScopesService``'s delete floor) derives its target
     from the stored scope record, not from a message. Keeping the validation is
     still right: it is the only thing standing between a forged ``source_id``
-    and an arbitrary ``repos`` key, and it is what makes the confinement
-    property survive PER-15612 putting an rmtree back on this path.
+    and an arbitrary ``repos`` key, and it is what would keep the confinement
+    property should an rmtree come back on this path.
     """
     if not SOURCE_ID_RE.match(source_id):
         return None
@@ -134,15 +141,16 @@ def purge_local_memory(source_id: str, clone_path: str) -> None:
     A skipped free is NOT self-healing on this worker: ``forget_repo`` is
     otherwise only reached from the invalid-repo branch of a SYNC, and a purged
     source by construction has no live scope to sync. So a handle pinned by a
-    lingering timed-out op stays cached for the life of the process. Nothing in
-    this PR revisits it — that is PER-15612's job, along with the clone dir.
+    lingering timed-out op stays cached until the leader's orphan sweep frees
+    its own once the op is over, along with the clone dir; nothing revisits
+    another worker's.
     """
     if not git_op_in_flight(source_id):
         GitPolicyFetcher.forget_repo(clone_path)
-    GitPolicyFetcher.repos_last_fetched.pop(source_id, None)
+    GitPolicyFetcher.forget_fetches(source_id)
     # Unconditionally, unlike forget_repo: this holds no handle a lingering
     # pool thread could still be reading, so the in-flight guard does not apply.
-    # Dropped for the same reason as repos_last_fetched — the source has no live
+    # Dropped for the same reason as the fetches above — the source has no live
     # scope on this worker any more, so a kept entry is counted in the
     # sources_in_backoff gauge for the life of the process, and would suppress
     # the first sync of a scope later re-created against the same URL.
@@ -156,7 +164,7 @@ async def handle_purge_message(subscription, data: Any) -> None:
     """Every-worker subscriber for SCOPES_PURGE_CHANNEL."""
     try:
         cmd = ScopePurgeCommand(**data)
-    except (ValidationError, TypeError):
+    except ValidationError, TypeError:
         logger.warning("Ignoring malformed scope purge message: {data}", data=data)
         return
     if not cmd.confirmed:
@@ -266,13 +274,13 @@ class LeaderScopePurger:
             # (e.g. the confirmation publish hitting a broadcaster error)
             # surfaces only as asyncio's unretrieved-exception noise.
             logger.exception(
-                f"Background purge of source {cmd.source_id} " f"({cmd.reason}) failed"
+                f"Background purge of source {cmd.source_id} ({cmd.reason}) failed"
             )
 
     async def handle(self, subscription, data: Any):
         try:
             cmd = ScopePurgeCommand(**data)
-        except (ValidationError, TypeError):
+        except ValidationError, TypeError:
             # The worker-level handler already logged the malformed payload.
             return None
         if cmd.confirmed:
@@ -284,8 +292,9 @@ class LeaderScopePurger:
             # confirmation nothing waits on. NOTHING recovers this: no periodic
             # reconciliation exists in this PR, and no later purge will name the
             # source (the record is already gone), so the fleet keeps its cache
-            # entries for it until PER-15612 lands. The serving worker's local
-            # floor has still reclaimed its own pod's clone dir.
+            # entries for it (the leader's orphan sweep drops the leader's own
+            # with the clone). The serving worker's local floor has still
+            # reclaimed its own pod's clone dir.
             logger.info(
                 f"Ignoring purge request for {cmd.source_id} ({cmd.reason}): "
                 "purger is stopping"
@@ -341,9 +350,9 @@ class LeaderScopePurger:
         This deliberately does NOT touch the clone tree. Disk reclaim on delete
         happens on the DELETE-serving worker at master's semantics
         (``ScopesService._purge_local_clone_best_effort``); distributed disk
-        reclaim — a leader-side rmtree, a retry for a dir a lingering git op
-        pins, and the reconciliation sweep — is PER-15612, where the reclaim
-        policy is agreed before implementation. Under-purging disk leaks
+        reclaim, a dir a lingering git op pinned included, is the leader's
+        orphan sweep (``scopes/orphans.py``), on its own timer. Under-purging
+        disk leaks
         forever and over-purging forces a re-clone, so it has no self-healing
         direction; a memory purge self-heals both ways (a wrongly-dropped
         handle just re-opens on next use), which is why the two split here.

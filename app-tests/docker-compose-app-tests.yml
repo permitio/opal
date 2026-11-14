@@ -2,7 +2,6 @@ services:
   # Minimal Gitea for testing - no authentication, stateless
   gitea:
     image: gitea/gitea:latest-rootless
-    container_name: gitea
     environment:
       - GITEA__server__DOMAIN=localhost
       - GITEA__server__HTTP_PORT=3000
@@ -35,9 +34,14 @@ services:
       - GITEA__repository__ENABLE_PUSH_CREATE_ORG=true
       - GITEA__repository__FORCE_PRIVATE=false
       - GITEA__server__ENABLE_GZIP=false
+    # A free host port on the loopback only: the suite reads it with `docker compose port`.
     ports:
-      - "3000:3000"
-      - "2222:2222"
+      - "127.0.0.1::3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/v1/version"]
+      interval: 2s
+      timeout: 3s
+      retries: 150
     networks:
       - default
 
@@ -63,8 +67,8 @@ services:
       - OPAL_BROADCAST_URI=postgres://postgres:postgres@broadcast_channel:5432/postgres
       # Make the broadcaster reconnect fast and replay after both replicas have
       # re-subscribed, so a cross-instance update published during a backbone
-      # outage deterministically converges to both clients (see run.sh
-      # "cross-instance consistency" test). With backoff_max=2 both servers
+      # outage deterministically converges to both clients (see test_fleet.py's
+      # backbone outage test). With backoff_max=2 both servers
       # re-subscribe within ~2s of the DB returning, while settle=3 delays the
       # replay until after that, guaranteeing the replayed update is delivered.
       - OPAL_BROADCAST_RECONNECT_BACKOFF_MIN_SECONDS=0.5
@@ -85,7 +89,7 @@ services:
       - OPAL_AUTH_JWT_ISSUER=https://opal.ac/
       - OPAL_STATISTICS_ENABLED=true
     ports:
-      - "7002-7003:7002"
+      - "127.0.0.1::7002"
     depends_on:
       - broadcast_channel
       - gitea
@@ -112,9 +116,6 @@ services:
       - OPAL_AUTH_JWT_AUDIENCE=https://api.opal.ac/v1/
       - OPAL_AUTH_JWT_ISSUER=https://opal.ac/
       - OPAL_STATISTICS_ENABLED=true
-    ports:
-      - "7766-7767:7000"
-      - "8181-8182:8181"
     depends_on:
       - opal_server
     command: sh -c "exec ./wait-for.sh opal_server:7002 --timeout=20 -- ./start.sh"

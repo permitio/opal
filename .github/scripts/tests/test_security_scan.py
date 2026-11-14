@@ -4,8 +4,8 @@ Each test runs the real scan script, format_security_report.py and notify.sh in 
 repository. gitleaks and TruffleHog are the real releases that .github/binaries.lock pins, fetched
 once per test session; a test can swap TruffleHog for a fake one to reach a failure. The
 dependency scans are stubbed: vuln.sh prepares two small trees, trivy.sh writes the findings the
-test gives it, and a fake uv resolves the PyPI release. A fake curl stands in for the Slack
-webhook and keeps the message it was sent.
+test gives it, and a fake uv resolves the PyPI release and keeps the arguments it was given. A
+fake curl stands in for the Slack webhook and keeps the message it was sent.
 """
 
 import json
@@ -74,6 +74,7 @@ echo "trivy: PASS"
 
 UV = """\
 set -euo pipefail
+printf '%s\\n' "$*" >>"$UV_ARGS"
 while [[ $# -gt 0 ]]; do
   if [[ $1 == -o ]]; then
     printf 'opal-client==0.9.9\\nopal-server==0.9.9\\n' >"$2"
@@ -153,6 +154,7 @@ class Scan:
         self.findings.mkdir()
         self.payload = repo.tmp / "payload.json"
         self.summary = repo.tmp / "step-summary.md"
+        self.uv_args = repo.tmp / "uv-args"
         repo.copy(*COPIED)
         repo.write(
             ".github/scripts/fetch-tool.sh", "#!/usr/bin/env bash\n" + FETCH_TOOL, True
@@ -200,6 +202,7 @@ class Scan:
             "TOOL_CACHE": str(self.tool_cache),
             "STUB_FINDINGS": str(self.findings),
             "CURL_PAYLOAD": str(self.payload),
+            "UV_ARGS": str(self.uv_args),
         }
         if fake_trufflehog is not None:
             env["FAKE_TRUFFLEHOG"] = str(fake_trufflehog)
@@ -271,6 +274,18 @@ def test_without_trufflehog_the_report_has_no_trufflehog_line(scan: Scan) -> Non
     assert "• *TruffleHog*" not in scan.posted()
     assert "| TruffleHog |" not in scan.summary.read_text()
     assert scan.posted().startswith(":white_check_mark:")
+
+
+def test_pypi_resolves_the_releases_for_the_python_the_packages_require(
+    scan: Scan,
+) -> None:
+    """As an application on the packages' Python resolves them: on an older
+    Python, uv passes over a release that requires a newer one and resolves the
+    release before it."""
+    result = scan.run(trufflehog="skip")
+    assert scan.uv_args.exists(), result.output
+    (args,) = scan.uv_args.read_text().splitlines()
+    assert " --python-version 3.14 " in f" {args} "
 
 
 def test_a_source_that_did_not_complete_fails_the_scan_with_its_reason(
@@ -345,7 +360,7 @@ def test_a_verified_secret_fails_the_scan_and_is_listed_in_slack_only(
         "verified_secrets": 1,
     }
     fake = scan.fake_trufflehog(
-        f"echo '{json.dumps(secret)}'\n" f"echo '{json.dumps(finished)}' >&2\n"
+        f"echo '{json.dumps(secret)}'\necho '{json.dumps(finished)}' >&2\n"
     )
     result = scan.run(fake_trufflehog=fake)
     assert result.returncode == 1, result.output

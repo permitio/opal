@@ -6,6 +6,9 @@ import pytest
 from opal_common.schemas.policy_source import GitPolicyScopeSource, NoAuthData
 from opal_server.git_fetcher import GitPolicyFetcher
 
+# What these tests stub or measure is libgit2's fetch and clone.
+pytestmark = pytest.mark.fetch_backend("libgit2")
+
 
 def _make_fetcher(
     base_dir: Path, scope_id: str, url: str, branch: str = "main"
@@ -35,19 +38,19 @@ def _reset_class_state():
 
 
 @pytest.mark.asyncio
-async def test_was_fetched_after_is_per_source(tmp_path):
+async def test_fetched_after_is_per_source(tmp_path):
     """A recent fetch on source X must not cause source Y's refresh to be
     skipped."""
     fetcher_x = _make_fetcher(tmp_path, "scope_x", "https://example.com/repo-x.git")
     fetcher_y = _make_fetcher(tmp_path, "scope_y", "https://example.com/repo-y.git")
 
     now = datetime.datetime.now()
-    GitPolicyFetcher.repos_last_fetched[
-        fetcher_x._source_id
-    ] = now + datetime.timedelta(seconds=1)
+    GitPolicyFetcher.repos_last_fetched[fetcher_x._source_id] = (
+        now + datetime.timedelta(seconds=1)
+    )
 
-    assert await fetcher_x._was_fetched_after(now) is True
-    assert await fetcher_y._was_fetched_after(now) is False
+    assert fetcher_x._fetched_after("main", now) is True
+    assert fetcher_y._fetched_after("main", now) is None
 
 
 @pytest.mark.asyncio
@@ -74,9 +77,9 @@ async def test_force_fetch_not_downgraded_by_sibling_source(monkeypatch, tmp_pat
     fetcher_y = _make_fetcher(tmp_path, "scope_y", "https://example.com/repo-y.git")
 
     req_time = datetime.datetime.now()
-    GitPolicyFetcher.repos_last_fetched[
-        fetcher_x._source_id
-    ] = req_time + datetime.timedelta(seconds=1)
+    GitPolicyFetcher.repos_last_fetched[fetcher_x._source_id] = (
+        req_time + datetime.timedelta(seconds=1)
+    )
 
     monkeypatch.setattr(
         "opal_server.git_fetcher.RepoInterface.has_remote_branch",
@@ -110,7 +113,7 @@ class _FakeRepo:
 async def test_failed_fetch_does_not_stamp_last_fetched(monkeypatch, tmp_path):
     """Bug B: stamping before the fetch means a FAILED fetch still records
     "fetched now", which suppresses the next webhook-requested forced refresh
-    via _was_fetched_after()."""
+    via _fetched_after()."""
     fetcher = _make_fetcher(tmp_path, "scope_x", "https://example.com/repo-x.git")
     monkeypatch.setattr(fetcher, "_discover_repository", lambda path: True)
     monkeypatch.setattr(fetcher, "_get_valid_repo", lambda: _FakeRepo(_FailingRemote()))
@@ -176,13 +179,13 @@ async def test_timed_out_fetch_does_not_stamp_last_fetched_or_notify(
     """A timed-out fetch must leave repos_last_fetched untouched and publish
     nothing.
 
-    Falling through instead would make _was_fetched_after() report the
-    repo as fresh, so _should_fetch SUPPRESSES the webhook-forced
-    refresh ("Repo was fetched after refresh request, override
-    force_fetch with False") and the repo is never re-fetched — while
-    _notify_on_changes publishes a policy update computed off the stale
-    pre-fetch HEAD. Mutation: turning the `except TimeoutError: return`
-    into a fallthrough must fail here.
+    Falling through instead would make _fetched_after() report the repo
+    as fresh, so _should_fetch SUPPRESSES the webhook-forced refresh
+    ("Repo was fetched after refresh request, override force_fetch with
+    False") and the repo is never re-fetched — while _notify_on_changes
+    publishes a policy update computed off the stale pre-fetch HEAD.
+    Mutation: turning the `except TimeoutError: return` into a
+    fallthrough must fail here.
     """
     fetcher = _make_fetcher(tmp_path, "scope_x", "https://example.com/repo-x.git")
     monkeypatch.setattr(fetcher, "_discover_repository", lambda path: True)

@@ -60,7 +60,7 @@ def _load_scopes(opal, prefix, names):
     scopes and the drain assertions test a cache the sync path actually fills.
 
     A fresh libgit2 clone also gets one pass of the ref steps alone, which
-    releases its cached handle (``repos``) once it is done (PER-16330); one
+    releases its cached handle (``repos``) once it is done; one
     that lands after the refresh's fetch leaves ``repos`` short until a later
     sync. So each round waits for ``repos`` to fill and the counts to settle
     (those passes done), and refreshes again while ``repos`` is short, for at
@@ -221,7 +221,7 @@ def test_shared_repo_survives_sibling_scope_delete(opal, repo_count):
 # GUARD, not a red gate" — excusing the very invariants the repoint purge under
 # test exists to satisfy. Measured on this head: it passes with I3/I4 enforced.
 # I1 stays: the repoint path has no local floor, so the OLD source's clone dir
-# is expected to remain on disk (PER-15612).
+# remains on disk: the orphan sweep is off in this bed.
 @pytest.mark.invariant_exempt("I1")
 def test_scope_repoint_releases_old_repo_cache(opal, repo_count):
     """Re-pointing a scope to a new repo URL must drain the OLD URL's cache
@@ -288,9 +288,9 @@ def test_scope_repoint_releases_old_repo_cache(opal, repo_count):
         # repo_a) — this is what proves the scope actually switched sources.
         return resp.status_code == 200 and resp.content != content_a
 
-    assert _wait_until(
-        _serving_repo_b, timeout=300
-    ), "scope never switched to serving the re-pointed (repo_b) content"
+    assert _wait_until(_serving_repo_b, timeout=300), (
+        "scope never switched to serving the re-pointed (repo_b) content"
+    )
 
     def _old_source_purged() -> bool:
         s = opal.stats(samples=1)

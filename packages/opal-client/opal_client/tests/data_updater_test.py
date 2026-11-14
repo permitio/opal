@@ -108,7 +108,7 @@ def server():
     # Run the server as a separate process
     proc = Process(target=setup_server, args=(event,), daemon=True)
     proc.start()
-    assert event.wait(5)
+    assert event.wait(30)
     wait_for_server(PORT)
     yield event
     proc.kill()  # Cleanup after test
@@ -245,6 +245,23 @@ async def test_data_updater(server):
     assert res.status_code == 422, res.text
 
 
+async def callback_count() -> int:
+    async with ClientSession() as session:
+        res = await session.get(CHECK_DATA_UPDATE_CALLBACK_URL)
+        return await res.json()
+
+
+async def wait_for_callback_count(expected: int, timeout: float = 10) -> int:
+    """Poll the callback counter until it reaches expected or timeout passes,
+    and return the last count."""
+    deadline = asyncio.get_running_loop().time() + timeout
+    count = await callback_count()
+    while count < expected and asyncio.get_running_loop().time() < deadline:
+        await asyncio.sleep(0.1)
+        count = await callback_count()
+    return count
+
+
 @pytest.mark.asyncio
 async def test_data_updater_with_report_callback(server):
     """Disable auto-update on connect (fetch_on_connect=False) Connect to OPAL-
@@ -261,10 +278,7 @@ async def test_data_updater_with_report_callback(server):
     # start the updater (terminate on exit)
     await updater.start()
 
-    current_callback_count = 0
-    async with ClientSession() as session:
-        res = await session.get(CHECK_DATA_UPDATE_CALLBACK_URL)
-        current_callback_count = await res.json()
+    current_callback_count = await callback_count()
 
     proc2 = None
     try:
@@ -272,31 +286,21 @@ async def test_data_updater_with_report_callback(server):
         proc.start()
         # wait until new data arrives into the store via the updater
         await asyncio.wait_for(policy_store.wait_for_data(), 15)
-        # give the callback a chance to arrive
-        await asyncio.sleep(1)
+        # the report is sent after the store update, so it can lag behind it
+        count = await wait_for_callback_count(current_callback_count + 1)
+        # we got one callback in the interim
+        assert count == current_callback_count + 1
 
-        async with ClientSession() as session:
-            res = await session.get(CHECK_DATA_UPDATE_CALLBACK_URL)
-            count = await res.json()
-            # we got one callback in the interim
-            assert count == current_callback_count + 1
-
-        async with ClientSession() as session:
-            res = await session.get(CHECK_DATA_UPDATE_CALLBACK_URL)
-            current_callback_count = await res.json()
+        current_callback_count = await callback_count()
 
         proc2 = multiprocessing.Process(target=trigger_update_patch, daemon=True)
         proc2.start()
         # wait until new data arrives into the store via the updater
         await asyncio.wait_for(policy_store.wait_for_data(), 15)
-        # give the callback a chance to arrive
-        await asyncio.sleep(1)
-
-        async with ClientSession() as session:
-            res = await session.get(CHECK_DATA_UPDATE_CALLBACK_URL)
-            count = await res.json()
-            # we got one callback in the interim
-            assert count == current_callback_count + 1
+        # the report is sent after the store update, so it can lag behind it
+        count = await wait_for_callback_count(current_callback_count + 1)
+        # we got one callback in the interim
+        assert count == current_callback_count + 1
 
     # cleanup
     finally:

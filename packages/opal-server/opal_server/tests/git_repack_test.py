@@ -59,6 +59,9 @@ from opal_server.scopes.purge import purge_local_memory
 from opal_server.scopes.scope_repository import ScopeNotFoundError
 from opal_server.scopes.service import NewCommitsCallbacks, ScopesService
 
+# What these tests stub or measure is libgit2's fetch and clone.
+pytestmark = pytest.mark.fetch_backend("libgit2")
+
 _SIG = pygit2.Signature("opal-test", "opal-test@example.com")
 
 
@@ -71,7 +74,7 @@ def _init_remote(path: Path) -> pygit2.Repository:
 def _commit(repo: pygit2.Repository, content: str, parent=None) -> pygit2.Oid:
     blob = repo.create_blob(content.encode())
     builder = repo.TreeBuilder()
-    builder.insert("policy.rego", blob, pygit2.GIT_FILEMODE_BLOB)
+    builder.insert("policy.rego", blob, pygit2.enums.FileMode.BLOB)
     parents = [parent] if parent is not None else []
     return repo.create_commit(
         "refs/heads/master", _SIG, _SIG, content, builder.write(), parents
@@ -175,7 +178,7 @@ def test_repack_keeps_a_packed_object_no_ref_names_yet(tmp_path):
     try:
         blob = remote.create_blob(b"package policy\n# landing\n")
         builder = remote.TreeBuilder()
-        builder.insert("policy.rego", blob, pygit2.GIT_FILEMODE_BLOB)
+        builder.insert("policy.rego", blob, pygit2.enums.FileMode.BLOB)
         landing = str(
             remote.create_commit(
                 None,
@@ -202,9 +205,9 @@ def test_repack_keeps_a_packed_object_no_ref_names_yet(tmp_path):
     _repack_clone(clone_path, timeout=60)
 
     assert _count_pack_files(clone_path) == 1
-    assert (
-        _git(clone_path, "cat-file", "-t", landing, check=False).returncode == 0
-    ), "the repack deleted an object a landing fetch is about to point a ref at"
+    assert _git(clone_path, "cat-file", "-t", landing, check=False).returncode == 0, (
+        "the repack deleted an object a landing fetch is about to point a ref at"
+    )
     _git(clone_path, "update-ref", "refs/heads/landed", landing)
     _git(clone_path, "fsck", "--no-progress")
 
@@ -482,9 +485,9 @@ def test_a_sigkill_stop_returns_once_nothing_of_the_group_holds_its_lock(tmp_pat
             stopped = git_fetcher._stop_repack(proc, 0.0)
             os.close(watching)
         assert stopped is True
-        assert _free_once_a_stop_returns(
-            lambda: _lock_is_free(lock_dir)
-        ), f"stop {i}: the lock is still held"
+        assert _free_once_a_stop_returns(lambda: _lock_is_free(lock_dir)), (
+            f"stop {i}: the lock is still held"
+        )
 
 
 def test_leftovers_of_a_dead_repack_are_removed_before_git_runs(tmp_path, monkeypatch):
@@ -494,7 +497,7 @@ def test_leftovers_of_a_dead_repack_are_removed_before_git_runs(tmp_path, monkey
     nothing else ever removes it.
 
     libgit2's files stay: its in-flight names, and a fetched pack's ``.idx``
-    committed before its ``.pack`` (measured on libgit2 1.7.2).
+    committed before its ``.pack`` (measured on libgit2 1.9.7).
     """
     clone_path = _fake_clone(tmp_path)
     pack = _pack_dir(clone_path)
@@ -911,7 +914,7 @@ def test_a_leader_killed_mid_repack_takes_its_git_with_it(tmp_path, monkeypatch)
 
 
 @pytest.mark.skipif(not hasattr(os, "fork"), reason="needs os.fork")
-# Python 3.12+ warns on fork() with threads alive, as it would in the gunicorn
+# Python warns on fork() with threads alive, as it would in the gunicorn
 # master this stands in for; the child below makes nothing but raw syscalls.
 @pytest.mark.filterwarnings(
     "ignore:This process .* is multi-threaded:DeprecationWarning"
@@ -1019,10 +1022,9 @@ def test_repack_runs_git_with_expected_args_and_minimal_env(tmp_path, monkeypatc
 def test_missing_git_raises_git_not_found(tmp_path, monkeypatch, kind):
     """No git on PATH is GitNotFoundError, whatever else PATH holds.
 
-    "unsearchable-dir" is the official image's case: its PATH lists
-    /root/.local/bin, which the opal user cannot search, and a bare exec
-    lookup then reports the EACCES from that entry (PermissionError)
-    instead of "not found".
+    "unsearchable-dir" is a PATH entry the server's user cannot search
+    (another user's home, say): a bare exec lookup then reports the
+    EACCES from that entry (PermissionError) instead of "not found".
     """
     empty = tmp_path / "empty-bin"
     empty.mkdir()
@@ -1332,7 +1334,7 @@ class _ScopeRepo:
         """Rewrite the branch to a new commit on ``onto``, dropping the tip."""
         blob = self.remote.create_blob(self._next_content().encode())
         builder = self.remote.TreeBuilder()
-        builder.insert("policy.rego", blob, pygit2.GIT_FILEMODE_BLOB)
+        builder.insert("policy.rego", blob, pygit2.enums.FileMode.BLOB)
         rewritten = self.remote.create_commit(
             None, _SIG, _SIG, "rewrite", builder.write(), [onto]
         )
@@ -1389,9 +1391,9 @@ async def test_sync_repacks_the_clone_once_its_packs_reach_the_limit(
     assert _count_pack_files(scope.clone_path) == 1
     # PDPs heard about the new commit before the repack started.
     assert scope.notified[-1][1:] == (tip, _LIMIT)
-    assert (
-        path not in GitPolicyFetcher.repos
-    ), "the cached handle was kept, holding the deleted packs open"
+    assert path not in GitPolicyFetcher.repos, (
+        "the cached handle was kept, holding the deleted packs open"
+    )
     assert freed == [path], "the cached handle was dropped but not free()'d"
     assert _repack_outcomes(emitted) == ["ok"]
     [(seconds, tags)] = _repack_seconds(emitted)
@@ -1674,9 +1676,9 @@ async def test_failed_repack_still_completes_the_sync_and_waits_out_an_hour(
     git_fetcher._repack_failed_at.update(saved)
 
     # Once the hour is up it is tried again.
-    git_fetcher._repack_failed_at[
-        scope.source_id
-    ] -= git_fetcher._REPACK_FAILURE_COOLDOWN_SECONDS
+    git_fetcher._repack_failed_at[scope.source_id] -= (
+        git_fetcher._REPACK_FAILURE_COOLDOWN_SECONDS
+    )
     # The marker counts from the start of the repack, for the cooldown plus
     # as long as that repack could have run.
     expired = time.time() - (
@@ -2493,7 +2495,7 @@ async def test_purge_the_refresh_waited_behind_leaves_it_nothing_to_do(
     sid = repo.source_id
     svc = _service(tmp_path)  # the deleted scope is no longer stored
     # The floor parks in its store read until this is set. Ungated, a read that
-    # fails at once ends the floor in the tick that starts it: from 3.12
+    # fails at once ends the floor in the tick that starts it:
     # asyncio.wait_for runs the read in the floor's own task.
     read_gate = asyncio.Event()
     read_store = svc._scopes.all
@@ -3010,9 +3012,9 @@ def test_index_seen_without_its_pack_for_a_minute_is_swept_with_companions(tmp_p
     assert "pack-old1.idx" in os.listdir(pack)
 
     path = os.fspath(pack / "pack-old1.idx")
-    git_fetcher._orphan_index_first_seen[
-        path
-    ] -= git_fetcher._ORPHAN_INDEX_MIN_AGE_SECONDS
+    git_fetcher._orphan_index_first_seen[path] -= (
+        git_fetcher._ORPHAN_INDEX_MIN_AGE_SECONDS
+    )
     git_fetcher._remove_repack_leftovers(pack, "test")
 
     assert sorted(os.listdir(pack)) == ["pack-live.idx", "pack-live.pack"]
@@ -3063,7 +3065,7 @@ def test_no_sweep_while_git_outlives_its_sigkill(tmp_path, monkeypatch):
     )
     real_stop = git_fetcher._stop_repack
 
-    def _stuck(proc, grace):
+    def _stuck(proc, grace, what):
         real_stop(proc, 0.0)  # really stop it, then report git repack stuck
         return "repack" not in proc.args
 
@@ -3093,7 +3095,8 @@ async def test_no_repack_starts_while_a_sync_pass_runs(tmp_path, monkeypatch, em
     repack running beside it would fill every slot with waiters for that clone
     and stall the whole pass.
 
-    The mark stays; the pass that ends last repacks it.
+    The mark stays, and each deferral is counted; the pass repacks it at
+    its end.
     """
     spy = _RepackSpy()
     monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
@@ -3109,6 +3112,7 @@ async def test_no_repack_starts_while_a_sync_pass_runs(tmp_path, monkeypatch, em
     assert spy.calls == []
     assert scope.source_id in git_fetcher._repacks_due
     assert git_fetcher._sync_passes_in_flight == 0
+    assert _skips(emitted) == [{"reason": "pass_in_flight"}] * 2
 
     await GitPolicyFetcher.run_due_repacks({scope.source_id})
     assert spy.calls == [str(scope.clone_path)]
@@ -3240,40 +3244,6 @@ async def test_remove_clone_dir_exclusive_where_flock_fails(tmp_path, monkeypatc
         assert await git_fetcher.remove_clone_dir_exclusive(str(clone)) is True
         assert not clone.exists()
     assert git_fetcher._repack_lock_fds == set()
-
-
-@pytest.mark.asyncio
-async def test_passes_that_never_stop_defer_a_repack_for_half_an_hour_at_most(
-    tmp_path, monkeypatch, emitted
-):
-    """Each deferral is counted; once the mark is _PASS_DEFER_MAX_SECONDS old
-    the repack runs beside the pass instead of waiting for a gap that never
-    comes."""
-    spy = _RepackSpy()
-    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
-    scope = _ScopeRepo(tmp_path, "s1")
-    await scope.fetched(_LIMIT - 1)
-    scope.push()
-    await scope.sync()
-    due = git_fetcher._repacks_due[scope.source_id]
-    assert due.marked_at is not None
-
-    with GitPolicyFetcher.sync_pass():
-        await GitPolicyFetcher.run_due_repacks({scope.source_id})
-        assert spy.calls == []
-        assert _skips(emitted) == [{"reason": "pass_in_flight"}]
-
-        # A later fetch's mark keeps the first mark's time.
-        scope.push()
-        await scope.sync()
-        assert git_fetcher._repacks_due[scope.source_id].marked_at == due.marked_at
-
-        git_fetcher._repacks_due[scope.source_id] = git_fetcher._repacks_due[
-            scope.source_id
-        ]._replace(marked_at=due.marked_at - git_fetcher._PASS_DEFER_MAX_SECONDS)
-        await GitPolicyFetcher.run_due_repacks({scope.source_id})
-    assert spy.calls == [str(scope.clone_path)]
-    assert _count_pack_files(scope.clone_path) == 1
 
 
 @pytest.mark.asyncio
@@ -3753,7 +3723,7 @@ def test_repack_of_a_clone_git_clone_made_replaces_its_two_reflogs_settings(
 async def test_a_scope_clone_writes_no_reflog(tmp_path):
     """A scope clone is made with reflogs off, so neither its clone, nor a
     fetch, nor a scope's own ref (refs/heads/scopes/<scope>) writes one:
-    libgit2 1.7.2 honours core.logAllRefUpdates=false.
+    libgit2 1.9.7 honours core.logAllRefUpdates=false.
 
     Mutation: cloning without the repository callback that turns them off
     writes a reflog for every ref.
@@ -3873,8 +3843,13 @@ async def test_libgit2_and_git_fetch_a_housekept_clone(tmp_path, monkeypatch):
     assert "refs/remotes/origin/env2" not in refs
     assert scope.notified[-1][1] == tip
 
-    # git, through the scope fetcher
+    # git, through the scope fetcher, of every branch (as a pass whose scopes
+    # track more branches than SCOPES_GIT_CLI_NARROW_FETCH_MAX_BRANCHES): a
+    # refresh of s1 would ask for its own branch alone.
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", True)
+    monkeypatch.setattr(
+        opal_server_config, "SCOPES_GIT_CLI_NARROW_FETCH_MAX_BRANCHES", 0
+    )
     tip = str(scope.push())
     scope.remote.create_reference("refs/heads/env4", scope.tip)
     scope.remote.references.delete("refs/heads/env3")
@@ -4012,9 +3987,6 @@ def test_a_clone_that_cannot_be_read_has_no_ref_steps_due(tmp_path):
     """The check never raises: the mark after a fetch never fails the sync,
     and the due run never ends the pass's other repacks. A clone dir with mode
     000, whose .git a stat then fails with EACCES.
-
-    Mutation: Path.is_dir(), which re-raises EACCES on Python 3.11-3.12,
-    raises PermissionError out of it.
     """
     clone = _fake_clone(tmp_path)
     clone.chmod(0)
@@ -4407,6 +4379,74 @@ def test_reflogs_left_set_aside_are_removed_by_the_next_repack_not_the_preload(
     assert _wait_for(lambda: not left.exists())
 
 
+def _clone_dir_with_reflogs_set_aside(clones: Path, name: str) -> Path:
+    git_dir = clones / name / ".git"
+    aside = git_dir / f"{git_cli.REFLOGS_SET_ASIDE}dead"
+    (aside / "refs" / "remotes" / "origin").mkdir(parents=True)
+    (aside / "refs" / "remotes" / "origin" / "main").write_text("0" * 40 + "\n")
+    (git_dir / "HEAD").write_text("ref: refs/heads/main\n")
+    return aside
+
+
+def test_reflogs_left_set_aside_in_a_quiet_clone_go_when_a_leader_starts(tmp_path):
+    """A quiet clone, whose packs stay under the repack's limit, has no next
+    repack to remove the reflogs a dead process set aside: the scopes leader's
+    start removes them in every clone, each on a thread of its own, and says
+    how many clones had some. Names that are not a clone's, and a symlink to
+    one, are not looked into.
+
+    Mutation: leaving this to the next repack keeps them.
+    """
+    clones = GitPolicyFetcher.base_dir(tmp_path / "base")
+    asides = [_clone_dir_with_reflogs_set_aside(clones, f"{c * 64}-0") for c in "ab"]
+    _clone_dir_with_reflogs_set_aside(clones, f"{'c' * 64}-1").parent.joinpath(
+        f"{git_cli.REFLOGS_SET_ASIDE}0"
+    ).mkdir()
+    kept = [
+        _clone_dir_with_reflogs_set_aside(clones, "not-a-source-id"),
+        _clone_dir_with_reflogs_set_aside(tmp_path / "elsewhere", f"{'d' * 64}-0"),
+    ]
+    (clones / f"{'d' * 64}-0").symlink_to(kept[1].parent.parent)
+    quiet = clones / f"{'e' * 64}-0"
+    (quiet / ".git").mkdir(parents=True)
+
+    assert git_fetcher.remove_reflogs_left_set_aside(tmp_path / "base") == 3
+
+    assert _wait_for(lambda: not any(a.exists() for a in asides))
+    assert _wait_for(lambda: not _asides(clones / f"{'c' * 64}-1"))
+    assert all(k.exists() for k in kept)
+
+
+def test_no_clones_dir_means_no_reflogs_to_remove(tmp_path):
+    assert git_fetcher.remove_reflogs_left_set_aside(tmp_path / "base") == 0
+
+
+def test_a_clones_dir_that_cannot_be_listed_is_logged_not_raised(
+    tmp_path, monkeypatch, records
+):
+    clones = GitPolicyFetcher.base_dir(tmp_path / "base")
+    _clone_dir_with_reflogs_set_aside(clones, f"{'a' * 64}-0")
+    scandir = os.scandir
+
+    def _scandir(path="."):
+        if Path(path) == clones:
+            raise PermissionError(13, "Permission denied")
+        return scandir(path)
+
+    monkeypatch.setattr(git_fetcher.os, "scandir", _scandir)
+
+    assert git_fetcher.remove_reflogs_left_set_aside(tmp_path / "base") == 0
+    assert [
+        (r["level"].name, r["message"]) for r in records if "set aside" in r["message"]
+    ] == [
+        (
+            "WARNING",
+            f"Could not look for reflogs set aside in {clones}: "
+            "PermissionError(13, 'Permission denied')",
+        )
+    ]
+
+
 def _reflog_thread_ahead_of_unlink(monkeypatch) -> None:
     """os.unlink with the reflog removal thread running ahead of it in the same
     directory: by the first reflog file a delete removes, the thread has
@@ -4436,11 +4476,11 @@ async def test_a_clone_delete_beside_the_reflog_removal_thread_removes_it_all(
 ):
     """The reflog removal thread runs outside the clone's lock, so a delete of
     the clone (invalid-repo recovery, a DELETE) can walk the reflogs the thread
-    is removing, and find gone an entry it listed. On Python 3.11 and 3.12
-    rmtree then stops with FileNotFoundError and leaves the rest, and the
-    callers take that error for the clone being gone already.
+    is removing, and find gone an entry it listed.
 
-    Mutation: a plain rmtree leaves the clone's directory.
+    Stopped there with a FileNotFoundError, the delete would leave the
+    rest, and the callers would take that error for the clone being gone
+    already.
     """
     clone = tmp_path / "git_sources" / "src"
     aside = clone / ".git" / f"{git_cli.REFLOGS_SET_ASIDE}0001"
@@ -4846,9 +4886,9 @@ def test_pack_refs_stopped_at_its_share_of_the_timeout_leaves_a_usable_clone(
     while it removes that ref's file. Stopped with SIGKILL it leaves them, and
     every later pack-refs, and every fetch that updates or prunes such a ref,
     fails on them. They are removed once its process group is gone, as after a
-    stopped fetch (PER-17993). Before a repack the stop is a warning, counted,
-    and git repack then runs with the rest of the timeout; with the ref steps
-    alone TimeoutError names pack-refs, and the stop is counted too.
+    stopped fetch. Before a repack the stop is a warning, counted, and git
+    repack then runs with the rest of the timeout; with the ref steps alone
+    TimeoutError names pack-refs, and the stop is counted too.
 
     Mutation: not removing the locks after the stop fails the lock asserts
     and the fetch after; cancelling git repack fails "repack"; raising
@@ -4969,7 +5009,7 @@ def test_a_repack_whose_git_outlives_its_stop_stays_recorded(
         refs_steps=True,
     )
 
-    def _stop_that_cannot_tell(proc, grace):
+    def _stop_that_cannot_tell(proc, grace, what):
         """Git is gone, but as a stop that timed out waiting reports it."""
         os.killpg(proc.pid, signal.SIGKILL)
         proc.wait()
@@ -5233,6 +5273,11 @@ async def _clone_whose_pack_refs_was_killed(tmp_path, monkeypatch):
     )
     assert stuck.returncode != 0, "the premise: a pruning fetch fails on the lock"
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_PRUNE", True)
+    # A git fetch of every branch, as the libgit2 one is, so that it prunes env2
+    # (a fetch of the scope's branch alone prunes only that branch's refs).
+    monkeypatch.setattr(
+        opal_server_config, "SCOPES_GIT_CLI_NARROW_FETCH_MAX_BRANCHES", 0
+    )
     return scope, ref_lock
 
 

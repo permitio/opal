@@ -64,6 +64,8 @@ Please follow these guidelines:
     ```
 6. **Submit PR**: Open a pull request, linking to the issue and explaining your changes clearly.
 
+Mutation testing of a PR's changed lines runs when the PR has the `mutation` label, which a maintainer can add; a weekly run covers the whole code base and only reports.
+
 We aim to review all PRs promptly. After you submit a PR, here’s what you can expect:
 1. **Initial Review:** A maintainer will review your PR within a few days. If there are any issues, they will provide feedback.
 2. **Feedback:** If changes are needed, please make the necessary updates and push them to your branch. The PR will be updated automatically.
@@ -89,7 +91,7 @@ We are excited to have you onboard as a contributor to OPAL! 🎉
 ### Setting up Your Development Environment
 
 #### Prerequisites
-- [Python](https://www.python.org/downloads/)
+- [Python 3.14](https://www.python.org/downloads/)
 - [Docker](https://docs.docker.com/get-docker/)
 - [OPA](https://www.openpolicyagent.org/docs/latest/#running-opa)
 
@@ -139,6 +141,15 @@ make docker-build-server
 make docker-build-client  # with inline OPA engine
 make docker-build-client-cedar  # with inline cedar agent engine
 make docker-build-client-standalone  # without inline engine
+```
+
+The images install their Python packages from `docker/lock/requirements.txt`, a hash-locked
+compile of the packages' `requires.txt` files. After you change a `requires.txt`, regenerate it
+from the repository root (the `pip-compile` hook fails until you do):
+```bash
+uv pip compile --no-config --directory docker/lock --python-version 3.14 \
+  --python-platform x86_64-unknown-linux-gnu --generate-hashes requirements.in \
+  --output-file requirements.txt
 ```
 
 ### Running the Documentation Locally

@@ -3,8 +3,10 @@ leaves a marker of its own beside its clone for as long as it lingers, and any
 later successful fetch or clone of that source removes them all; a server start
 deletes each clone this host left marked before the preload's sync, which clones
 it fresh."""
+
 import asyncio
 import fcntl
+import hashlib
 import itertools
 import os
 import subprocess
@@ -31,6 +33,9 @@ from opal_server.git_fetcher import (
     reclone_hung_scope_clones,
     run_in_git_executor,
 )
+
+# What these tests stub or measure is libgit2's fetch and clone.
+pytestmark = pytest.mark.fetch_backend("libgit2")
 
 HOST = git_fetcher_module._HUNG_MARKER_HOST
 
@@ -647,40 +652,58 @@ async def test_markers_are_cleared_even_with_the_setting_off(tmp_path):
     )  # cleared on its own thread
 
 
-def test_clear_hung_markers_retries_when_an_entry_vanishes_mid_walk(
-    tmp_path, monkeypatch
+def _other_markers_gone_first(monkeypatch) -> None:
+    """os.unlink as when other processes' ops return meanwhile: by the first
+    marker a removal gets to, the other markers, which it has listed, are
+    gone."""
+    real_unlink = os.unlink
+    first: list = []
+
+    def _unlink(path, *, dir_fd=None):
+        name = os.path.basename(path)
+        if name.startswith("op-") and not first:
+            first.append(name)
+            where = dir_fd if dir_fd is not None else os.path.dirname(path)
+            for other in os.listdir(where):
+                if other.startswith("op-") and other != name:
+                    if dir_fd is None:
+                        other = os.path.join(where, other)
+                    real_unlink(other, dir_fd=dir_fd)
+        real_unlink(path, dir_fd=dir_fd)
+
+    monkeypatch.setattr(os, "unlink", _unlink)
+
+
+def test_clear_hung_markers_removes_all_when_an_entry_vanishes_mid_walk(
+    tmp_path, monkeypatch, warnings_logged
 ):
-    """On Python 3.11 and 3.12 rmtree stops with FileNotFoundError when an
-    entry it listed is removed first, leaving the rest."""
+    """Another process's op returning removes its own marker while this walk
+    has it listed: the markers go all the same, quietly."""
     clone = _clone_dir(tmp_path, _sid(1), hung=True)
-    real = git_fetcher_module.shutil.rmtree
-    calls = []
+    markers = hung_marker_dir(clone)
+    for i in range(3):
+        (markers / f"op-{i}").write_text("x")
+    _other_markers_gone_first(monkeypatch)
 
-    def _vanishing(path, *a, **k):
-        calls.append(path)
-        if len(calls) == 1:
-            raise FileNotFoundError(2, "No such file", str(Path(path) / "gone"))
-        return real(path, *a, **k)
+    clear_hung_markers(markers)
 
-    monkeypatch.setattr(git_fetcher_module.shutil, "rmtree", _vanishing)
-    clear_hung_markers(hung_marker_dir(clone))
-    assert len(calls) == 2 and not hung_marker_dir(clone).exists()
+    assert not markers.exists()
+    assert warnings_logged == []
 
 
-def test_clear_hung_markers_warns_when_the_retry_fails_too(
+def test_clear_hung_markers_warns_when_rmtree_fails(
     tmp_path, monkeypatch, warnings_logged
 ):
     clone = _clone_dir(tmp_path, _sid(1), hung=True)
-
     calls = []
 
-    def _vanishing(path, *a, **k):
+    def _denied(path, *a, **k):
         calls.append(path)
-        raise FileNotFoundError(2, "No such file", str(Path(path) / "gone"))
+        raise PermissionError(13, "Permission denied", str(path))
 
-    monkeypatch.setattr(git_fetcher_module.shutil, "rmtree", _vanishing)
+    monkeypatch.setattr(git_fetcher_module.shutil, "rmtree", _denied)
     clear_hung_markers(hung_marker_dir(clone))
-    assert len(calls) == 2  # one retry, no more
+    assert len(calls) == 1  # one attempt, no retry
     assert any("Could not remove hung-op markers" in m for m in warnings_logged)
 
 
@@ -1004,6 +1027,75 @@ def test_no_live_clone_on_disk_keeps_every_hung_clone(
     assert reclone_hung_scope_clones(tmp_path, live) == 0
     assert all((_root(tmp_path) / _sid(n)).exists() for n in (1, 2, 3))
     assert any("none is a clone of a current scope" in m for m in warnings_logged)
+
+
+# --- clones readiness waits for (SCOPES_READY_REQUIRED_REPOS) -------------------------------
+
+_REQUIRED_URL = "git@git.example:org/root.git"
+
+
+def _required_sid(shard: int = 0) -> str:
+    return f"{hashlib.sha256(_REQUIRED_URL.encode()).hexdigest()}-{shard}"
+
+
+@pytest.fixture
+def required(monkeypatch):
+    monkeypatch.setattr(
+        opal_server_config, "SCOPES_READY_REQUIRED_REPOS", [_REQUIRED_URL]
+    )
+
+
+def test_a_landed_hung_clone_of_a_required_repo_is_kept(
+    tmp_path, on, required, monkeypatch, warnings_logged
+):
+    """Deleted, the clone would keep the server from Ready until a fresh clone
+    of that repository lands; kept, it serves its last fetched policy."""
+    seen = []
+    monkeypatch.setattr(
+        git_fetcher_module.metrics, "increment", lambda name, *a, **k: seen.append(name)
+    )
+    kept = _clone_dir(tmp_path, _required_sid(), hung=True)
+    other = _clone_dir(tmp_path, _sid(2), hung=True)
+    for n in (3, 4, 5):
+        _clone_dir(tmp_path, _sid(n))
+
+    assert reclone_hung_scope_clones(tmp_path, None) == 1
+    assert kept.exists() and _markers(kept)
+    assert not other.exists()
+    assert sorted(seen) == [
+        "opal_server.scopes.hung_clone_kept",
+        "opal_server.scopes.hung_clone_recloned",
+    ]
+    assert any(
+        _required_sid() in m and "SCOPES_READY_REQUIRED_REPOS" in m
+        for m in warnings_logged
+    )
+
+
+def test_every_landed_shard_of_a_required_repo_is_kept(tmp_path, on, required):
+    shards = [_clone_dir(tmp_path, _required_sid(i), hung=True) for i in range(3)]
+    for n in (3, 4, 5):
+        _clone_dir(tmp_path, _sid(n))
+    assert reclone_hung_scope_clones(tmp_path, None) == 0
+    assert all(s.exists() for s in shards)
+
+
+def test_a_hung_clone_of_a_required_repo_that_never_landed_is_deleted(
+    tmp_path, on, required
+):
+    """It holds no policy to keep, and readiness waits for it anyway."""
+    clone = _root(tmp_path) / _required_sid()
+    pygit2.init_repository(str(clone))
+    (clone / ".git" / "FETCH_HEAD").write_text("")
+    _mark(clone)
+    assert reclone_hung_scope_clones(tmp_path, None) == 1
+    assert not clone.exists()
+
+
+def test_without_required_repos_a_hung_clone_of_that_repo_is_deleted(tmp_path, on):
+    clone = _clone_dir(tmp_path, _required_sid(), hung=True)
+    assert reclone_hung_scope_clones(tmp_path, None) == 1
+    assert not clone.exists()
 
 
 # --- the preload wiring ---------------------------------------------------------------------

@@ -1,5 +1,5 @@
-"""The scopes fetcher with SCOPES_GIT_FETCH_WITH_CLI on (PER-17993): clones and
-fetches run git (``opal_server.git_cli``) under the bookkeeping a libgit2 op
+"""The scopes fetcher with SCOPES_GIT_FETCH_WITH_CLI on: clones and fetches
+run git (``opal_server.git_cli``) under the bookkeeping a libgit2 op
 gets (in-flight key, SCOPES_GIT_MAX_WORKERS slot, hung-op marker, metrics,
 backoff), and a fetch that hangs no longer keeps its clone from syncing.
 
@@ -7,7 +7,9 @@ Real git against local remotes only (see git_cli_test).
 """
 
 import asyncio
+import base64
 import errno
+import math
 import os
 import shutil
 import subprocess
@@ -66,6 +68,10 @@ def _source(url: str, auth=None) -> GitPolicyScopeSource:
         branch="master",
         auth=auth or NoAuthData(auth_type="none"),
     )
+
+
+def _basic(user: str, password: str) -> str:
+    return "Basic " + base64.b64encode(f"{user}:{password}".encode()).decode()
 
 
 def _fetcher(base: Path, source: GitPolicyScopeSource) -> GitPolicyFetcher:
@@ -297,6 +303,125 @@ async def test_a_member_that_outlives_sigkill_holds_no_max_workers_slot(
 
 
 @pytest.mark.asyncio
+async def test_stalled_clones_hold_a_healthy_clone_one_fetch_timeout_a_round(
+    cli_on, blackhole, git_origin, tmp_path, monkeypatch, processes_with
+):
+    """Clones of remotes that never answer, begun first, keep a healthy
+    source's clone waiting one fetch timeout per round of slots.
+
+    A clone holds its SCOPES_GIT_MAX_WORKERS slot for
+    SCOPES_GIT_FETCH_TIMEOUT at most and runs on outside it, to
+    SCOPES_GIT_CLONE_TIMEOUT, so a round is not one clone timeout.
+    """
+    fetch_timeout, clone_timeout = 0.5, 4.0
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_MAX_WORKERS", 2)
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_TIMEOUT", fetch_timeout)
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_CLONE_TIMEOUT", clone_timeout)
+    marker = f"stalled-{uuid.uuid4().hex}"
+    base = tmp_path / "base"
+    stalled = [
+        _fetcher(base, _source(f"http://127.0.0.1:{blackhole}/{marker}-{i}.git"))
+        for i in range(4)
+    ]
+    syncs = [asyncio.ensure_future(f.fetch_and_notify_on_changes()) for f in stalled]
+    await _until(lambda: all(git_op_in_flight(f.clone_source_id) for f in stalled[:2]))
+    healthy = _fetcher(base, _source(git_origin.url))
+    head = str(git_origin.repo.references["refs/heads/master"].target)
+
+    start = time.monotonic()
+    await healthy.fetch_and_notify_on_changes()
+    elapsed = time.monotonic() - start
+
+    assert healthy.callbacks.updates == [(None, head)]
+    assert elapsed <= 2 * fetch_timeout + 2, (
+        f"the healthy clone waited {elapsed:.1f}s for a slot (clone timeout "
+        f"{clone_timeout}s, fetch timeout {fetch_timeout}s)"
+    )
+    assert all(git_op_in_flight(f.clone_source_id) for f in stalled)
+    await asyncio.gather(*syncs)
+    await _until(lambda: processes_with(marker) == [])
+
+
+def _stalled_clone(blackhole: int, path: Path, timeout: float, slot_timeout):
+    """A clone from a remote that never answers, run by run_git_cli_op as a
+    task; the task and the op's in-flight key."""
+    key = f"stalled-{uuid.uuid4().hex}"
+    url = f"http://127.0.0.1:{blackhole}/{key}.git"
+    op = run_git_cli_op(
+        partial(cli_clone, url, path, _source(url), remote="origin", timeout=timeout),
+        timeout=timeout,
+        busy_key=key,
+        slot_timeout=slot_timeout,
+    )
+    return asyncio.ensure_future(op), key
+
+
+async def _clone_on_a_slot(origin_url: str, path: Path) -> float:
+    """How long a git command-line clone of ``origin_url`` took, waiting for
+    its SCOPES_GIT_MAX_WORKERS slot included."""
+    start = time.monotonic()
+    await run_git_cli_op(
+        partial(
+            cli_clone,
+            origin_url,
+            path,
+            _source(origin_url),
+            remote="origin",
+            timeout=60,
+        ),
+        timeout=60,
+        busy_key=f"healthy-{uuid.uuid4().hex}",
+    )
+    return time.monotonic() - start
+
+
+@pytest.mark.asyncio
+async def test_an_op_gives_its_slot_back_at_its_slot_timeout_and_runs_on(
+    blackhole, git_origin, tmp_path, monkeypatch, processes_with
+):
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_MAX_WORKERS", 1)
+    slot_timeout, timeout = 0.5, 3.0
+    stalled, key = _stalled_clone(
+        blackhole, tmp_path / "stalled", timeout, slot_timeout
+    )
+    await _until(lambda: git_op_in_flight(key))
+
+    waited = await _clone_on_a_slot(git_origin.url, tmp_path / "healthy")
+
+    assert slot_timeout - 0.2 <= waited <= slot_timeout + 1.5
+    assert git_op_in_flight(key) and not stalled.done()
+    with pytest.raises(GitCliTimeoutError):
+        await stalled
+    await _until(lambda: not git_op_in_flight(key))
+    assert processes_with(key) == []
+    # Given back once: the one slot is free, and taking it leaves none.
+    slots = git_fetcher_module._get_live_ops_semaphore()
+    await asyncio.wait_for(slots.acquire(), 1)
+    assert slots.locked()
+    slots.release()
+
+
+@pytest.mark.parametrize("slot_timeout", [None, 0.0, -1.0, math.nan, math.inf])
+@pytest.mark.asyncio
+async def test_without_a_positive_finite_slot_timeout_an_op_holds_its_slot(
+    slot_timeout, blackhole, git_origin, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_MAX_WORKERS", 1)
+    timeout = 1.0
+    stalled, key = _stalled_clone(
+        blackhole, tmp_path / "stalled", timeout, slot_timeout
+    )
+    await _until(lambda: git_op_in_flight(key))
+
+    waited = await _clone_on_a_slot(git_origin.url, tmp_path / "healthy")
+
+    assert waited >= timeout - 0.2
+    assert stalled.done()
+    with pytest.raises(GitCliTimeoutError):
+        await stalled
+
+
+@pytest.mark.asyncio
 async def test_a_hung_op_s_marker_is_written_at_its_timeout_and_removed_once_git_is_gone(
     cli_on, git_origin, tmp_path, monkeypatch
 ):
@@ -497,7 +622,7 @@ async def test_a_bundle_request_during_a_cli_clone_is_held_until_the_clone_lands
         "#!/bin/sh\n"
         f'case " $* " in *" clone "*) : > \'{started}\'; '
         f"while [ ! -e '{gate}' ]; do sleep 0.05; done;; esac\n"
-        f'exec \'{shutil.which("git")}\' "$@"\n'
+        f"exec '{shutil.which('git')}' \"$@\"\n"
     )
     (shims / "git").chmod(0o755)
     monkeypatch.setenv("PATH", f"{shims}{os.pathsep}{os.environ['PATH']}")
@@ -574,17 +699,27 @@ async def test_a_cli_fetch_that_succeeds_clears_the_hung_markers_of_earlier_ops(
 async def test_a_cli_sync_prunes_exactly_when_scopes_git_fetch_prune_is_on(
     prune, cli_on, git_origin, tmp_path, monkeypatch
 ):
+    """A sync's fetch asks for its scope's branch, and prunes only that
+    branch's refs: a branch deleted on the remote that it did not ask for
+    stays."""
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_PRUNE", prune)
     source = _source(git_origin.url)
     fetcher = _fetcher(tmp_path / "base", source)
     await fetcher.fetch_and_notify_on_changes()
     clone = GitPolicyFetcher.repo_clone_path(tmp_path / "base", source)
     git_origin.delete("dev")
-    git_origin.commit("master")
+    git_origin.delete("feature/x")
+    on_dev = GitPolicyFetcher(
+        tmp_path / "base",
+        "scope-dev",
+        source.model_copy(update={"branch": "dev"}),
+        callbacks=_Recorder(),
+    )
 
-    await fetcher.fetch_and_notify_on_changes(force_fetch=True)
+    await on_dev.fetch_and_notify_on_changes(force_fetch=True)
 
     assert ("refs/remotes/origin/dev" in _refs(clone)) is (not prune)
+    assert "refs/remotes/origin/feature/x" in _refs(clone)
 
 
 @pytest.mark.asyncio
@@ -688,30 +823,58 @@ async def test_a_failure_on_the_server_s_own_side_is_counted_as_local(
     assert git_cli._lock_fds == {}
 
 
+@pytest.mark.parametrize("cli", [True, False], ids=["cli", "libgit2"])
+@pytest.mark.asyncio
+async def test_a_source_with_nothing_to_give_a_server_that_asks_is_counted_and_backed_off(
+    cli, git_http, make_origin, tmp_path, monkeypatch, emitted
+):
+    """An http source with no credentials, on a server that asks for some.
+
+    The clone fails as a git error, counted and backed off, with either
+    backend.
+    """
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", cli)
+    make_origin(git_http.root / "repo.git")
+    git_http.authorization = _basic("git", "x")
+    fetcher = _fetcher(tmp_path / "base", _source(git_http.url("repo.git")))
+
+    await fetcher.fetch_and_notify_on_changes()
+
+    assert _failures(emitted) == [{"op": "clone", "reason": "git_error"}]
+    assert fetcher.clone_source_id in GitPolicyFetcher.source_backoff
+    assert fetcher.callbacks.updates == []
+
+
 # server.py's own startup handlers use FastAPI's deprecated on_event; not what
 # this test is about.
 @pytest.mark.filterwarnings("ignore:\\s*on_event is deprecated:DeprecationWarning")
-def test_the_server_starts_with_known_hosts_and_the_cli_off_and_logs_an_error(
-    tmp_path, monkeypatch
+@pytest.mark.parametrize("readable", [True, False], ids=["readable", "missing"])
+def test_with_known_hosts_and_the_cli_off_a_server_starts_only_if_it_can_read_it(
+    readable, tmp_path, monkeypatch
 ):
-    """Turning the CLI fetch off must not stop a server that also has
-    SCOPES_GIT_SSH_KNOWN_HOSTS set (it would crash-loop every pod)."""
+    """Turning the CLI fetch off keeps a server with a readable
+    SCOPES_GIT_SSH_KNOWN_HOSTS starting (libgit2 checks host keys against it
+    too); one it cannot read stops the server, as with the CLI fetch on."""
     import opal_server.server as server_module
 
-    # The capture sink would go with every other handler.
     monkeypatch.setattr(server_module, "configure_logs", lambda: None)
-    path = tmp_path / "missing_known_hosts"
+    path = tmp_path / "known_hosts"
+    if readable:
+        path.write_text("")
+    monkeypatch.setattr(opal_server_config, "SCOPES", True)
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", False)
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_SSH_KNOWN_HOSTS", str(path))
-    records = []
-    sink = logger.add(lambda m: records.append(m.record), level="ERROR")
-    try:
+
+    def _start():
         server_module.OpalServer(
             init_policy_watcher=False, broadcaster_uri=None, enable_jwks_endpoint=False
         )
-    finally:
-        logger.remove(sink)
-    assert any("SCOPES_GIT_SSH_KNOWN_HOSTS" in r["message"] for r in records)
+
+    if readable:
+        _start()
+        return
+    with pytest.raises(ValueError, match="no readable file"):
+        _start()
 
 
 def test_the_scope_preload_fails_before_any_sync_on_an_unreadable_known_hosts(
@@ -782,6 +945,7 @@ def test_a_worker_s_start_removes_the_ssh_key_files_of_processes_that_died(
     import opal_server.server as server_module
 
     monkeypatch.setattr(server_module, "configure_logs", lambda: None)
+    monkeypatch.setattr(opal_server_config, "SCOPES", True)
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", True)
     shm = tmp_path / "shm"
     shm.mkdir()
@@ -832,6 +996,9 @@ async def test_a_fetch_whose_fetch_head_cannot_be_written_still_counts_as_one(
         logger.remove(sink)
 
     assert fetcher.callbacks.updates[-1][1] == new
-    assert GitPolicyFetcher.repos_last_fetched[fetcher.clone_source_id] > before
+    started, succeeded = GitPolicyFetcher.branch_attempts[fetcher.clone_source_id][
+        "master"
+    ]
+    assert succeeded and started > before
     assert fetcher.clone_source_id not in GitPolicyFetcher.source_backoff
     assert [r["message"] for r in records if "FETCH_HEAD" in r["message"]]

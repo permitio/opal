@@ -25,6 +25,26 @@ Read more about **[OPAL+ here](/opal-plus/introduction)**.
 
 ---
 
+## OPAL - 0.10.0
+
+#### Breaking: scopes mode fetches with the git command line
+
+opal-server clones and fetches scope repositories with git (2.32 or later) by
+default, one clone per repository; `OPAL_SCOPES_GIT_FETCH_WITH_CLI=false` keeps
+libgit2. `OPAL_SCOPES_REPO_CLONES_SHARDS` is ignored with git, and a clone has a
+timeout of its own, `OPAL_SCOPES_GIT_CLONE_TIMEOUT`. See
+[upgrading from 0.9](/overview/scopes#upgrading-from-09).
+
+#### Removed: opal-common's thread_worker and AsyncioEventLoopThread
+
+`opal_common.utils` no longer has `thread_worker` or `AsyncioEventLoopThread`.
+Nothing in OPAL used them, and the class failed on every Python since 3.10. To
+run blocking work from async code use `asyncio.to_thread` or
+`loop.run_in_executor`; to run a coroutine on another thread's loop,
+`asyncio.run_coroutine_threadsafe`.
+
+---
+
 ## OPAL - 0.5.0
 
 This release contains several small fixes and improvements.

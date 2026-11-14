@@ -12,9 +12,11 @@ helpers and the RPC inverse test read fewer sinks, or none.
 import json
 import logging
 import re
+import socket
 from contextlib import contextmanager
 from typing import Any, Dict, Iterator, List, Tuple
 
+import pygit2
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -23,6 +25,7 @@ from loguru import logger
 from opal_common.logger import _scrub_record_message
 from opal_common.logging_utils.intercept import InterceptHandler
 from opal_common.schemas.data import DataUpdateReport, ServerDataSourceConfig
+from opal_common.schemas.policy_source import GitPolicyScopeSource, NoAuthData
 from opal_common.tests.log_capture import starting_with
 from opal_common.tests.redaction_fixtures import (
     CapturedLogs,
@@ -30,9 +33,11 @@ from opal_common.tests.redaction_fixtures import (
     without_log_patcher,
 )
 from opal_common.urls import set_url_query_param
+from opal_server import git_fetcher as git_fetcher_module
 from opal_server import server as server_module
 from opal_server.config import opal_server_config
 from opal_server.data import api as data_api
+from opal_server.git_fetcher import GitPolicyFetcher
 from opal_server.policy.watcher import task as watcher_task_module
 from opal_server.redis_utils import RedisDB
 
@@ -379,6 +384,48 @@ async def test_policy_watcher_failure_log_masks_remote_auth(monkeypatch):
     failed = [line for line in serialized if "policy watcher failed" in line]
     assert failed and "git.example.com/org/policy.git" in failed[0], serialized
     _assert_absent([FAKE_PASSWORD], text, serialized)
+
+
+# --- scope clone failure logs ------------------------------------------------
+
+
+def _closed_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def _refused(*args, **kwargs):
+    raise pygit2.GitError("failed to connect to the remote: Connection refused")
+
+
+@pytest.mark.fetch_backend("both")
+@pytest.mark.parametrize("form", ["private_token", "scp-like"])
+@pytest.mark.asyncio
+async def test_a_failed_scope_clone_logs_no_private_token_or_scp_password(
+    form, fetch_backend, tmp_path, monkeypatch
+):
+    """A source whose URL carries GitLab's private_token, or a password in
+    git's scp-like form, fails to clone: neither reaches the log, with either
+    fetch backend (the git command line refuses both URLs before git runs)."""
+    for name in ("repos", "repos_last_fetched", "repo_locks", "source_backoff"):
+        monkeypatch.setattr(GitPolicyFetcher, name, {})
+    if form == "private_token":
+        url = f"http://127.0.0.1:{_closed_port()}/o/r.git?private_token={FAKE_KEY}"
+    else:
+        url = f"deploy:p@ss-{FAKE_KEY}@127.0.0.1:org/r.git"
+        # libgit2 would go to port 22 of this machine.
+        monkeypatch.setattr(git_fetcher_module, "clone_repository", _refused)
+    source = GitPolicyScopeSource(
+        source_type="git", url=url, branch="main", auth=NoAuthData(auth_type="none")
+    )
+    fetcher = GitPolicyFetcher(tmp_path, "scope-1", source)
+
+    with _captured_logs() as (text, serialized):
+        await fetcher.fetch_and_notify_on_changes()
+
+    assert any("Could not clone" in line for line in text), text
+    _assert_absent([FAKE_KEY], text, serialized)
 
 
 # --- RPC library DEBUG logs (M1) --------------------------------------------

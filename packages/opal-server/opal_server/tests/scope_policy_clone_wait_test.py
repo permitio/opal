@@ -15,6 +15,7 @@ process, clamped, released on disconnect, and every request that enters it is
 accounted for exactly once. Every test below names the single-line mutation it
 catches.
 """
+
 import asyncio
 import errno
 import math
@@ -217,9 +218,9 @@ def clean_module_state(monkeypatch):
     monkeypatch.setattr(scopes_api, "_clone_wait_inflight", 0)
     monkeypatch.setattr(scopes_api, "_clone_wait_clamp_logged", False)
     yield
-    assert (
-        scopes_api._clone_wait_inflight == 0
-    ), "a wait slot was never released — the try/finally around the loop leaks"
+    assert scopes_api._clone_wait_inflight == 0, (
+        "a wait slot was never released — the try/finally around the loop leaks"
+    )
 
 
 @pytest.fixture
@@ -527,7 +528,7 @@ def test_the_poll_interval_matches_what_the_docs_promise():
     assert scopes_api._CLONE_WAIT_POLL_SECONDS == 1.0
 
     # Adjacent string literals wrapped across source lines are joined first:
-    # black splits the description mid-sentence, so the phrase exists in the
+    # the formatter splits the description mid-sentence, so the phrase exists in the
     # value but not in the raw bytes.
     config_py = re.sub(
         r'"\s*\n\s*"', "", Path(server_config_module.__file__).read_text()
@@ -668,9 +669,9 @@ def test_wait_expiry_falls_through_to_the_unchanged_503_contract(
         f"held the request {elapsed:.3f}s against a {bed.wait}s budget — an "
         "unbounded hold is a 504 at the load balancer, not a 503"
     )
-    assert (
-        sum(sleeps) <= bed.wait
-    ), f"slept {sum(sleeps):.3f}s in total against a {bed.wait}s budget"
+    assert sum(sleeps) <= bed.wait, (
+        f"slept {sum(sleeps):.3f}s in total against a {bed.wait}s budget"
+    )
 
     assert _wait_outcomes(emitted) == ["timeout"], _wait_outcomes(emitted)
     assert (
@@ -682,9 +683,9 @@ def test_wait_expiry_falls_through_to_the_unchanged_503_contract(
     # (or a `getattr(exc, ..., 0.0)` that silently defaults) reads as "we did
     # not wait" on exactly the requests that waited longest.
     waited = _waited_in(logs, "after waiting")
-    assert (
-        waited >= bed.wait * 0.9
-    ), f"the 503 log reports {waited}s for a request held {elapsed:.3f}s"
+    assert waited >= bed.wait * 0.9, (
+        f"the 503 log reports {waited}s for a request held {elapsed:.3f}s"
+    )
     timed_out = [
         value
         for value, tags in _gauged(emitted, _WAITED_METRIC)
@@ -966,9 +967,9 @@ def test_a_transient_fault_during_the_wait_keeps_its_own_retry_after(bed):
     resp, calls, _ = bed.run(_populating, _object_store_broken)
 
     assert resp.status_code == 503
-    assert (
-        resp.headers["retry-after"] == "5"
-    ), "a gutted object store was reported with the clone-in-progress hint"
+    assert resp.headers["retry-after"] == "5", (
+        "a gutted object store was reported with the clone-in-progress hint"
+    )
     assert len(calls) == 2
 
 
@@ -1073,9 +1074,9 @@ async def test_the_cap_sheds_the_excess_instead_of_holding_every_request(
         503,
     ], f"a cap of 3 did not shed the other 2: {codes}"
     for shed in [r for r in responses if r.status_code == 503]:
-        assert (
-            shed.headers["retry-after"] == "30"
-        ), "a shed request got something other than the pre-wait answer"
+        assert shed.headers["retry-after"] == "30", (
+            "a shed request got something other than the pre-wait answer"
+        )
 
     outcomes = sorted(_wait_outcomes(emitted))
     assert outcomes == [
@@ -1088,9 +1089,9 @@ async def test_the_cap_sheds_the_excess_instead_of_holding_every_request(
 
     readings = _gauged(emitted, _INFLIGHT_METRIC)
     assert readings, "the held-request count is not published at all"
-    assert (
-        max(value for value, _ in readings) == 3
-    ), f"the gauge never reflected a full cap: {[v for v, _ in readings]}"
+    assert max(value for value, _ in readings) == 3, (
+        f"the gauge never reflected a full cap: {[v for v, _ in readings]}"
+    )
     assert readings[-1][0] == 0, (
         f"the gauge ended at {readings[-1][0]} — a leaked slot permanently "
         "lowers the cap for this worker"
@@ -1137,13 +1138,13 @@ async def test_a_cap_of_zero_means_no_cap(tmp_path, monkeypatch, emitted):
         )
 
     assert all_in_the_wait, "the 4 requests did not all reach the wait within 20s"
-    assert [r.status_code for r in responses] == [
-        200
-    ] * 4, f"cap=0 shed requests: {[r.status_code for r in responses]}"
+    assert [r.status_code for r in responses] == [200] * 4, (
+        f"cap=0 shed requests: {[r.status_code for r in responses]}"
+    )
     assert _wait_outcomes(emitted) == ["served"] * 4
-    assert (
-        max(value for value, _ in _gauged(emitted, _INFLIGHT_METRIC)) == 4
-    ), "cap=0 did not actually hold them concurrently"
+    assert max(value for value, _ in _gauged(emitted, _INFLIGHT_METRIC)) == 4, (
+        "cap=0 did not actually hold them concurrently"
+    )
 
 
 def test_a_metrics_sink_that_raises_cannot_leak_a_held_slot(bed, monkeypatch):
@@ -1223,9 +1224,9 @@ async def test_a_disconnected_client_stops_being_waited_for(
     # The budget, not a guess at how fast this machine is: the request is
     # answered after three 20 ms polls, and a hold that runs to its deadline
     # takes the whole budget at least.
-    assert (
-        elapsed < budget
-    ), f"kept waiting {elapsed:.3f}s for a client that had hung up (budget {budget}s)"
+    assert elapsed < budget, (
+        f"kept waiting {elapsed:.3f}s for a client that had hung up (budget {budget}s)"
+    )
     assert len(calls) <= 4, (
         f"{len(calls)} bundle attempts after the client disconnected: the "
         "check does not stop the loop"
@@ -1236,9 +1237,9 @@ async def test_a_disconnected_client_stops_being_waited_for(
     #
     # Mutation: dropping the `if not exc.client_disconnected` guard around the
     # log and the event in the route fails here.
-    assert not [
-        t for t, _ in emitted["event"] if t == "ScopePolicyUnavailable"
-    ], f"a client that had hung up still produced a 503 event: {emitted['event']}"
+    assert not [t for t, _ in emitted["event"] if t == "ScopePolicyUnavailable"], (
+        f"a client that had hung up still produced a 503 event: {emitted['event']}"
+    )
 
 
 @pytest.mark.asyncio
@@ -1327,9 +1328,9 @@ def test_the_default_scope_keeps_its_own_503_contract_on_expiry(bed, emitted, lo
     assert resp.status_code == 503
     assert resp.headers["retry-after"] == "5"
     assert _wait_outcomes(emitted) == ["timeout"]
-    assert (
-        _waited_in(logs, "Default-scope bundle") >= bed.wait * 0.9
-    ), "the default path's 503 does not say how long it held the request"
+    assert _waited_in(logs, "Default-scope bundle") >= bed.wait * 0.9, (
+        "the default path's 503 does not say how long it held the request"
+    )
 
 
 def test_the_wait_is_declared_on_the_exception_not_smuggled(bed, logs):

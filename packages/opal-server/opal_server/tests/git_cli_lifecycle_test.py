@@ -10,9 +10,7 @@ Real git against local remotes only (see git_cli_test).
 """
 
 import asyncio
-import asyncio.base_subprocess
 import errno
-import logging
 import os
 import shlex
 import shutil
@@ -38,6 +36,7 @@ from opal_common.schemas.policy_source import (
     NoAuthData,
     SSHAuthData,
 )
+from opal_common.tests.log_capture import capture_records
 from opal_server import git_cli
 from opal_server import git_fetcher as git_fetcher_module
 from opal_server.config import opal_server_config
@@ -520,74 +519,20 @@ def test_a_cancelled_op_whose_git_outlives_sigkill_keeps_its_clone_until_it_exit
         release.touch()
 
 
-@pytest.mark.skipif(not os.path.isdir("/proc/self"), reason="needs /proc to be quick")
-@_LOOPS
-def test_a_cancel_while_git_is_being_started_still_ends_its_group(
-    loop, git_origin, tmp_path, blackhole, monkeypatch, processes_with, git_groups
-):
-    """Cancelled while create_subprocess_exec still sets up sh's pipes, with
-    git already running, the event loop kills sh only, and the op has no group
-    to stop.
+def _no_reaper_once(monkeypatch, started: Path) -> None:
+    """No pidfd to watch sh by, and the thread that would reap sh cannot start
+    ("can't start new thread"), once git has run as far as creating
+    ``started``: the start is given up on with git running."""
+    monkeypatch.delattr(os, "pidfd_open", raising=False)
+    start = threading.Thread.start
 
-    The watchdog in sh's group kills the rest as sh's stdin closes, and
-    the op is over (on_gone, the clone cleaned up) only once nothing
-    holds the clone's lock any more: no process of it is left by then.
+    def _start(self):
+        if self.name.startswith("git-sh-"):
+            _wait_until(started.exists)
+            raise RuntimeError("can't start new thread")
+        return start(self)
 
-    The cancel is made to land there: a callback queued before the
-    loop's own for the new process holds the loop until git runs, then
-    cancels the op.
-    """
-    pytest.importorskip(loop)
-    marker = f"spawn-{uuid.uuid4().hex}"
-    clone = tmp_path / "cli"
-    _clone_at(clone, git_origin.url, f"http://127.0.0.1:{blackhole}/{marker}.git")
-    spawn = asyncio.create_subprocess_exec
-    ops = []
-    left_at_gone = []
-
-    def _git_runs() -> bool:
-        return any(
-            not args.startswith(git_cli._SH) for _, _, args in processes_with(marker)
-        )
-
-    def _cancel_once_git_runs() -> None:
-        _wait_until(_git_runs)
-        ops[0].cancel()
-
-    async def _cancelled_mid_start(*args, **kwargs):
-        asyncio.get_running_loop().call_soon(_cancel_once_git_runs)
-        return await spawn(*args, **kwargs)
-
-    monkeypatch.setattr(git_cli.asyncio, "create_subprocess_exec", _cancelled_mid_start)
-
-    def _gone(succeeded):
-        left_at_gone.append(processes_with(marker))
-
-    async def main():
-        ops.append(
-            asyncio.ensure_future(
-                cli_fetch(
-                    clone,
-                    "origin",
-                    _source(git_origin.url),
-                    prune=False,
-                    timeout=60,
-                    on_gone=_gone,
-                )
-            )
-        )
-        done, _ = await asyncio.wait(ops, timeout=10)
-        assert done and ops[0].cancelled()
-        # The start was given up on (no group was made): the op finishes on a
-        # task of its own.
-        assert git_groups == []
-        assert git_cli.background_ops() == 1
-        await _until(lambda: left_at_gone)
-
-    _run(loop, main)
-
-    assert left_at_gone == [[]]
-    assert clone_lock_path(clone).read_bytes() == b""
+    monkeypatch.setattr(threading.Thread, "start", _start)
 
 
 def _open_pipes_and_files() -> set:
@@ -626,57 +571,6 @@ async def _cancelled_within(
     done, _ = await asyncio.wait({task}, timeout=seconds)
     assert done, f"the op was still running {seconds}s after its cancel"
     assert task.cancelled()
-
-
-def test_a_cancel_before_asyncio_has_connected_sh_s_pipes_ends_the_group(
-    git_origin, tmp_path, blackhole, monkeypatch, processes_with
-):
-    """The asyncio loop, giving up on a start it was cancelled in, kills sh and
-    closes the pipes it has connected, then waits for sh: since Python 3.12 for
-    the rest of its pipes too, which it goes on connecting, and which git holds
-    while it lives.
-
-    sh's pipes are the op's own, which asyncio does not wait for, so the
-    cancel ends the group at once however far asyncio got. Here the
-    cancel comes before asyncio has connected any.
-    """
-    real = asyncio.base_subprocess.BaseSubprocessTransport._connect_pipes
-    connect = asyncio.Event()
-
-    async def _late(self, waiter):
-        await connect.wait()
-        await real(self, waiter)
-
-    monkeypatch.setattr(
-        asyncio.base_subprocess.BaseSubprocessTransport, "_connect_pipes", _late
-    )
-    marker = f"unconnected-{uuid.uuid4().hex}"
-    clone = tmp_path / "cli"
-    _clone_at(clone, git_origin.url, f"http://127.0.0.1:{blackhole}/{marker}.git")
-    gone = []
-
-    async def main():
-        task = asyncio.ensure_future(
-            cli_fetch(
-                clone,
-                "origin",
-                _source(git_origin.url),
-                prune=False,
-                timeout=60,
-                on_gone=gone.append,
-            )
-        )
-        await _until(lambda: processes_with(marker))
-        await _cancelled_within(task, 10, then=connect)
-        await _until(lambda: gone)
-
-    fds = _open_pipes_and_files()
-    _run("asyncio", main)
-
-    assert gone == [False]
-    assert processes_with(marker) == []
-    assert clone_lock_path(clone).read_bytes() == b""
-    assert _open_pipes_and_files() <= fds  # sh's pipes and the lock's: all closed
 
 
 class _SetBlockingFails:
@@ -785,25 +679,13 @@ def test_a_pipe_whose_close_fails_still_lets_the_op_end(
     assert gone == [True]
 
 
-@pytest.mark.parametrize("cancelled", ["starting", "running"])
 def test_an_op_the_loop_s_end_overtakes_is_still_finished(
-    git_origin, tmp_path, blackhole, monkeypatch, processes_with, git_groups, cancelled
+    git_origin, tmp_path, blackhole, processes_with, git_groups
 ):
     """asyncio.run shuts the loop's executor down before it closes the loop,
     while what its end set going may still run: the stop of an op it
-    cancelled, or the clean-up after a start it cancelled. The op's files are
-    then seen to on the loop's own thread, and the op is finished."""
-    connect = asyncio.Event()
-    if cancelled == "starting":
-        real = asyncio.base_subprocess.BaseSubprocessTransport._connect_pipes
-
-        async def _late(self, waiter):
-            await connect.wait()
-            await real(self, waiter)
-
-        monkeypatch.setattr(
-            asyncio.base_subprocess.BaseSubprocessTransport, "_connect_pipes", _late
-        )
+    cancelled. The op's files are then seen to on the loop's own thread, and
+    the op is finished."""
     marker = f"overtaken-{uuid.uuid4().hex}"
     clone = tmp_path / "cli"
     _clone_at(clone, git_origin.url, f"http://127.0.0.1:{blackhole}/{marker}.git")
@@ -820,11 +702,9 @@ def test_an_op_the_loop_s_end_overtakes_is_still_finished(
                 on_gone=gone.append,
             )
         )
-        await _until(
-            lambda: processes_with(marker) and (cancelled == "starting" or git_groups)
-        )
+        await _until(lambda: processes_with(marker) and git_groups)
         await asyncio.get_running_loop().shutdown_default_executor()
-        await _cancelled_within(task, 10, then=connect)
+        await _cancelled_within(task, 10)
         await _until(lambda: gone)
 
     fds = _open_pipes_and_files()
@@ -836,15 +716,17 @@ def test_an_op_the_loop_s_end_overtakes_is_still_finished(
     assert _open_pipes_and_files() <= fds  # sh's pipes and the lock's: all closed
 
 
-@pytest.mark.parametrize("ending", ["cancel", "OSError"])
 @_LOOPS
 def test_a_start_given_up_on_leaves_the_clone_held_until_its_last_process_exits(
-    loop, ending, git_origin, tmp_path, monkeypatch, processes_with
+    loop, git_origin, tmp_path, monkeypatch, processes_with
 ):
-    """The same, made certain: the event loop gives up on a start once git runs
-    (cancelled, or failing as it connects sh's pipes), with a process of git's
-    that left the group (beyond the watchdog's reach) holding the clone's lock,
-    which on_gone waits for."""
+    """A start given up on once git runs, as when no thread can be started to
+    reap sh.
+
+    sh's watchdog ends the group as its stdin closes, and a process of
+    git's that left the group (beyond the watchdog's reach) holds the
+    clone's lock, which on_gone waits for.
+    """
     pytest.importorskip(loop)
     marker = f"escaped-{uuid.uuid4().hex}"
     shims = tmp_path / "bin"
@@ -860,29 +742,14 @@ def test_a_start_given_up_on_leaves_the_clone_held_until_its_last_process_exits(
     monkeypatch.setenv("PATH", f"{shims}{os.pathsep}{os.environ['PATH']}")
     clone = tmp_path / "cli"
     _clone_at(clone, git_origin.url, git_origin.url)
-    spawn = asyncio.create_subprocess_exec
-
-    async def _given_up_on(*args, **kwargs):
-        proc = await spawn(*args, **kwargs)
-        await _until(started.exists)
-        # What the event loop does as it gives up on a start: kill sh, close
-        # the pipes it had connected, raise the cancel.
-        proc.kill()
-        await proc.wait()
-        proc._transport.close()  # type: ignore[attr-defined]  # as git_cli does
-        if ending == "OSError":
-            raise OSError(24, "Too many open files")
-        raise asyncio.CancelledError
-
-    monkeypatch.setattr(git_cli.asyncio, "create_subprocess_exec", _given_up_on)
+    _no_reaper_once(monkeypatch, started)
     seen_at_gone = []
 
     def _gone(succeeded):
         seen_at_gone.append((processes_with(marker), _lock_is_free(clone)))
 
     async def main():
-        expected = asyncio.CancelledError if ending == "cancel" else GitCliLocalError
-        with pytest.raises(expected):
+        with pytest.raises(GitCliLocalError, match="cannot start a thread"):
             await cli_fetch(
                 clone,
                 "origin",
@@ -953,17 +820,7 @@ async def test_a_given_up_start_cleans_up_after_an_op_that_held_the_clone_meanwh
             rmtree(path, *args, **kwargs)
 
         monkeypatch.setattr(git_cli.shutil, "rmtree", _busy)
-    spawn = asyncio.create_subprocess_exec
-
-    async def _given_up_on(*args, **kwargs):
-        proc = await spawn(*args, **kwargs)
-        await _until(started.exists)
-        proc.kill()
-        await proc.wait()
-        proc._transport.close()  # type: ignore[attr-defined]  # as git_cli does
-        raise OSError(24, "Too many open files")
-
-    monkeypatch.setattr(git_cli.asyncio, "create_subprocess_exec", _given_up_on)
+    _no_reaper_once(monkeypatch, started)
     gone = []
 
     with pytest.raises(GitCliLocalError):
@@ -1006,11 +863,11 @@ async def test_a_given_up_start_whose_lock_cannot_be_taken_again_still_ends(
     def _lock_fails(repo_path):
         raise error
 
-    async def _given_up_on(*args, **kwargs):
+    def _given_up_on(*args, **kwargs):
         monkeypatch.setattr(git_cli, "take_clone_lock", _lock_fails)
         raise OSError(errno.EMFILE, "Too many open files")
 
-    monkeypatch.setattr(git_cli.asyncio, "create_subprocess_exec", _given_up_on)
+    monkeypatch.setattr(git_cli.subprocess, "Popen", _given_up_on)
     gone = []
     errors = []
     sink = opal_common_logger.logger.add(
@@ -1441,7 +1298,9 @@ def test_the_sweep_leaves_the_key_dir_of_an_op_under_way(tmp_path, monkeypatch):
         auth=SSHAuthData(username="git", private_key="key"),
     )
 
-    with git_cli._git_env(source, git_cli._remote_for_git(url, source)) as (env, _):
+    with git_cli._git_env(
+        source, git_cli._remote_for_git(url, source), tmp_path / "clone"
+    ) as (env, _):
         ssh = shlex.split(env["GIT_SSH_COMMAND"])
         key = Path(ssh[ssh.index("-i") + 1])
         git_cli.remove_dead_key_dirs()
@@ -1476,7 +1335,9 @@ def test_a_sweep_between_an_op_s_mkdtemp_and_its_lock_leaves_the_key_dir(
 
     monkeypatch.setattr(git_cli, "_lock_key_dir", _swept_first)
 
-    with git_cli._git_env(source, git_cli._remote_for_git(url, source)) as (env, _):
+    with git_cli._git_env(
+        source, git_cli._remote_for_git(url, source), tmp_path / "clone"
+    ) as (env, _):
         ssh = shlex.split(env["GIT_SSH_COMMAND"])
         key = Path(ssh[ssh.index("-i") + 1])
         assert key.read_text() == "key\n"
@@ -1854,25 +1715,6 @@ def test_the_preload_waits_for_ops_being_stopped_no_longer_than_its_drain_timeou
     assert clone_lock_path(clone).read_bytes() != b""
 
 
-def test_the_preload_drops_asyncio_s_warning_about_children_reaped_elsewhere(
-    preload, caplog
-):
-    """In the gunicorn master, whose SIGCHLD handler reaps every child, asyncio
-    warns of every git op it finds reaped already."""
-    reaped = "Unknown child process pid 4242, will report returncode 255"
-
-    async def _sync(**kwargs):
-        logging.getLogger("asyncio").warning(reaped)
-        logging.getLogger("asyncio").warning("something else")
-
-    with caplog.at_level(logging.WARNING, logger="asyncio"):
-        preload(_sync)
-        logging.getLogger("asyncio").warning(reaped)
-
-    messages = [r.getMessage() for r in caplog.records if r.name == "asyncio"]
-    assert messages == ["something else", reaped]
-
-
 def test_the_preload_closes_a_clone_lock_left_open_before_the_workers_are_forked(
     git_origin, tmp_path, preload
 ):
@@ -2239,11 +2081,11 @@ def test_the_loop_ending_while_a_given_up_start_takes_the_lock_leaves_no_fd(
             release.wait(_READY_SECONDS)
         return real(repo_path)
 
-    async def _refused(*args, **kwargs):
+    def _refused(*args, **kwargs):
         raise OSError(24, "Too many open files")
 
     monkeypatch.setattr(git_cli, "take_clone_lock", _held_after_the_first)
-    monkeypatch.setattr(git_cli.asyncio, "create_subprocess_exec", _refused)
+    monkeypatch.setattr(git_cli.subprocess, "Popen", _refused)
     clone = tmp_path / "cli"
     _clone_at(clone, git_origin.url, git_origin.url)
 
@@ -2318,3 +2160,176 @@ async def test_a_deleted_scope_s_clone_another_process_s_git_holds_is_kept(
 
     assert await git_fetcher_module.remove_clone_dir_exclusive(str(clone)) is False
     assert clone.exists()
+
+
+def _lock_files_of_clones_that_are_gone(clones: Path, orphan) -> dict:
+    """In ``clones``: a clone with its lock file, lock files whose clone never
+    existed or was removed (one recording a dead op), one beside a directory a
+    clone was being made in, one another process holds, and other dotted names;
+    the paths by role."""
+    live = clones / "live"
+    url = str(clones.parent / "origin-not-used")
+    clones.mkdir(parents=True, exist_ok=True)
+    live.mkdir()
+    pygit2.init_repository(str(live))
+    pygit2.Repository(str(live)).remotes.create("origin", url)
+    for name, record in (("live", ""), ("gone", ""), ("dead", "4194303\n")):
+        clone_lock_path(clones / name).write_text(record)
+    clone_lock_path(clones / "half").write_text("")
+    half_made = clones / ".half.clone-0123456789abcdef"
+    (half_made / ".git").mkdir(parents=True)
+    orphan(clones / "held")
+    others = [
+        clones / ".gone.known_hosts.lock",
+        clones / ".libgit2-home",
+        clones / ".x.y.lock",
+        clones / "gone.hung",
+    ]
+    for path in others:
+        path.write_text("")
+    return {
+        "removed": [clone_lock_path(clones / n) for n in ("gone", "dead", "half")],
+        "kept": [clone_lock_path(clones / n) for n in ("live", "held")] + others,
+        "half made": half_made,
+    }
+
+
+@pytest.mark.fetch_backend("both")
+def test_the_pre_fork_sweep_removes_the_lock_files_of_clones_that_are_gone(
+    tmp_path, orphan
+):
+    """Every op on a clone, and every delete of one, takes its lock file, a
+    delete of a scope that was never cloned included; nothing else removes a
+    lock file whose clone is gone. With either fetch backend, the pre-fork
+    sweep removes each one it can lock whose clone is not there and has no
+    directory being made, once what a dead op left is gone, and logs how many;
+    a lock another process holds, the lock of a clone and other dotted names
+    stay.
+
+    Mutation: dropping the check for the clone's directory removes the
+    live clone's lock; skipping the lock-only names keeps every one.
+    """
+    base = tmp_path / "base"
+    clones = GitPolicyFetcher.base_dir(base)
+    paths = _lock_files_of_clones_that_are_gone(clones, orphan)
+
+    with capture_records() as logs:
+        git_fetcher_module.sweep_scope_clone_leftovers(base)
+
+    assert [p for p in paths["removed"] if p.exists()] == []
+    assert not paths["half made"].exists()
+    assert [p for p in paths["kept"] if not p.exists()] == []
+    assert [r["message"] for r in logs.emitted if "lock file" in r["message"]] == [
+        f"Removed 3 lock files of clones no longer in {clones}"
+    ]
+
+
+def test_a_lock_file_that_cannot_be_removed_is_logged_and_the_sweep_goes_on(
+    tmp_path, orphan, monkeypatch
+):
+    base = tmp_path / "base"
+    clones = GitPolicyFetcher.base_dir(base)
+    paths = _lock_files_of_clones_that_are_gone(clones, orphan)
+    stuck = clone_lock_path(clones / "gone")
+    unlink = os.unlink
+
+    def _unlink(path, *args, **kwargs):
+        if Path(path) == stuck:
+            raise PermissionError(errno.EACCES, "Permission denied", str(path))
+        return unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(git_cli.os, "unlink", _unlink)
+
+    with capture_records() as logs:
+        git_fetcher_module.sweep_scope_clone_leftovers(base)
+
+    assert stuck.exists()
+    assert [p for p in paths["removed"] if p != stuck and p.exists()] == []
+    assert [
+        (r["level"].name, r["message"])
+        for r in logs.emitted
+        if "lock file" in r["message"]
+    ] == [
+        (
+            "WARNING",
+            f"Could not remove the lock file {stuck} of a clone that is gone: "
+            "PermissionError(13, 'Permission denied')",
+        ),
+        ("INFO", f"Removed 2 lock files of clones no longer in {clones}"),
+    ]
+
+
+def test_the_lock_of_a_clone_whose_leftovers_stay_is_kept(
+    tmp_path, orphan, monkeypatch
+):
+    """A directory a clone was being made in that cannot be removed keeps the
+    dead op recorded in the lock file, for the next op to try again: the lock
+    file stays with it, and is not counted among those removed.
+
+    Mutation: removing the lock file whatever the leftovers' removal says.
+    """
+    base = tmp_path / "base"
+    clones = GitPolicyFetcher.base_dir(base)
+    paths = _lock_files_of_clones_that_are_gone(clones, orphan)
+    remove_tree = git_cli.remove_tree
+
+    def _remove_tree(path):
+        if Path(path) == paths["half made"]:
+            return False
+        return remove_tree(path)
+
+    monkeypatch.setattr(git_cli, "remove_tree", _remove_tree)
+
+    with capture_records() as logs:
+        git_fetcher_module.sweep_scope_clone_leftovers(base)
+
+    assert paths["half made"].exists()
+    assert clone_lock_path(clones / "half").exists()
+    assert not clone_lock_path(clones / "gone").exists()
+    assert [r["message"] for r in logs.emitted if "lock file" in r["message"]] == [
+        f"Removed 2 lock files of clones no longer in {clones}"
+    ]
+
+
+@pytest.mark.parametrize("code", [errno.ENOLCK, errno.EBADF], ids=["ENOLCK", "EBADF"])
+def test_lock_files_stay_where_the_sweep_cannot_lock_them(
+    tmp_path, orphan, monkeypatch, code
+):
+    """With flock failing (a clones directory on NFS without local_lock=flock),
+    a lock file that cannot be locked is never removed, and the sweep does not
+    raise."""
+    base = tmp_path / "base"
+    clones = GitPolicyFetcher.base_dir(base)
+    paths = _lock_files_of_clones_that_are_gone(clones, orphan)
+    _flock_fails_with(monkeypatch, code)
+
+    git_fetcher_module.sweep_scope_clone_leftovers(base)
+
+    assert [p for p in paths["removed"] + paths["kept"] if not p.exists()] == []
+
+
+@pytest.mark.parametrize(
+    "stray", [".lock", "..dotted.lock", "..clone-0123456789abcdef"]
+)
+def test_a_stray_name_with_no_source_id_is_not_swept_as_a_clone(tmp_path, stray):
+    """A file named ``.lock``, or ``..dotted.lock`` (the lock name of an id
+    with a dot, which no source id has), or a directory named like a clone
+    being made for an empty source id, names no clone: the sweep leaves it, and
+    never takes the clones directory itself for one (no ``.git_sources.lock``
+    beside it).
+
+    Mutation: accepting an empty source id sweeps git_sources as a clone.
+    """
+    base = tmp_path / "base"
+    clones = GitPolicyFetcher.base_dir(base)
+    clones.mkdir(parents=True)
+    path = clones / stray
+    if stray.endswith(".lock"):
+        path.write_text("")
+    else:
+        path.mkdir()
+
+    git_fetcher_module.sweep_scope_clone_leftovers(base)
+
+    assert path.exists()
+    assert sorted(p.name for p in clones.parent.iterdir()) == ["git_sources"]

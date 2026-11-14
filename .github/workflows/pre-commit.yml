@@ -21,7 +21,7 @@ defaults:
 
 env:
   # The number of hooks in .pre-commit-config.yaml; change it when a hook is added or removed.
-  EXPECTED_HOOKS: "12"
+  EXPECTED_HOOKS: "16"
 
 jobs:
   pre-commit:
@@ -33,10 +33,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      # The Python hooks run on 3.12 (default_language_version in .pre-commit-config.yaml).
+      # 3.14, the one Python of OPAL, runs the Python hooks and the workflow scripts' tests below.
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
-          python-version: 3.12.x
+          python-version: 3.14.x
       - name: Install prek
         run: |
           token=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
@@ -65,8 +65,29 @@ jobs:
           trap 'echo "::$token::"' EXIT
           .github/scripts/fetch-tool.sh uv
           venv=$RUNNER_TEMP/script-tests
-          bin/uv venv --quiet --python 3.12 "$venv"
+          bin/uv venv --quiet --python 3.14 "$venv"
           bin/uv pip install --quiet --python "$venv/bin/python" --require-hashes \
             -r .github/scripts/tests/requirements.txt
           "$venv/bin/python" -m pytest -c .github/scripts/tests/pytest.ini -p no:cacheprovider \
             .github/scripts/tests
+
+  # On a push to master only, when the pre-commit check did not pass: a notice to the security
+  # Slack channel, as tests.yml's notify job sends for CI.
+  notify:
+    needs: [pre-commit]
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/master' && needs.pre-commit.result != 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: security-scan
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Post to Slack
+        env:
+          RESULT: ${{ needs.pre-commit.result }}
+          SECURITY_SLACK_WEBHOOK_URL: ${{ secrets.SECURITY_SLACK_WEBHOOK_URL }}
+        run: .github/scripts/notify.sh pre-commit "$RESULT on master at ${GITHUB_SHA:0:12}"

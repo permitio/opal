@@ -1,0 +1,9 @@
+# The E2E suite runs with these, installed from requirements.txt with --require-hashes.
+# requirements.txt is generated from this file, from the repository root, with:
+#   uv pip compile --no-config --directory app-tests --python-version 3.14 --universal \
+#     --generate-hashes requirements.in --output-file requirements.txt
+# --directory keeps the file's "via" paths the same as when Dependabot compiles it in this
+# directory. The pip-compile hook in .pre-commit-config.yaml runs that command and fails when the
+# file changes.
+pytest==9.2.0
+requests==2.34.2

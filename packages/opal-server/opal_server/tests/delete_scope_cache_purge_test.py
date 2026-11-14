@@ -5,6 +5,7 @@ these tests pin the route-side contract. Two PR2-era tests are kept verbatim
 at the bottom: the lock_source waiter-retry invariant and the stale-snapshot
 sync skip — both still hold unchanged.
 """
+
 import asyncio
 import pathlib
 
@@ -65,13 +66,9 @@ def _scope(scope_id, url, branch="main"):
 
 @pytest.fixture(autouse=True)
 def clear_caches():
-    GitPolicyFetcher.repos.clear()
-    GitPolicyFetcher.repos_last_fetched.clear()
-    GitPolicyFetcher.repo_locks.clear()
+    GitPolicyFetcher.reset_caches()
     yield
-    GitPolicyFetcher.repos.clear()
-    GitPolicyFetcher.repos_last_fetched.clear()
-    GitPolicyFetcher.repo_locks.clear()
+    GitPolicyFetcher.reset_caches()
 
 
 async def _drain_floor(svc):
@@ -132,6 +129,8 @@ async def test_delete_reclaims_this_workers_clone_as_a_floor(tmp_path):
     sid = GitPolicyFetcher.source_id(scope.policy)
     GitPolicyFetcher.repos[str(clone)] = object()
     GitPolicyFetcher.repos_last_fetched[sid] = "ts"
+    GitPolicyFetcher.pending_branches[sid] = {"main"}
+    GitPolicyFetcher.branch_attempts[sid] = {"main": ("ts", False)}
     GitPolicyFetcher.repo_locks[sid] = asyncio.Lock()
     svc = ScopesService(
         base_dir=tmp_path,
@@ -145,6 +144,10 @@ async def test_delete_reclaims_this_workers_clone_as_a_floor(tmp_path):
     assert not clone.exists(), "the serving worker's own copy was never reclaimed"
     assert str(clone) not in GitPolicyFetcher.repos
     assert sid not in GitPolicyFetcher.repos_last_fetched
+    # A failed attempt kept would stand in for the first fetch of a scope made
+    # again on the same repository.
+    assert sid not in GitPolicyFetcher.pending_branches
+    assert sid not in GitPolicyFetcher.branch_attempts
     assert sid not in GitPolicyFetcher.repo_locks
 
 
@@ -174,8 +177,8 @@ async def test_local_floor_skips_while_a_git_op_is_in_flight(tmp_path):
 
     Freeing one a lingering timed-out pygit2 call still holds on a pool
     thread is the use-after-free class 89e090be fixed — the leader's
-    purge owned that case; since the disk-reclaim cut, nothing does —
-    the dir stays until PER-15612.
+    purge owned that case; since the disk-reclaim cut, only the orphan
+    sweep does — the dir stays until it reclaims it.
     """
     scope = _scope("only", "https://git/repo-a.git")
     clone = GitPolicyFetcher.repo_clone_path(tmp_path, scope.policy)
@@ -407,7 +410,7 @@ async def test_local_floor_keeps_the_clone_when_the_sibling_check_raises(tmp_pat
     clone a sibling scope may still share, 503ing that tenant until the
     re-clone finishes — triggered by a transient Redis error, which is far more
     common than the ambiguous-delete case master was protecting against. The
-    cost of keeping is an orphan dir (PER-15612).
+    cost of keeping is an orphan dir, the orphan sweep's to reclaim.
 
     Mutation: restoring `sharer = None` on the exception fails here.
     """
@@ -585,9 +588,9 @@ async def test_shutdown_drains_the_routers_scopes_service(tmp_path, monkeypatch)
     app = FastAPI()
     server._configure_api_routes(app)
 
-    assert (
-        captured["service"] is server._scopes_service
-    ), "the drained instance is not the one the router serves DELETE on"
+    assert captured["service"] is server._scopes_service, (
+        "the drained instance is not the one the router serves DELETE on"
+    )
 
     # a real pending floor task on that instance must be awaited by shutdown
     drained = []
@@ -634,9 +637,9 @@ async def test_floor_keeps_a_live_siblings_repo_lock_entry(tmp_path):
     await _drain_floor(svc)
 
     assert clone.exists(), "purged a clone a live sibling still shares"
-    assert (
-        sid in GitPolicyFetcher.repo_locks
-    ), "drained the lock entry of a source a live sibling is actively using"
+    assert sid in GitPolicyFetcher.repo_locks, (
+        "drained the lock entry of a source a live sibling is actively using"
+    )
 
 
 @pytest.mark.asyncio

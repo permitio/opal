@@ -5,13 +5,14 @@ documentation/
 rego_clone/
 .github/
 docker/
+# ...but the lock the images install, and the server-test stage's pinned test requirements.
+!docker/lock/requirements.txt
+!docker/server-test/requirements.txt
 Makefile
 Dockerfile
 .dockerignore
 .gitignore
 .pre-commit-config.yaml
-# Test fixtures that hold certificates, such as the compromised eMudhra CAs the
-# trust-store test uses. CI and the release build from the checkout, where this
-# applies. BuildKit skips .dockerignore for a Git context (docker build <git-url>),
-# so docker/Dockerfile excludes them with COPY --exclude as well.
-packages/**/tests/*.pem
+# The packages' tests, which no image runs. BuildKit skips .dockerignore for a Git context
+# (docker build <git-url>), so docker/Dockerfile excludes them with COPY --exclude as well.
+packages/**/tests/

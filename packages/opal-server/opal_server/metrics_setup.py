@@ -9,6 +9,7 @@ never configured the client, so those metrics reached Datadog WITHOUT the
 workers' ``permit.opal.opal_server.scopes.git_ops_in_flight``) — invisible to
 every dashboard and monitor written against the namespaced names.
 """
+
 import os
 
 from opal_common.config import opal_common_config

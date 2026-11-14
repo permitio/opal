@@ -1,0 +1,8 @@
+# The scope bed on the git command-line fetch backend:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.cli.yml python -m pytest
+services:
+  opal_server:
+    environment:
+      # Through the base file's knob, so that a test that recreates the server
+      # on libgit2 (the reshard test: only libgit2 has shards) gets it.
+      OPAL_SCOPES_GIT_FETCH_WITH_CLI: "${OPAL_TEST_FETCH_WITH_CLI:-true}"

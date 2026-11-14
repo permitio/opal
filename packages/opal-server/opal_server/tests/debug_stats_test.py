@@ -33,6 +33,8 @@ def test_stats_include_pid_and_cache_keys(monkeypatch):
     monkeypatch.setattr(GitPolicyFetcher, "repos", {"/clones/x": object()})
     monkeypatch.setattr(GitPolicyFetcher, "repos_last_fetched", {"sid-1": "ts"})
     monkeypatch.setattr(GitPolicyFetcher, "repo_locks", {"sid-1": object()})
+    monkeypatch.setattr(GitPolicyFetcher, "pending_branches", {"sid-2": {"b": 1}})
+    monkeypatch.setattr(GitPolicyFetcher, "branch_attempts", {"sid-3": {}})
 
     stats = git_fetcher_cache_stats()
 
@@ -40,6 +42,8 @@ def test_stats_include_pid_and_cache_keys(monkeypatch):
     assert stats["repos_keys"] == ["/clones/x"]
     assert stats["repos_last_fetched_keys"] == ["sid-1"]
     assert stats["repo_locks_keys"] == ["sid-1"]
+    assert stats["pending_branches_keys"] == ["sid-2"]
+    assert stats["branch_attempts_keys"] == ["sid-3"]
 
 
 class _ChurningDict(dict):

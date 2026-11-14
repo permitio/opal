@@ -1,27 +1,94 @@
-name: Build and publish to Docker Hub
+# The release. When a GitHub release is published, it builds every image and the three Python
+# packages once, gates and tests those builds, and then publishes the same bytes: each image's
+# archive to Docker Hub, and the packages to PyPI and to the release's assets. The publish jobs
+# run in the docker-hub and pypi environments, whose protection rules decide who may release.
+#
+# Every platform that is published passes the image gate (Trivy, Grype and the waivers): the
+# amd64 and the arm64 image of each archive are scanned, the arm64 one without running it. The
+# functional checks (the installed version and the example stack) run the amd64 images only.
+#
+# On a pull request that changes what the release builds, the same workflow runs as a dry run:
+# it builds, gates and tests everything under the version 0.0.0-dev<run number> and publishes
+# nothing.
+name: Release
+
 on:
   release:
     # job will automatically run after a new "release" is create on github.
     types: [published]
+  pull_request:
+    paths:
+      - docker/**
+      - scripts/**
+      - packages/__packaging__.py
+      - packages/requires.txt
+      - packages/*/requires.txt
+      - packages/*/setup.py
+      - semver2pypi.py
+      - .github/workflows/on_release.yml
+      - .github/scripts/image_gate.py
+      - .github/scripts/trivy.sh
+      - .github/image-waivers.toml
+      - .github/grype/**
+      - .github/binaries.lock
+      - .github/scripts/fetch-tool.sh
+      - .dockerignore
 
 # Each job grants itself only what it uses.
 permissions: {}
 
-# The actions below stay on the majors this workflow has released with, pinned to the commit
-# those majors pointed at; Dependabot proposes newer majors as separate PRs.
+# A new push to a PR cancels that PR's older dry runs; a release run is never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash --noprofile --norc -euo pipefail {0}
+
+env:
+  # As in tests.yml: no build provenance in the metadata file build-push-action prints, which
+  # would put a pull request's title and description in the public log, and no build record
+  # uploaded as an artifact.
+  BUILDX_METADATA_PROVENANCE: disabled
+  DOCKER_BUILD_RECORD_UPLOAD: "false"
+
 jobs:
-  # Validate that the release tag and prerelease flag are consistent.
-  # Pre-releases must have a semver prerelease identifier (rc, beta, alpha, dev)
-  # and GA releases must not.
-  validate_release:
-    runs-on: ubuntu-latest
-    permissions: {}
+  # The version everything is built as. On a release: the tag, which must agree with the
+  # prerelease flag (a pre-release tag has a semver prerelease identifier such as -rc1, and a GA
+  # tag has none), and its PyPI form from semver2pypi.py. On a pull request: 0.0.0-dev<run number>.
+  version:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      pypi: ${{ steps.version.outputs.pypi }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
-      - name: Validate release tag matches prerelease flag
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Python setup
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: '3.14'
+
+      - name: Set the version
+        id: version
         env:
+          EVENT: ${{ github.event_name }}
           TAG: ${{ github.event.release.tag_name }}
           IS_PRERELEASE: ${{ github.event.release.prerelease }}
+          RUN_NUMBER: ${{ github.run_number }}
         run: |
+          if [ "$EVENT" != release ]; then
+            TAG="0.0.0-dev${RUN_NUMBER}"
+            IS_PRERELEASE=true
+          fi
           # Strip optional 'v' prefix for checking
           VERSION="${TAG#v}"
           # Check if the tag contains a prerelease identifier (hyphen after version numbers)
@@ -39,64 +106,179 @@ jobs:
             echo "::error::Tag '$TAG' has a pre-release identifier but the release is not marked as pre-release. Either mark the release as pre-release or use a GA tag (e.g. 0.8.0)."
             exit 1
           fi
-          echo "Validation passed."
+          pip install semver==3.1.0 packaging==26.3
+          pypi_version=$(python semver2pypi.py "$VERSION")
+          if [ -z "$pypi_version" ]; then
+            echo "::error::semver2pypi.py gave no PyPI version for '$VERSION'"
+            exit 1
+          fi
+          echo "Tag: $TAG, PyPI version: $pypi_version"
+          {
+            echo "tag=$TAG"
+            echo "pypi=$pypi_version"
+            echo "prerelease=$IS_PRERELEASE"
+          } >>"$GITHUB_OUTPUT"
 
-  # Build once, run e2e validation, and only then fan out to publish variants
-  build_and_test:
-    needs: validate_release
-    runs-on: ubuntu-latest
+  # Each image, for linux/amd64 and linux/arm64, built once from this checkout with the version
+  # set, into an OCI archive that the later jobs test and publish as it is. Release images build
+  # without a registry cache: layers from an earlier image must not end up in a release.
+  build-images:
+    needs: version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: client
+            repository: permitio/opal-client
+            target: client
+          - name: client-standalone
+            repository: permitio/opal-client-standalone
+            target: client-standalone
+          - name: client-cedar
+            repository: permitio/opal-client-cedar
+            target: client-cedar
+          - name: client-eopa
+            repository: permitio/opal-client-eopa
+            target: client-eopa
+          - name: server
+            repository: permitio/opal-server
+            target: server
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set the version in packages/__packaging__.py
+        env:
+          PYPI_VERSION: ${{ needs.version.outputs.pypi }}
+        run: |
+          sed -i "s/__version__ = VERSION_STRING/__version__ = \"$PYPI_VERSION\"/" packages/__packaging__.py
+          # If the sed stops matching, the images would silently install 0.0.0 again
+          if ! grep -qF "__version__ = \"$PYPI_VERSION\"" packages/__packaging__.py; then
+            echo "::error::packages/__packaging__.py does not carry the version '$PYPI_VERSION'"
+            exit 1
+          fi
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1  # v4.4.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
+
+      - name: Build ${{ matrix.name }}
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        with:
+          # Build from this checkout, which holds the version set above. Without a context the
+          # action builds from the Git context (the tagged commit), and the images installed the
+          # packages as 0.0.0.
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          target: ${{ matrix.target }}
+          outputs: type=oci,dest=${{ runner.temp }}/image.tar
+          # On a release, BuildKit attaches an SLSA provenance (max: the build's full
+          # definition, with this repository and commit as its source) and an SPDX SBOM to
+          # each platform's image; the archive carries them to Docker Hub. A dry run attaches
+          # none: buildx would put the pull request's event in the provenance.
+          provenance: ${{ github.event_name == 'release' && 'mode=max' || 'false' }}
+          sbom: ${{ github.event_name == 'release' }}
+          labels: |
+            org.opencontainers.image.title=${{ matrix.repository }}
+            org.opencontainers.image.version=${{ needs.version.outputs.tag }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.licenses=Apache-2.0
+
+      - name: Keep the archive for the jobs that test and publish it
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: image-${{ matrix.name }}
+          path: ${{ runner.temp }}/image.tar
+          if-no-files-found: error
+          retention-days: 3
+
+  # Both images of each archive, loaded into Docker: every image of both platforms passes the
+  # image gate (the EOPA client is reported only: its EOPA binary is the last upstream release,
+  # and its findings can no longer be fixed). The arm64 images are only scanned; the amd64 ones
+  # must also install the release version, and the client and the server run the example stack.
+  test-images:
+    needs: [version, build-images]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     permissions:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@0717577d45739eb3c851188b29f50ed6c0b2194e  # v2.8.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          fetch-depth: 0
           persist-credentials: false
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130  # v3.7.0
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3.12.0
-
-      - name: Login to DockerHub
-        uses: docker/login-action@465a07811f14bebb1938fbed4728c6a1ff8901fc  # v2.2.0
+      - name: Fetch the image archives
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          pattern: image-*
+          path: ${{ runner.temp }}/images
 
-      - name: Echo version tag
+      - name: Load the amd64 and the arm64 images
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          IMAGES: ${{ runner.temp }}/images
         run: |
-          echo "The version tag that will be published to docker hub is: $RELEASE_TAG"
+          for name in client client-standalone client-cedar client-eopa server; do
+            archive=$IMAGES/image-$name/image.tar
+            skopeo copy --override-os linux --override-arch amd64 \
+              "oci-archive:$archive" "docker-daemon:permitio/opal-$name:test"
+            # Docker keeps an image of another platform; it is saved and scanned, never run.
+            skopeo copy --override-os linux --override-arch arm64 \
+              "oci-archive:$archive" "docker-daemon:permitio/opal-$name:test-arm64"
+          done
 
-      # Release images build without a registry cache: layers from an earlier image must not
-      # end up in a release.
-      - name: Build client for testing
-        id: build_client
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6.19.2
-        with:
-          context: .
-          file: docker/Dockerfile
-          push: false
-          target: client
-          load: true
-          tags: |
-            permitio/opal-client:test
+      - name: Gate the images on Trivy and Grype
+        # .github/scripts/image_gate.py scans each image with Trivy and with Grype and fails on a
+        # fixable HIGH or CRITICAL vulnerability that no waiver in force in
+        # .github/image-waivers.toml covers. The job summary lists what blocked and what is waived.
+        # A failure here stops the release before any image is published.
+        run: >-
+          .github/scripts/image_gate.py --summary "$GITHUB_STEP_SUMMARY"
+          --report-only permitio/opal-client-eopa:test
+          --report-only permitio/opal-client-eopa:test-arm64
+          permitio/opal-client:test permitio/opal-client-standalone:test
+          permitio/opal-client-cedar:test permitio/opal-server:test
+          permitio/opal-client:test-arm64 permitio/opal-client-standalone:test-arm64
+          permitio/opal-client-cedar:test-arm64 permitio/opal-server:test-arm64
 
-      - name: Build server for testing
-        id: build_server
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6.19.2
-        with:
-          context: .
-          file: docker/Dockerfile
-          push: false
-          target: server
-          load: true
-          tags: |
-            permitio/opal-server:test
+      - name: Check that each image installs the release version
+        env:
+          EXPECTED: ${{ needs.version.outputs.pypi }}
+        run: |
+          for name in client client-standalone client-cedar client-eopa server; do
+            image=permitio/opal-$name:test
+            actual=$(docker run --rm --entrypoint pip "$image" show opal-common | sed -n 's/^Version: //p')
+            echo "$image installs opal-common $actual"
+            if [ "$actual" != "$EXPECTED" ]; then
+              echo "::error::$image installs opal-common '$actual', expected '$EXPECTED'"
+              exit 1
+            fi
+          done
+
+      # The example stack below runs the OPA client; the Cedar and EOPA clients must start their
+      # engines too. Each engine answers its health check without an OPAL server.
+      - name: Check that the Cedar and EOPA clients start their engines
+        run: |
+          for spec in client-cedar:8180 client-eopa:8181; do
+            name=${spec%%:*} port=${spec##*:}
+            docker run -d --rm --name "$name" -p "$port:$port" "permitio/opal-$name:test"
+            if ! ./scripts/wait-for.sh -t 60 "http://localhost:$port/health"; then
+              docker logs "$name"
+              echo "::error::permitio/opal-$name:test did not start its engine"
+              exit 1
+            fi
+            docker stop "$name"
+          done
 
       - name: Create modified docker compose file
         run: sed 's/:latest/:test/g' docker/docker-compose-example.yml > docker/docker-compose-test.yml
@@ -108,228 +290,42 @@ jobs:
         run: ./scripts/wait-for.sh -t 60 http://localhost:8181/v1/data/users -- sleep 10 && curl -s "http://localhost:8181/v1/data/users" | jq '.result.bob.location.country == "US"'
 
       - name: Output container logs
+        if: always()
         run: docker compose -f docker/docker-compose-test.yml logs
 
-      - name: Output local docker images
-        run: docker image ls --digests | grep opal
-
-  publish_docker_images:
-    needs:
-      - build_and_test
-    runs-on: ubuntu-latest
+  # The three packages' sdists and wheels, built once with the version set.
+  build-packages:
+    needs: version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: client
-            repository: permitio/opal-client
-            target: client
-            version_suffix: ""
-          - name: client-alpine
-            repository: permitio/opal-client
-            target: client-alpine
-            version_suffix: "-alpine"
-          - name: client-standalone
-            repository: permitio/opal-client-standalone
-            target: client-standalone
-            version_suffix: ""
-          - name: client-standalone-alpine
-            repository: permitio/opal-client-standalone
-            target: client-standalone-alpine
-            version_suffix: "-alpine"
-          - name: client-cedar
-            repository: permitio/opal-client-cedar
-            target: client-cedar
-            version_suffix: ""
-          - name: client-cedar-alpine
-            repository: permitio/opal-client-cedar
-            target: client-cedar-alpine
-            version_suffix: "-alpine"
-          - name: client-eopa
-            repository: permitio/opal-client-eopa
-            target: client-eopa
-            version_suffix: ""
-          - name: client-eopa-alpine
-            repository: permitio/opal-client-eopa
-            target: client-eopa-alpine
-            version_suffix: "-alpine"
-          - name: server
-            repository: permitio/opal-server
-            target: server
-            version_suffix: ""
-          - name: server-alpine
-            repository: permitio/opal-server
-            target: server-alpine
-            version_suffix: "-alpine"
     steps:
       - name: Checkout
-        uses: actions/checkout@0717577d45739eb3c851188b29f50ed6c0b2194e  # v2.8.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130  # v3.7.0
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3.12.0
-
-      - name: Login to DockerHub
-        uses: docker/login-action@465a07811f14bebb1938fbed4728c6a1ff8901fc  # v2.2.0
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Prepare tags
-        id: tags
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-          IS_PRERELEASE: ${{ github.event.release.prerelease }}
-          REPOSITORY: ${{ matrix.repository }}
-          VERSION_SUFFIX: ${{ matrix.version_suffix }}
-        run: |
-          version_tag="$RELEASE_TAG"
-          repo="$REPOSITORY"
-          suffix="$VERSION_SUFFIX"
-          latest_tag="latest${suffix}"
-          tags="${repo}:${version_tag}${suffix}"
-          if [ "$IS_PRERELEASE" != "true" ]; then
-            tags="${repo}:${latest_tag}"$'\n'"${tags}"
-          fi
-          {
-            echo "tags<<EOF"
-            echo "${tags}"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Python setup
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
-        with:
-          python-version: '3.11'
-
-      - name: Bump version - packaging__.py
-        id: version
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: |
-          # Install required packages
-          pip install semver==3.1.0 packaging==26.3
-
-          # Get version tag and remove 'v' prefix
-          version_tag="$RELEASE_TAG"
-          version_tag=${version_tag#v}
-
-          # Convert semver to PyPI version using the script
-          pypi_version=$(python semver2pypi.py "$version_tag")
-
-          # Update only the __version__ in __packaging__.py
-          sed -i "s/__version__ = VERSION_STRING/__version__ = \"$pypi_version\"/" packages/__packaging__.py
-
-          # Print the result for verification
-          echo "Original version tag: $version_tag"
-          echo "PyPI version: $pypi_version"
-          cat packages/__packaging__.py
-
-          # If the sed stops matching, the images would silently install 0.0.0 again
-          if [ -z "$pypi_version" ] || ! grep -qF "__version__ = \"$pypi_version\"" packages/__packaging__.py; then
-            echo "::error::packages/__packaging__.py does not carry the release version '$pypi_version'"
-            exit 1
-          fi
-          echo "pypi_version=$pypi_version" >> "$GITHUB_OUTPUT"
-
-      - name: Build and push ${{ matrix.name }}
-        id: build
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6.19.2
-        with:
-          # Build from this checkout, which holds the version bump above. Without a context the
-          # action builds from the Git context (the tagged commit), and the images installed the
-          # packages as 0.0.0. No registry cache, as in build_and_test.
-          context: .
-          file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          target: ${{ matrix.target }}
-          tags: ${{ steps.tags.outputs.tags }}
-
-      - name: Check that the pushed image installs the release version
-        # Runs after the push, so a version mismatch means these tags already point at the wrong image
-        shell: bash
-        env:
-          IMAGE: ${{ matrix.repository }}@${{ steps.build.outputs.digest }}
-          EXPECTED: ${{ steps.version.outputs.pypi_version }}
-          TAGS: ${{ steps.tags.outputs.tags }}
-        run: |
-          # A registry error or an empty digest is not a wrong version: report it as what it is
-          if ! show=$(docker run --rm --platform linux/amd64 --entrypoint pip "$IMAGE" show opal-common); then
-            echo "::error::could not read opal-common's version from $IMAGE (see the error above): the image could not be pulled or run, or it does not install opal-common. Check the pushed image by hand before announcing the release."
-            exit 1
-          fi
-          actual=$(printf '%s\n' "$show" | sed -n 's/^Version: //p')
-          echo "$IMAGE installs opal-common $actual"
-          if [ "$actual" != "$EXPECTED" ]; then
-            echo "::error::$IMAGE installs opal-common '$actual', expected '$EXPECTED'. It is already pushed under the tags below. Re-running this job rebuilds the same commit, so fix the build on the branch and publish a new release; for a GA release, point latest back at the previous version until then."
-            echo "Tags now pointing at the wrong image:"
-            echo "$TAGS"
-            exit 1
-          fi
-
-  publish_python_packages:
-    needs:
-      - build_and_test
-    runs-on: ubuntu-latest
-    # The pypi environment has no protection rules, so it adds no approval step. PYPI_TOKEN is still
-    # a repository secret that any workflow can read; moved into this environment, it would be
-    # readable by this job only.
-    environment:
-      name: pypi
-      url: https://pypi.org/p/opal-common/
-    permissions:
-      contents: write  # upload the dists to the release
-    steps:
-      - name: Checkout
-        uses: actions/checkout@0717577d45739eb3c851188b29f50ed6c0b2194e  # v2.8.0
-        with:
-          fetch-depth: 0
           persist-credentials: false
 
       - name: Python setup
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
-          python-version: '3.11'
+          python-version: '3.14'
 
-      - name: Bump version - packaging__.py
+      - name: Set the version in packages/__packaging__.py
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          PYPI_VERSION: ${{ needs.version.outputs.pypi }}
         run: |
-          # Install required packages
-          pip install semver==3.1.0 packaging==26.3
-
-          # Get version tag and remove 'v' prefix
-          version_tag="$RELEASE_TAG"
-          version_tag=${version_tag#v}
-
-          # Convert semver to PyPI version using the script
-          pypi_version=$(python semver2pypi.py "$version_tag")
-
-          # Update only the __version__ in __packaging__.py
-          sed -i "s/__version__ = VERSION_STRING/__version__ = \"$pypi_version\"/" packages/__packaging__.py
-
-          # Print the result for verification
-          echo "Original version tag: $version_tag"
-          echo "PyPI version: $pypi_version"
-          cat packages/__packaging__.py
-
+          sed -i "s/__version__ = VERSION_STRING/__version__ = \"$PYPI_VERSION\"/" packages/__packaging__.py
           # If the sed stops matching, the packages would be built and uploaded as 0.0.0
-          if [ -z "$pypi_version" ] || ! grep -qF "__version__ = \"$pypi_version\"" packages/__packaging__.py; then
-            echo "::error::packages/__packaging__.py does not carry the release version '$pypi_version'"
+          if ! grep -qF "__version__ = \"$PYPI_VERSION\"" packages/__packaging__.py; then
+            echo "::error::packages/__packaging__.py does not carry the version '$PYPI_VERSION'"
             exit 1
           fi
 
       - name: Build every sub-packages
         run: |
-          pip install wheel==0.48.0
+          # Python 3.14 comes without setuptools, which every setup.py imports.
+          pip install setuptools==84.2.1 wheel==0.48.0
 
           # Helper: rename sdist to use underscores in package name (PEP 625). Newer setuptools
           # already writes that name, so a file whose name is unchanged is left alone.
@@ -349,18 +345,168 @@ jobs:
             done
           }
 
-          cd packages/opal-common/ || exit 1 ; rm -rf ./*.egg-info build/ dist/
-          python setup.py sdist bdist_wheel
-          normalize_sdist
-          cd ../.. || exit 1
-          cd packages/opal-client/ || exit 1 ; rm -rf ./*.egg-info build/ dist/
-          python setup.py sdist bdist_wheel
-          normalize_sdist
-          cd ../.. || exit 1
-          cd packages/opal-server/ || exit 1 ; rm -rf ./*.egg-info build/ dist/
-          python setup.py sdist bdist_wheel
-          normalize_sdist
-          cd ../.. || exit 1
+          for package in opal-common opal-client opal-server; do
+            (
+              cd "packages/$package"
+              rm -rf ./*.egg-info build/ dist/
+              python setup.py sdist bdist_wheel
+              normalize_sdist
+            )
+          done
+
+      - name: Keep the packages for the jobs that test and publish them
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: packages
+          path: packages/opal-*/dist/
+          if-no-files-found: error
+          retention-days: 3
+
+  # The built wheels, installed on the Python they require into a new venv: pip finds their
+  # dependencies, every package imports, and each reports the release version.
+  test-packages:
+    needs: [version, build-packages]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions: {}
+    steps:
+      - name: Fetch the packages
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: packages
+          path: ${{ runner.temp }}/packages
+
+      - name: Python setup
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: '3.14'
+
+      - name: Install and import the wheels
+        env:
+          PACKAGES: ${{ runner.temp }}/packages
+          EXPECTED: ${{ needs.version.outputs.pypi }}
+        run: |
+          venv=$RUNNER_TEMP/venv
+          python -m venv "$venv"
+          "$venv/bin/python" -m pip install --quiet pip==26.2.2
+          "$venv/bin/pip" install "$PACKAGES"/opal-common/dist/*.whl \
+            "$PACKAGES"/opal-client/dist/*.whl "$PACKAGES"/opal-server/dist/*.whl
+          "$venv/bin/pip" check
+          for package in opal-common opal-client opal-server; do
+            actual=$("$venv/bin/pip" show "$package" | sed -n 's/^Version: //p')
+            echo "$package $actual"
+            if [ "$actual" != "$EXPECTED" ]; then
+              echo "::error::the $package wheel is version '$actual', expected '$EXPECTED'"
+              exit 1
+            fi
+          done
+          "$venv/bin/python" -c 'import opal_common, opal_client, opal_server'
+
+  # On a release only, once every image and package passed: each archive is copied to Docker Hub
+  # as it is, so the tags name the bytes that were tested. A GA release also moves latest.
+  #
+  # The only job that can write to Docker Hub, and it holds no stored credential: no job in this
+  # repository does. Docker Hub's OIDC connection for the OPAL image repositories grants Image
+  # Push only to the subject repo:permitio/opal:environment:docker-hub, this job's, and the token
+  # it mints lives for 10 minutes. Every other job pulls anonymously; the connection's rule for
+  # repo:permitio/opal:* is pull only.
+  publish-images:
+    if: github.event_name == 'release'
+    needs: [version, test-images, test-packages]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: docker-hub
+    permissions:
+      id-token: write  # the GitHub ID token Docker Hub exchanges for the short-lived token
+    # Never at the same time as the weekly rebuild's copy of the same repository.
+    concurrency:
+      group: docker-hub-${{ matrix.repository }}
+      cancel-in-progress: false
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: client
+            repository: permitio/opal-client
+          - name: client-standalone
+            repository: permitio/opal-client-standalone
+          - name: client-cedar
+            repository: permitio/opal-client-cedar
+          - name: client-eopa
+            repository: permitio/opal-client-eopa
+          - name: server
+            repository: permitio/opal-server
+    steps:
+      - name: Fetch the image archive
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: image-${{ matrix.name }}
+          path: ${{ runner.temp }}/image
+
+      # No password: that selects the OIDC flow. The username is the Docker organization (OIDC
+      # does not work for personal accounts). If the exchange fails, the connection's Failures
+      # tab in Docker Home shows the subject it received.
+      - name: Login to Docker Hub (OIDC)
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0
+        env:
+          DOCKERHUB_OIDC_CONNECTIONID: ${{ vars.DOCKERHUB_OIDC_CONNECTIONID }}
+          DOCKERHUB_OIDC_EXPIREIN: '600'
+        with:
+          username: ${{ vars.DOCKERHUB_ORGANIZATION }}
+
+      - name: Publish ${{ matrix.name }}
+        env:
+          ARCHIVE: ${{ runner.temp }}/image/image.tar
+          REPOSITORY: ${{ matrix.repository }}
+          TAG: ${{ needs.version.outputs.tag }}
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
+        run: |
+          # Fail before any copy if the login left nothing skopeo can read, rather than with an
+          # anonymous copy's 401.
+          if ! skopeo login --get-login docker.io >/dev/null; then
+            echo "::error::the Docker Hub login left no credential skopeo can read; nothing was published"
+            exit 1
+          fi
+          tags=("$TAG")
+          if [ "$PRERELEASE" != "true" ]; then
+            tags+=(latest)
+          fi
+          built=$(skopeo inspect --raw "oci-archive:$ARCHIVE" | sha256sum | cut -d' ' -f1)
+          for tag in "${tags[@]}"; do
+            skopeo copy --all --preserve-digests --retry-times 3 \
+              "oci-archive:$ARCHIVE" "docker://$REPOSITORY:$tag"
+            pushed=$(skopeo inspect --raw "docker://$REPOSITORY:$tag" | sha256sum | cut -d' ' -f1)
+            if [ "$pushed" != "$built" ]; then
+              echo "::error::$REPOSITORY:$tag is sha256:$pushed, not the tested sha256:$built"
+              exit 1
+            fi
+            echo "$REPOSITORY:$tag is sha256:$built, the image that was tested"
+          done
+          echo "sha256:$built" >"$RUNNER_TEMP/digest"
+
+      - name: Keep the pushed digest for verify
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: digest-${{ matrix.name }}
+          path: ${{ runner.temp }}/digest
+          if-no-files-found: error
+          retention-days: 3
+
+  # On a release only, once every image and package passed: the tested sdists and wheels go to
+  # the release's assets (release-assets) and to PyPI (publish-packages).
+  release-assets:
+    if: github.event_name == 'release'
+    needs: [version, test-images, test-packages]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write  # upload the dists to the release
+    steps:
+      - name: Fetch the packages
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: packages
+          path: packages
 
       # Upload package distributions to the release - All assets in one step
       - name: Upload assets to release
@@ -372,15 +518,34 @@ jobs:
             packages/opal-client/dist/*
             packages/opal-server/dist/*
 
-      # Publish package distributions to PyPI
-      # skip-existing allows re-runs to succeed if some files were already uploaded
-      # verbose enables detailed error messages from PyPI for debugging upload failures
-      # The PyPI token stays until trusted publishing is set up for the three projects; that
-      # is its own change.
+  # Trusted publishing: PyPI accepts an OIDC token of this workflow in the pypi environment,
+  # which each of the three projects lists as its trusted publisher. No PyPI token is stored.
+  # Every step of a job that may mint that token could publish, so this job holds nothing else
+  # and runs only the artifact download and the publish action; the release assets are
+  # release-assets' job, with no OIDC token.
+  publish-packages:
+    if: github.event_name == 'release'
+    needs: [version, test-images, test-packages]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment:
+      name: pypi
+      url: https://pypi.org/p/opal-common/
+    permissions:
+      id-token: write  # the OIDC token PyPI exchanges for a short-lived upload token
+    steps:
+      - name: Fetch the packages
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: packages
+          path: packages
+
+      # Publish package distributions to PyPI, each with the attestation the action makes with
+      # trusted publishing. skip-existing allows re-runs to succeed if some files were already
+      # uploaded; verbose enables detailed error messages from PyPI for debugging upload failures.
       - name: Publish package distributions to PyPI - Opal-Common
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
         with:
-          password: ${{ secrets.PYPI_TOKEN }}  # zizmor: ignore[use-trusted-publishing] see above
           packages-dir: packages/opal-common/dist/
           skip-existing: true
           verbose: true
@@ -388,7 +553,6 @@ jobs:
       - name: Publish package distributions to PyPI - Opal-Client
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
         with:
-          password: ${{ secrets.PYPI_TOKEN }}  # zizmor: ignore[use-trusted-publishing] see above
           packages-dir: packages/opal-client/dist/
           skip-existing: true
           verbose: true
@@ -396,7 +560,91 @@ jobs:
       - name: Publish package distributions to PyPI - Opal-Server
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
         with:
-          password: ${{ secrets.PYPI_TOKEN }}  # zizmor: ignore[use-trusted-publishing] see above
           packages-dir: packages/opal-server/dist/
           skip-existing: true
           verbose: true
+
+  # On a release only, after both publish jobs: what Docker Hub and PyPI now serve must carry its
+  # attestations. Each image index is read by the digest publish-images pushed, which is the
+  # tested archive's, so a tag moved since cannot change what is checked: it holds exactly the
+  # linux/amd64 and linux/arm64 images, each with an SLSA provenance that names this repository,
+  # the release commit and the image's Dockerfile target, and an SPDX SBOM that lists
+  # opal-common. Each package file on PyPI has an attestation published by this workflow in the
+  # pypi environment.
+  verify:
+    if: github.event_name == 'release'
+    needs: [version, publish-images, publish-packages]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fetch the pushed digests
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          pattern: digest-*
+          path: ${{ runner.temp }}/digests
+
+      - name: Check each image's platforms, provenance and SBOM
+        env:
+          DIGESTS: ${{ runner.temp }}/digests
+          COMMIT: ${{ github.sha }}
+        run: |
+          code=0
+          for name in client client-standalone client-cedar client-eopa server; do
+            digest=$(cat -- "$DIGESTS/digest-$name/digest")
+            digest=${digest#sha256:}
+            .github/scripts/verify_release.py image "permitio/opal-$name@sha256:$digest" \
+              --target "$name" --commit "$COMMIT" --repository "$GITHUB_REPOSITORY" || code=1
+          done
+          exit "$code"
+
+      - name: Check each package file's PyPI attestation
+        env:
+          PYPI_VERSION: ${{ needs.version.outputs.pypi }}
+        run: >-
+          .github/scripts/verify_release.py packages "$PYPI_VERSION"
+          --project opal-common --project opal-client --project opal-server
+          --repository "$GITHUB_REPOSITORY" --workflow on_release.yml --environment pypi
+
+  # On a release only, when any job failed or was cancelled: a notice to the security Slack channel
+  # that names those jobs, through .github/scripts/notify.sh and the webhook of the security-scan
+  # environment, which must admit release tags too. A dry run on a pull request posts nothing.
+  notify:
+    needs:
+      - version
+      - build-images
+      - test-images
+      - build-packages
+      - test-packages
+      - publish-images
+      - release-assets
+      - publish-packages
+      - verify
+    if: always() && github.event_name == 'release' && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: security-scan
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Post to Slack
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          TAG: ${{ github.event.release.tag_name }}
+          SECURITY_SLACK_WEBHOOK_URL: ${{ secrets.SECURITY_SLACK_WEBHOOK_URL }}
+        run: |
+          body=$RUNNER_TEMP/failed-jobs.txt
+          jq -r 'to_entries[] | select(.value.result == "failure" or .value.result == "cancelled")
+            | "• \(.key): \(.value.result)"' <<<"$NEEDS" >"$body"
+          .github/scripts/notify.sh "release $TAG" "failed" "$body"

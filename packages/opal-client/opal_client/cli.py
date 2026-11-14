@@ -19,7 +19,7 @@ app = get_typer_app()
 
 
 @app.command()
-def run(engine_type: str = typer.Option("uvicron", help="uvicorn or gunicorn")):
+def run(engine_type: str = typer.Option("uvicorn", help="uvicorn or gunicorn")):
     """Run the client as a daemon."""
     typer.echo(f"-- Starting OPAL client (with {engine_type}) --")
     from opal_common.corn_utils import run_gunicorn, run_uvicorn

@@ -9,6 +9,7 @@ source re-attempted it too (one repo with ~56 scopes accounted for 2,410 of
 them). Each test below names, in its docstring, the single-line mutation it
 catches; every one of them was run against the implementation.
 """
+
 import asyncio
 import datetime
 import math
@@ -26,6 +27,9 @@ from opal_server.git_fetcher import GitPolicyFetcher, SourceBackoff, git_op_in_f
 from opal_server.scopes.purge import purge_local_memory
 from opal_server.scopes.scope_repository import ScopeNotFoundError
 from opal_server.scopes.service import ScopesService
+
+# What these tests stub or measure is libgit2's fetch and clone.
+pytestmark = pytest.mark.fetch_backend("libgit2")
 
 # The shipped base is 10s; the suite pins a round 60s so the doubling and the
 # per-pass arithmetic read cleanly. Nothing here depends on the real default.
@@ -268,9 +272,7 @@ async def test_a_source_failing_for_days_does_not_overflow(tmp_path, monkeypatch
     assert entry.consecutive_failures == 2001
     delay = entry.next_attempt_at - before
     assert math.isfinite(delay)
-    assert delay == pytest.approx(
-        _BASE * 2.0**64, rel=1e-6
-    )  # clamped, not overflowed
+    assert delay == pytest.approx(_BASE * 2.0**64, rel=1e-6)  # clamped, not overflowed
 
 
 @pytest.mark.asyncio
@@ -338,9 +340,9 @@ async def test_the_skip_happens_before_the_source_lock_is_taken(tmp_path, monkey
 
     await fetcher.fetch_and_notify_on_changes(honor_backoff=True)
 
-    assert (
-        GitPolicyFetcher.repo_locks == {}
-    ), "lock_source was entered for a source that is in backoff"
+    assert GitPolicyFetcher.repo_locks == {}, (
+        "lock_source was entered for a source that is in backoff"
+    )
 
 
 @pytest.mark.asyncio
@@ -629,9 +631,9 @@ def test_reset_caches_keeps_the_backoff(tmp_path):
     GitPolicyFetcher.reset_caches()
 
     assert "src" in GitPolicyFetcher.source_backoff
-    assert (
-        GitPolicyFetcher.repos_last_fetched == {}
-    ), "the other caches must still clear"
+    assert GitPolicyFetcher.repos_last_fetched == {}, (
+        "the other caches must still clear"
+    )
 
 
 def test_a_purged_source_forgets_its_backoff(tmp_path):
@@ -787,15 +789,15 @@ async def test_an_explicit_single_scope_sync_bypasses_the_pass_backoff(
 
 @pytest.mark.asyncio
 async def test_refresh_all_does_not_honour_the_backoff(monkeypatch):
-    """Mutation: have ``trigger(data=None)`` call ``_sync_all()`` with the
-    default. POST /scopes/refresh is an operator explicitly asking every scope
+    """Mutation: have ``trigger(data=None)`` request a pass that honours the
+    backoff. POST /scopes/refresh is an operator explicitly asking every scope
     to sync now; answering it with a silent skip for the sources they most
     likely just repaired makes the endpoint useless in the one situation it is
-    reached for. The boot call in ``start()`` honours it only when a periodic
-    pass will follow (see the dedicated test), which is what lets a forked
-    leader inherit the master's boot failures without stranding a source when
-    polling is disabled."""
-    from opal_server.scopes.task import ScopesPolicyWatcherTask
+    reached for. The boot pass honours it, and drops the inherited entries
+    when no periodic pass will follow (see the dedicated test), which is what
+    lets a forked leader inherit the master's boot failures without stranding
+    a source when polling is disabled."""
+    from opal_server.scopes.task import ScopesPolicyWatcherTask, _SyncPassQueue
 
     seen = []
 
@@ -805,12 +807,10 @@ async def test_refresh_all_does_not_honour_the_backoff(monkeypatch):
 
     task = ScopesPolicyWatcherTask.__new__(ScopesPolicyWatcherTask)
     task._service = _Recorder()
+    task._passes = _SyncPassQueue(task._run_pass)
 
     await task.trigger(topic=None, data=None)
     assert seen == [False]
-
-    await task._sync_all()  # the boot path
-    assert seen == [False, True]
 
 
 # ---------------------------------------------------------------------------
@@ -957,14 +957,14 @@ async def test_without_a_periodic_pass_the_boot_sync_drops_inherited_entries_but
     so a dead repo shared by 56 scopes costs 56 clone attempts at boot.
     """
     from opal_server.policy.watcher.task import BasePolicyWatcherTask
-    from opal_server.scopes.task import ScopesPolicyWatcherTask
+    from opal_server.scopes.task import ScopesPolicyWatcherTask, _SyncPassQueue
 
     seen = []
 
-    async def _record(self, honor_backoff=True):
+    async def _record(self, only_poll_updates, honor_backoff):
         seen.append((honor_backoff, dict(GitPolicyFetcher.source_backoff)))
 
-    monkeypatch.setattr(ScopesPolicyWatcherTask, "_sync_all", _record)
+    monkeypatch.setattr(ScopesPolicyWatcherTask, "_run_pass", _record)
 
     async def _base_start(self):
         return None
@@ -983,6 +983,7 @@ async def test_without_a_periodic_pass_the_boot_sync_drops_inherited_entries_but
 
     class _Endpoint:
         notifier = _Notifier()
+        broadcaster = None
 
     def _task():
         t = ScopesPolicyWatcherTask.__new__(ScopesPolicyWatcherTask)
@@ -990,6 +991,7 @@ async def test_without_a_periodic_pass_the_boot_sync_drops_inherited_entries_but
         t._purger = type("P", (), {"handle": None})()
         t._tasks = []
         t._should_stop = None
+        t._passes = _SyncPassQueue(t._run_pass)
         return t
 
     inherited = SourceBackoff(

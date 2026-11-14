@@ -1,4 +1,4 @@
-"""Scopes mode logs one INFO line per incremental policy push (PER-16361).
+"""Scopes mode logs one INFO line per incremental policy push.
 
 The kept line is ``NewCommitsCallbacks.trigger_notification``'s "Triggering
 policy update for scope", logged once per publish by each pod leader. The other
@@ -28,6 +28,9 @@ from opal_server.git_fetcher import GitPolicyFetcher
 from opal_server.scopes.api import init_scope_router
 from opal_server.scopes.scope_repository import ScopeNotFoundError
 from opal_server.scopes.service import NewCommitsCallbacks, ScopesService
+
+# These syncs fetch real local origins through the scope fetch backend.
+pytestmark = pytest.mark.fetch_backend("both")
 
 SCOPE_ID = "s1"
 AUTHOR = git.Actor("test", "test@example.com")
@@ -222,7 +225,8 @@ async def test_sync_scopes_push_logs_the_pass_line_and_one_info_line(
     tmp_path, clear_fetcher_caches, only_poll_updates
 ):
     """Refresh-all and the periodic poll go through sync_scopes: one per-pass
-    INFO line, then one "Triggering policy update" per pushed scope."""
+    INFO line, the pass's fetch of the clone (a line kept for the 0.10
+    rollout), then one "Triggering policy update" per pushed scope."""
     remote = git.Repo.init(tmp_path / "remote", initial_branch="main")
     _commit(remote, "policy/a.rego", "package a\n")
     source = _source(url=str(tmp_path / "remote"), poll_updates=True)
@@ -240,8 +244,9 @@ async def test_sync_scopes_push_logs_the_pass_line_and_one_info_line(
         await service.sync_scopes(only_poll_updates=only_poll_updates)
 
     assert len(pubsub.published) == 2
-    [pass_line, info] = _opal_records(logs.emitted, "INFO")
+    [pass_line, fetch, info] = _opal_records(logs.emitted, "INFO")
     assert pass_line["message"].startswith("OPAL Scopes: syncing 1 scopes")
+    assert fetch["message"].startswith("Sync pass fetching ")
     assert info["message"].startswith(f"Triggering policy update for scope {SCOPE_ID}")
     assert _opal_records(logs.emitted, "WARNING") == []
     assert _opal_records(logs.emitted, "ERROR") == []
@@ -302,9 +307,9 @@ async def test_already_fetched_line_is_debug_and_missing_branch_line_stays_info(
     source = _source()
     fetcher = GitPolicyFetcher(tmp_path, SCOPE_ID, source)
     req_time = datetime.datetime.now()
-    GitPolicyFetcher.repos_last_fetched[
-        GitPolicyFetcher.source_id(source)
-    ] = req_time + datetime.timedelta(seconds=1)
+    GitPolicyFetcher.repos_last_fetched[GitPolicyFetcher.source_id(source)] = (
+        req_time + datetime.timedelta(seconds=1)
+    )
     # Empty: no remote-tracking branch, so the target-branch check fetches.
     repo = pygit2.init_repository(str(tmp_path / "clone"))
 
@@ -313,8 +318,8 @@ async def test_already_fetched_line_is_debug_and_missing_branch_line_stays_info(
             repo, force_fetch=True, req_time=req_time
         )
 
-    # A fetch that started after the request already looked for the branch
-    # (PER-17978): no second fetch, and both lines stay at DEBUG.
+    # A fetch that started after the request already looked for the branch:
+    # no second fetch, and both lines stay at DEBUG.
     assert should_fetch is False
     [fetched] = starting_with(logs.emitted, "Repo was fetched after refresh request")
     assert fetched["level"].name == "DEBUG"
@@ -360,9 +365,9 @@ async def test_a_coalesced_sync_of_a_missing_branch(
     missing.branch = "no-such-branch"
     fetcher = GitPolicyFetcher(tmp_path / "opal", SCOPE_ID, missing)
     asked = datetime.datetime.now()
-    GitPolicyFetcher.repos_last_fetched[
-        fetcher._source_id
-    ] = asked + datetime.timedelta(seconds=1)
+    GitPolicyFetcher.repos_last_fetched[fetcher._source_id] = (
+        asked + datetime.timedelta(seconds=1)
+    )
 
     with capture_records() as logs:
         await fetcher.fetch_and_notify_on_changes(

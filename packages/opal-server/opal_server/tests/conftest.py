@@ -14,12 +14,59 @@ import time
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, cast
+from typing import Any, Dict, List, NoReturn, Optional, Tuple, cast
 
 import opal_server.scopes.task as task_module
 import pygit2
 import pytest
 from opal_server.config import opal_server_config
+
+# --- the scope fetch backend ---------------------------------------------------
+
+# What each name of the fetch_backend marker sets SCOPES_GIT_FETCH_WITH_CLI to.
+_FETCH_BACKENDS = {"cli": True, "libgit2": False}
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "fetch_backend(name): pin the scope fetch backend for the test: "
+        '"cli" (the git command line), "libgit2", or "both" (the test runs '
+        "once with each)",
+    )
+
+
+def pytest_generate_tests(metafunc):
+    marker = metafunc.definition.get_closest_marker("fetch_backend")
+    if marker is not None and marker.args == ("both",):
+        metafunc.parametrize("fetch_backend", list(_FETCH_BACKENDS), indirect=True)
+
+
+def fetch_backend_cli_setting(name: Optional[str]) -> bool:
+    """SCOPES_GIT_FETCH_WITH_CLI for the backend ``name`` names.
+
+    Raises:
+        ValueError: ``name`` is no backend's ("both" is resolved before).
+    """
+    if name not in _FETCH_BACKENDS:
+        raise ValueError(
+            f"fetch_backend({name!r}): use one of {sorted(_FETCH_BACKENDS)} or 'both'"
+        )
+    return _FETCH_BACKENDS[name]
+
+
+@pytest.fixture(autouse=True)
+def fetch_backend(request, monkeypatch) -> Optional[str]:
+    """The backend the test's fetch_backend marker pins, set for the test;
+    None, and the setting left as configured, for a test without one."""
+    marker = request.node.get_closest_marker("fetch_backend")
+    if marker is None:
+        return None
+    name = getattr(request, "param", None) or next(iter(marker.args), None)
+    monkeypatch.setattr(
+        opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", fetch_backend_cli_setting(name)
+    )
+    return name
 
 
 class NoScopes:
@@ -255,11 +302,15 @@ class GitHttpServer(ThreadingHTTPServer):
     context, on the same port. ``authorization``: the exact Authorization
     header every request must carry, else 401. ``stall_after``: send only
     this many bytes of a pack (the answer to a fetch request), then hold
-    the connection open until the server closes. ``error``: answer every
+    the connection open until the server closes. The answer's
+    Content-Length is the whole pack's, so the client waits for the rest:
+    without one, libgit2 fails the fetch at once. ``delay``: hold the answer
+    to a fetch request this many seconds, then send it whole. ``error``: answer every
     request (once authorized) with a git ``ERR`` packet carrying this
     message, which git prints as a remote error. Every request's headers
     are kept in ``requests``, and its scheme (http or https) at the same
-    index in ``schemes``.
+    index in ``schemes``; every POST's body, decompressed, in ``bodies``
+    (a protocol-v2 fetch's ``ref-prefix`` lines are in its ls-refs body).
     """
 
     daemon_threads = True
@@ -271,11 +322,13 @@ class GitHttpServer(ThreadingHTTPServer):
         self.tls: Optional[ssl.SSLContext] = None
         self.authorization: Optional[str] = None
         self.stall_after: Optional[int] = None
+        self.delay: Optional[float] = None
         self.error: Optional[str] = None
         self.stalled = threading.Event()
         self.release = threading.Event()
         self.requests: List[Tuple[str, str, Dict[str, str]]] = []
         self.schemes: List[str] = []
+        self.bodies: List[bytes] = []
         threading.Thread(target=self.serve_forever, daemon=True).start()
 
     def url(self, name: str, userinfo: str = "", scheme: str = "http") -> str:
@@ -381,6 +434,8 @@ class _GitHttpHandler(BaseHTTPRequestHandler):
         if self.headers.get("Content-Encoding"):
             env["HTTP_CONTENT_ENCODING"] = self.headers["Content-Encoding"]
             plain = gzip.decompress(body)
+        if self.command == "POST":
+            server.bodies.append(plain)
         out = subprocess.run(
             [_git(), "http-backend"],
             input=body,
@@ -396,17 +451,17 @@ class _GitHttpHandler(BaseHTTPRequestHandler):
                 status = int(value.split()[0])
             elif key:
                 headers.append((key, value.strip()))
-        stall = (
-            server.stall_after
-            if self.command == "POST"
-            and (b"command=fetch" in plain or b"want " in plain)
-            else None
+        asks_for_a_pack = self.command == "POST" and (
+            b"command=fetch" in plain or b"want " in plain
         )
+        stall = server.stall_after if asks_for_a_pack else None
+        if asks_for_a_pack and server.delay is not None:
+            if server.release.wait(server.delay):
+                return
         self.send_response(status)
         for key, value in headers:
             self.send_header(key, value)
-        if stall is None:
-            self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
         if stall is None:
             self.wfile.write(payload)
@@ -542,9 +597,9 @@ def git_groups(monkeypatch):
     """Every group git_cli makes, as it makes it.
 
     A group is there once its op's start is over: a test that stops an
-    op with a cancel waits for one, as a cancel during the start is a
-    stop of another kind (asyncio kills sh, and the watchdog the rest:
-    no SIGTERM, no grace).
+    op with a cancel waits for one, so that the cancel stops git
+    (SIGTERM, then the grace) rather than an op that has not started it
+    yet.
     """
     from opal_server import git_cli
 
@@ -565,6 +620,14 @@ def process_table():
     return all_processes
 
 
+def _without_sshd(reason: str) -> NoReturn:
+    """Skip a test that needs sshd; fail it instead with TESTS_REQUIRE_SSHD=1
+    in the environment, where a skip would let it pass without running."""
+    if os.environ.get("TESTS_REQUIRE_SSHD") == "1":
+        pytest.fail(f"TESTS_REQUIRE_SSHD=1 and {reason}")
+    pytest.skip(reason)
+
+
 class Sshd:
     """An OpenSSH server on localhost, run as this user, that serves git
     through git-shell to a client with a key.
@@ -578,7 +641,7 @@ class Sshd:
     ) -> None:
         sshd = shutil.which("sshd") or "/usr/sbin/sshd"
         if not os.path.exists(sshd):
-            pytest.skip("no sshd on this machine")
+            _without_sshd("no sshd on this machine")
         git = _git()
         exec_path = subprocess.run(
             [git, "--exec-path"], capture_output=True, text=True, check=True
@@ -630,14 +693,14 @@ class Sshd:
             if self._proc.poll() is not None:
                 assert self._proc.stderr is not None
                 err = self._proc.stderr.read().decode(errors="replace")
-                pytest.skip(f"sshd did not start: {err.strip()[-300:]}")
+                _without_sshd(f"sshd did not start: {err.strip()[-300:]}")
             try:
                 socket.create_connection(("127.0.0.1", self.port), timeout=0.5).close()
                 break
             except OSError:
                 if time.monotonic() > deadline:
                     self.close()
-                    pytest.skip("sshd did not start listening")
+                    _without_sshd("sshd did not start listening")
                 time.sleep(0.05)
 
     def url(self, repo: Path) -> str:
@@ -682,3 +745,20 @@ def make_sshd(tmp_path):
 def sshd(make_sshd):
     """A local sshd serving git, or a skip where none can be started."""
     return make_sshd()
+
+
+@pytest.fixture(params=["Etc/GMT-5", "Etc/GMT+5"], ids=["utc+5", "utc-5"])
+def local_time_off_utc(request):
+    """The process's local time zone five hours east, then west, of UTC: a
+    local clock read as UTC is five hours off there."""
+    before = os.environ.get("TZ")
+    os.environ["TZ"] = request.param
+    time.tzset()
+    try:
+        yield
+    finally:
+        if before is None:
+            del os.environ["TZ"]
+        else:
+            os.environ["TZ"] = before
+        time.tzset()

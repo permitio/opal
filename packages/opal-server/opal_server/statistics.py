@@ -1,6 +1,6 @@
 import asyncio
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from importlib.metadata import version as module_version
 from random import uniform
 from typing import Any, Dict, List, Optional, Set
@@ -77,7 +77,8 @@ class OpalStatistics:
 
     def __init__(self, endpoint):
         self._endpoint: PubSubEndpoint = endpoint
-        self._uptime = datetime.utcnow()
+        # Naive UTC, as the statistics have always reported it.
+        self._uptime = datetime.now(timezone.utc).replace(tzinfo=None)
         self._workers_count = (lambda envar: int(envar) if envar.isdigit() else 1)(
             os.environ.get("UVICORN_NUM_WORKERS", "1")
         )
@@ -125,7 +126,7 @@ class OpalStatistics:
 
     async def _expire_old_servers(self):
         async with self._lock:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             still_alive = {}
             for server_id, last_seen in self._seen_servers.items():
                 if (now - last_seen).total_seconds() < float(
@@ -287,7 +288,9 @@ class OpalStatistics:
         self, subscription: Subscription, keepalive_message: dict
     ):
         async with self._lock:
-            self._seen_servers[keepalive_message["worker_id"]] = datetime.now()
+            self._seen_servers[keepalive_message["worker_id"]] = datetime.now(
+                timezone.utc
+            )
             self._state.servers.add(keepalive_message["worker_id"])
 
     async def _add_client(self, subscription: Subscription, stats_message: dict):

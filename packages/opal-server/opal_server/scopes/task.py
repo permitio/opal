@@ -1,15 +1,21 @@
 import asyncio
 import datetime
-import logging
+import math
+import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Awaitable, Callable, Optional
 
 from fastapi_websocket_pubsub import Topic
+from opal_common.async_utils import run_sync
 from opal_common.logger import configure_logs, logger, logs_configured
-from opal_common.monitoring import metrics
+from opal_server import health
 from opal_server.config import opal_server_config
 from opal_server.git_cli import (
+    clone_timeout,
     close_leftover_lock_fds,
+    kill_grace_seconds,
+    known_hosts_file,
     validate_git_cli_settings,
     wait_for_background_ops,
 )
@@ -19,34 +25,187 @@ from opal_server.git_fetcher import (
     git_busy_count,
     reclone_hung_enabled,
     reclone_hung_scope_clones,
+    remove_reflogs_left_set_aside,
     shutdown_git_executor,
     sweep_scope_clone_leftovers,
 )
 from opal_server.metrics_setup import configure_server_metrics
 from opal_server.policy.watcher.task import BasePolicyWatcherTask
+from opal_server.pubsub_resilience import ReconnectingBroadcaster
 from opal_server.redis_utils import RedisDB
+from opal_server.scopes.missing_scope import validate_missing_scope_settings
+from opal_server.scopes.orphans import OrphanCloneSweeper, orphan_sweep_interval
 from opal_server.scopes.purge import LeaderScopePurger
+from opal_server.scopes.readiness import required_clones, validate_required_repos
 from opal_server.scopes.scope_repository import ScopeRepository
 from opal_server.scopes.service import ScopesService
 
-
-class _UnknownChildWarningFilter(logging.Filter):
-    """Drops asyncio's warning about a child reaped before it got to it."""
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        return "will report returncode 255" not in record.getMessage()
-
-
 # Upper bound on the shutdown drain of in-flight scope purges. The drain is
 # best-effort: a purge's rmtree runs on a worker thread and completes whether or
-# not we are still awaiting it. What is abandoned before it starts is NOT
-# recovered — no reconciliation sweep exists in this PR (split out, PER-15612),
-# and no later purge will name a deleted scope's source. Blocking shutdown
+# not we are still awaiting it. No later purge will name a deleted scope's
+# source, so what is abandoned before it starts stays until the orphan sweep
+# (SCOPES_ORPHAN_SWEEP_INTERVAL, off by default) reclaims it. Blocking shutdown
 # longer would be strictly worse —
 # stop() runs while the leadership lock is still held, so no other worker can
 # take over, and k8s's terminationGracePeriodSeconds (30s by default) would
 # SIGKILL us anyway.
 _PURGE_DRAIN_TIMEOUT = 5.0
+
+
+def _limit(seconds: float) -> str:
+    """A timeout as the settings line shows it: 0 or less, or not finite, is
+    none."""
+    return f"{seconds:g}s" if math.isfinite(seconds) and seconds > 0 else "none"
+
+
+def _log_scope_git_settings() -> None:
+    """One INFO line, at the pre-fork preload, with the settings that decide
+    how scope clones are fetched (a line for the 0.10 rollout, see the
+    monitoring docs)."""
+    if known_hosts_file() is None:
+        host_keys = "trusted on first use"
+    else:
+        host_keys = f"checked against {known_hosts_file()}"
+    fetch_timeout = _limit(float(opal_server_config.SCOPES_GIT_FETCH_TIMEOUT))
+    if not opal_server_config.SCOPES_GIT_FETCH_WITH_CLI:
+        logger.info(
+            "Scope git settings: libgit2 fetches, fetch and clone timeout "
+            "{fetch_timeout}, {shards} clones per repository, SSH host keys "
+            "{host_keys}",
+            fetch_timeout=fetch_timeout,
+            shards=opal_server_config.SCOPES_REPO_CLONES_SHARDS,
+            host_keys=host_keys,
+        )
+        return
+    most = opal_server_config.SCOPES_GIT_CLI_NARROW_FETCH_MAX_BRANCHES
+    narrow = (
+        f"up to {most} branches by name" if most > 0 else "every branch (narrow off)"
+    )
+    logger.info(
+        "Scope git settings: git command-line fetches, fetch timeout "
+        "{fetch_timeout}, clone timeout {clone_timeout}, kill grace "
+        "{grace:g}s, a fetch asks for {narrow}, one clone per repository, SSH "
+        "host keys {host_keys}",
+        fetch_timeout=fetch_timeout,
+        clone_timeout=_limit(clone_timeout()),
+        grace=kill_grace_seconds(),
+        narrow=narrow,
+        host_keys=host_keys,
+    )
+
+
+@dataclass
+class _QueuedPass:
+    """The pass that starts once the running one ends, and its requests."""
+
+    only_poll_updates: bool
+    honor_backoff: bool
+    done: asyncio.Future
+    requests: int = 0
+
+
+class _SyncPassQueue:
+    """Runs the leader's scope sync passes one at a time.
+
+    At most one pass runs and one is queued. A request made while a pass
+    is queued joins it, so every request is served by a pass that
+    started after it was made, and a burst of requests during a pass
+    costs one more pass. The queued pass polls only when every request
+    it serves asked for poll-only, and honours the source backoff only
+    when every one does: a refresh of every scope that joins a periodic
+    request still gets a full pass without the backoff. A pass ends with
+    its repacks, so the next one starts only once they are done.
+    """
+
+    def __init__(self, run_pass: Callable[[bool, bool], Awaitable[None]]) -> None:
+        self._run_pass = run_pass
+        self._queued: Optional[_QueuedPass] = None
+        self._drain_task: Optional[asyncio.Task] = None
+        self._stopped = False
+
+    async def request(self, *, only_poll_updates: bool, honor_backoff: bool) -> None:
+        """Wait for a sync pass that starts after this call.
+
+        Returns once that pass ended, whether it succeeded or failed (a
+        failure is logged where the pass runs). Returns at once after stop().
+        Cancelling the caller leaves the pass to the other requests it
+        serves.
+
+        Raises:
+            asyncio.CancelledError: stop() cancelled the pass this waits for.
+        """
+        done = self.enqueue(
+            only_poll_updates=only_poll_updates, honor_backoff=honor_backoff
+        )
+        if done is not None:
+            await asyncio.shield(done)
+
+    def enqueue(
+        self, *, only_poll_updates: bool, honor_backoff: bool
+    ) -> Optional[asyncio.Future]:
+        """Ask for a sync pass as request() does, without waiting for it.
+
+        Returns:
+            The future the pass resolves once it ended, or None after stop().
+        """
+        if self._stopped:
+            return None
+        queued = self._queued
+        if queued is None:
+            queued = _QueuedPass(
+                only_poll_updates=only_poll_updates,
+                honor_backoff=honor_backoff,
+                done=asyncio.get_running_loop().create_future(),
+            )
+            self._queued = queued
+        else:
+            queued.only_poll_updates = queued.only_poll_updates and only_poll_updates
+            queued.honor_backoff = queued.honor_backoff and honor_backoff
+        queued.requests += 1
+        if self._drain_task is None or self._drain_task.done():
+            self._drain_task = asyncio.create_task(self._drain())
+        return queued.done
+
+    async def stop(self) -> None:
+        """Cancel the running pass and the queued one; idempotent.
+
+        Their waiters get CancelledError, and later requests return at
+        once.
+        """
+        self._stopped = True
+        task, self._drain_task = self._drain_task, None
+        if task is not None:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        self._cancel_queued()
+
+    def _cancel_queued(self) -> None:
+        queued, self._queued = self._queued, None
+        if queued is not None:
+            queued.done.cancel()
+
+    async def _drain(self) -> None:
+        # No await between the loop's last check and the return: a request
+        # made meanwhile would find this task still running and wait forever.
+        while self._queued is not None:
+            current, self._queued = self._queued, None
+            started = time.monotonic()
+            try:
+                await self._run_pass(current.only_poll_updates, current.honor_backoff)
+            except asyncio.CancelledError:
+                current.done.cancel()
+                self._cancel_queued()
+                raise
+            except Exception:
+                logger.exception("Scope sync pass failed")
+            finally:
+                if not current.done.done():
+                    current.done.set_result(None)
+            logger.info(
+                "Scope sync pass for {requests} request(s) ended after {seconds:.1f}s",
+                requests=current.requests,
+                seconds=time.monotonic() - started,
+            )
 
 
 class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
@@ -67,6 +226,9 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             scopes=self._scopes,
             pubsub_endpoint=self._pubsub_endpoint,
         )
+        self._passes = _SyncPassQueue(self._run_pass)
+        # Set in start() when the broadcaster reports backbone gaps.
+        self._remove_gap_listener: Optional[Callable[[], None]] = None
 
     async def start(self):
         await super().start()
@@ -102,10 +264,35 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         # recorded anything of its own before that (only leaders sync).
         if opal_server_config.POLICY_REFRESH_INTERVAL <= 0:
             GitPolicyFetcher.source_backoff.clear()
-        self._tasks.append(asyncio.create_task(self._sync_all()))
+        self._remove_gap_listener = self._listen_for_backbone_gaps()
+        # Honours the backoff: this process may have been forked from a
+        # master whose preload already found which repos are unreachable,
+        # and attempting all of them again at boot is the storm the backoff
+        # exists to prevent.
+        self._tasks.append(
+            asyncio.create_task(
+                self._passes.request(only_poll_updates=False, honor_backoff=True)
+            )
+        )
 
         if opal_server_config.POLICY_REFRESH_INTERVAL > 0:
             self._tasks.append(asyncio.create_task(self._periodic_polling()))
+        # Reflogs a repack set aside before its process died: a quiet clone has
+        # no next repack to remove them, and the pre-fork preload leaves them.
+        self._tasks.append(
+            asyncio.create_task(
+                run_sync(
+                    remove_reflogs_left_set_aside, Path(opal_server_config.BASE_DIR)
+                )
+            )
+        )
+
+        interval = orphan_sweep_interval()
+        if interval > 0:
+            sweeper = OrphanCloneSweeper(
+                Path(opal_server_config.BASE_DIR), self._scopes, interval
+            )
+            self._tasks.append(asyncio.create_task(sweeper.run()))
 
     async def stop(self):
         # stop() runs TWICE on the normal path — once from
@@ -124,13 +311,20 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             except Exception:
                 logger.exception("Failed to unsubscribe scope purge handler on stop")
         self._purger.signal_stop()
+        if self._remove_gap_listener is not None:
+            remove, self._remove_gap_listener = self._remove_gap_listener, None
+            remove()
 
-        # Cancel our tasks BEFORE draining the purges, not after: a queued purge
-        # first waits on GitPolicyFetcher.lock_source, which a sync task holds
-        # across a clone/fetch (up to SCOPES_GIT_FETCH_TIMEOUT, and unbounded
-        # when that is 0). Draining first would wait on a lock whose release
-        # requires the very cancellation the drain is blocking — an unrecoverable
-        # shutdown hang, taken while the leadership lock is still held.
+        # Cancel the passes and our tasks BEFORE draining the purges, not
+        # after: a queued purge first waits on GitPolicyFetcher.lock_source,
+        # which a sync holds across a clone/fetch (up to
+        # SCOPES_GIT_FETCH_TIMEOUT, and unbounded when that is 0). Draining
+        # first would wait on a lock whose release requires the very
+        # cancellation the drain is blocking — an unrecoverable shutdown hang,
+        # taken while the leadership lock is still held. The passes first:
+        # they run in the queue's own task, which super().stop() does not
+        # cancel, only the requests waiting for them.
+        await self._passes.stop()
         result = await super().stop()
 
         # Best-effort, bounded (see _PURGE_DRAIN_TIMEOUT).
@@ -152,39 +346,47 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             )
         return result
 
-    async def _sync_all(self, honor_backoff: bool = True):
-        # sync_scopes must be wrapped: this coroutine is launched fire-and-forget
-        # from start() (boot), so an unhandled raise here would die silently —
-        # the exception is never retrieved (stop() gathers with
-        # return_exceptions=True and discards it), not even asyncio's
-        # "never retrieved" warning until GC.
-        #
-        # honor_backoff defaults to True for the boot call in start(): this
-        # process may have been forked from a master whose preload already
-        # discovered which repos are unreachable, and re-attempting all of them
-        # at boot is the storm the backoff exists to prevent. trigger() passes
-        # False for the operator-driven refresh-all — see there.
+    def _listen_for_backbone_gaps(self) -> Optional[Callable[[], None]]:
+        """Run a sync pass after each broadcaster backbone gap; returns the
+        function that stops it, or None when there is nothing to listen to.
+
+        A refresh published while this leader's backbone subscription
+        was down never reaches it, and a gap resync only reconnects
+        clients, which then fetch from clones nothing advanced. Only
+        with the reconnecting broadcaster, which reports gaps, and with
+        BROADCAST_RESYNC_ON_RECONNECT on.
+        """
+        broadcaster = self._pubsub_endpoint.broadcaster
+        if not opal_server_config.BROADCAST_RESYNC_ON_RECONNECT or not isinstance(
+            broadcaster, ReconnectingBroadcaster
+        ):
+            return None
+        return broadcaster.add_reconnect_listener(self._resync_after_gap)
+
+    async def _resync_after_gap(self) -> None:
+        # The pass is not waited for: the broadcaster's recovery waits for
+        # its listeners, and must not wait for a whole pass. Gaps during a
+        # pass join the one pass queued after it.
+        logger.info("Broadcaster backbone gap ended; requesting a scope sync pass")
+        self._passes.enqueue(only_poll_updates=False, honor_backoff=True)
+
+    async def _run_pass(self, only_poll_updates: bool, honor_backoff: bool):
+        # Only through self._passes, which logs what this raises.
         try:
-            await self._service.sync_scopes(honor_backoff=honor_backoff)
+            await self._service.sync_scopes(
+                only_poll_updates=only_poll_updates, honor_backoff=honor_backoff
+            )
         except Exception:
-            logger.exception("Scope sync (sync_scopes) failed")
+            health.leader_heartbeat.note_attempt(False)
+            raise
+        health.leader_heartbeat.note_attempt(True)
 
     async def _periodic_polling(self):
         try:
             while True:
                 await asyncio.sleep(opal_server_config.POLICY_REFRESH_INTERVAL)
-                # Leader heartbeat. This loop runs only inside the leadership
-                # lock, so `sum by env` reaching 0 means no worker holds it
-                # anywhere and scope syncing has silently stopped — pods stay
-                # Ready and /healthcheck stays 200 throughout.
-                metrics.gauge("opal_server.scopes.leader", 1)
                 logger.info("Periodic sync")
-                try:
-                    await self._service.sync_scopes(only_poll_updates=True)
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    logger.exception("Periodic sync (sync_scopes) failed")
+                await self._passes.request(only_poll_updates=True, honor_backoff=True)
 
         except asyncio.CancelledError:
             logger.info("Periodic sync cancelled")
@@ -203,12 +405,18 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                     notify_all=bool(data.get("repointed", False)),
                     # A sync a bundle request asked for (its branch was missing).
                     honor_backoff=bool(data.get("honor_backoff", False)),
+                    # The sync a client with no policy asked for: its wait.
+                    fresh_within=data.get("fresh_within"),
                 )
             except KeyError:
                 logger.warning(
                     "Got invalid keyword args for single scope refresh: %s", data
                 )
                 return
+            except Exception:
+                health.leader_heartbeat.note_attempt(False)
+                raise
+            health.leader_heartbeat.note_attempt(True)
             if source_id is not None:
                 # Outside a pass nothing else repacks the clone this sync may
                 # have left at SCOPES_GIT_REPACK_PACK_LIMIT, and with
@@ -228,7 +436,8 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             # sources an operator hits this endpoint for are precisely the ones
             # they have just repaired, and answering them with a silent skip
             # makes the endpoint useless in the only situation it is used.
-            await self._sync_all(honor_backoff=False)
+            # Made while a pass runs, it waits for the next one.
+            await self._passes.request(only_poll_updates=False, honor_backoff=False)
 
     @staticmethod
     def preload_scopes():
@@ -245,6 +454,8 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                 configure_logs()
             # Before any clone, and before a worker exists to refuse to start.
             validate_git_cli_settings()
+            validate_required_repos()
+            validate_missing_scope_settings()
             # This runs in the gunicorn MASTER (scripts/gunicorn_conf.py::when_ready)
             # before any worker configured monitoring. Without
             # configure_server_metrics() the git metrics emitted during preload
@@ -253,6 +464,9 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             # dashboards/monitors built on permit.opal.*.
             configure_server_metrics()
             logger.info("Preloading repo clones for scopes")
+            _log_scope_git_settings()
+            preload_started = time.monotonic()
+            sync_seconds = 0.0
 
             redis_db = RedisDB(opal_server_config.REDIS_URL)
             scopes = ScopeRepository(redis_db)
@@ -263,6 +477,7 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             )
 
             async def _preload():
+                nonlocal sync_seconds
                 # Before the sync, while nothing else in this container uses
                 # the clones: delete the ones whose git op was still hung when
                 # its process ended, so the sync clones them fresh, as on a new
@@ -298,9 +513,11 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                 # worker: the preload's fetches only mark their clones due, the
                 # marks are inherited across fork, and the leader's first pass
                 # repacks.
+                sync_started = time.monotonic()
                 await service.sync_scopes(
                     notify_on_changes=False, run_due_repacks=False
                 )
+                sync_seconds = time.monotonic() - sync_started
                 # git command-line ops still being stopped finish on tasks of
                 # this loop; the ones that do not by the end of the loop get
                 # SIGKILL then, and their clones are cleaned up by the next op.
@@ -330,18 +547,15 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                         logger.warning(
                             "Preload: closing its Redis client failed: {err!r}", err=e
                         )
+                    else:
+                        logger.info(
+                            "Preload: closed its Redis client, before the workers "
+                            "are forked"
+                        )
 
-            # The gunicorn master's SIGCHLD handler reaps every child, so
-            # asyncio finds each git command-line op's process reaped already
-            # and warns. git_cli reads git's exit status from the process's
-            # output instead, so the warning means nothing here.
-            unknown_child = _UnknownChildWarningFilter()
-            asyncio_logger = logging.getLogger("asyncio")
-            asyncio_logger.addFilter(unknown_child)
             try:
                 asyncio.run(_preload_and_close())
             finally:
-                asyncio_logger.removeFilter(unknown_child)
                 # A clone's lock left open here would be held in every forked
                 # worker for as long as it lives.
                 close_leftover_lock_fds()
@@ -386,4 +600,18 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             # on-disk clones remain; workers re-open handles lazily.
             GitPolicyFetcher.reset_caches()
 
+            # Each worker forked from here starts with what this saw landed.
+            missing = required_clones.missing(Path(opal_server_config.BASE_DIR))
+            if missing:
+                logger.warning(
+                    "Preload finished without the required scope clones "
+                    "{missing}: readiness waits for them",
+                    missing=missing,
+                )
             logger.warning("Finished preloading repo clones for scopes.")
+            logger.info(
+                "Preload took {seconds:.1f}s from its start to the fork, "
+                "{sync:.1f}s of it in the scopes' sync",
+                seconds=time.monotonic() - preload_started,
+                sync=sync_seconds,
+            )

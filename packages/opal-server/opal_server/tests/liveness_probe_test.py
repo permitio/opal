@@ -4,6 +4,7 @@ A delete landing DURING a sync must not let the sync re-clone the dead
 scope's repo (bed gate: the delete-vs-sync exclusion in
 test_randomized_churn_holds_invariants is lifted once this holds).
 """
+
 import asyncio
 
 import pytest
@@ -12,6 +13,9 @@ from opal_common.schemas.scopes import Scope
 from opal_server.git_fetcher import GitPolicyFetcher
 from opal_server.scopes.scope_repository import ScopeNotFoundError
 from opal_server.scopes.service import ScopesService
+
+# What these tests stub or measure is libgit2's fetch and clone.
+pytestmark = pytest.mark.fetch_backend("libgit2")
 
 
 def _source(url="https://git/repo-a.git"):
@@ -128,11 +132,10 @@ async def _sync_with_clone_recorder(svc, scope, monkeypatch):
 async def test_repointed_scope_is_not_cloned_against_stale_source(
     tmp_path, monkeypatch
 ):
-    """PER-15157 J2: a sync that captured source A before a PUT repoints the
-    scope to source B must not re-clone A — the repoint already purged A's
-    cache entries, so cloning it again would strand a dir that
-    nothing reclaims (no later purge names that source; PER-15612's sweep is
-    what would eventually catch it)."""
+    """A sync that captured source A before a PUT repoints the scope to source
+    B must not re-clone A — the repoint already purged A's cache entries, so
+    cloning it again would strand a dir that only the orphan sweep reclaims (no
+    later purge names that source)."""
     stale = _git_scope("scope-1", "https://git/repo-a.git")
     repointed = _git_scope("scope-1", "https://git/repo-b.git")
     svc = ScopesService(

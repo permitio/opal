@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from opal_common.authentication.deps import StaticBearerAuthenticator
@@ -31,7 +31,9 @@ def init_security_router(signer: JWTSigner, authenticator: StaticBearerAuthentic
             details=TokenDetails(
                 id=req.id,
                 type=req.type,
-                expired=datetime.utcnow() + req.ttl,
+                # Naive UTC, as it has always been on the wire: callers compare
+                # it with naive datetimes.
+                expired=datetime.now(timezone.utc).replace(tzinfo=None) + req.ttl,
                 claims=claims,
             ),
         )

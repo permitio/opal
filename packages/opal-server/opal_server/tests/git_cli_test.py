@@ -47,7 +47,10 @@ from opal_server.git_cli import (
     known_hosts_file,
     validate_git_cli_settings,
 )
-from opal_server.git_fetcher import GitCallback
+from opal_server.git_fetcher import CredentialsNotGivenError, GitCallback
+from opal_server.tests.git_cli_isolation_test import (
+    _libgit2_clone as _isolated_libgit2_clone,
+)
 from opal_server.tests.git_repack_test import _flock_fails_with
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
@@ -85,6 +88,9 @@ def _source(url: str, auth=None) -> GitPolicyScopeSource:
 
 @pytest.fixture(autouse=True)
 def _short_grace(monkeypatch):
+    """Scopes mode, where the server checks the git command line's settings at
+    start, with a short kill grace."""
+    monkeypatch.setattr(opal_server_config, "SCOPES", True)
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_CLI_KILL_GRACE", _GRACE)
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_SSH_KNOWN_HOSTS", None)
 
@@ -199,7 +205,7 @@ async def _run_and_watch(coro, marker, processes_with):
 @pytest.mark.asyncio
 async def test_a_clone_is_laid_out_like_a_libgit2_clone(git_origin, tmp_path):
     """Same remote and URL, same refs/remotes/origin/*, and an EMPTY
-    FETCH_HEAD: measured with pygit2 1.14.1 / libgit2 1.7.2, a libgit2 clone
+    FETCH_HEAD: measured with pygit2 1.21.0 / libgit2 1.9.7, a libgit2 clone
     writes an empty FETCH_HEAD, while ``git clone`` writes none at all. No
     reflog is written for the clone's refs."""
     libgit2 = tmp_path / "libgit2"
@@ -1746,23 +1752,38 @@ def test_a_member_listed_after_another_user_s_process_still_counts(monkeypatch):
 
 @pytest.fixture
 def reaped_elsewhere(monkeypatch):
-    """Every child asyncio reaps was already reaped by someone else, as when
-    the gunicorn master's SIGCHLD handler gets to it first: asyncio then
-    reports 255 for it (with Python 3.12's pidfd watcher, for every child).
+    """Every child is reaped by someone else as it exits, before the wait for
+    it, as when the gunicorn master's SIGCHLD handler gets to it first: the
+    wait (a blocking one, or a poll once its pidfd is readable) fails with
+    ECHILD, and subprocess then reads 0 for the child.
 
     The pids taken are recorded.
     """
     real_waitpid = os.waitpid
+    real_poll = subprocess.Popen.poll
     taken = []
 
     def _waitpid(pid, options):
         result = real_waitpid(pid, options)
-        if pid > 0 and options == 0:
+        if pid > 0 and result[0] == pid:
             taken.append(pid)
             raise ChildProcessError(errno.ECHILD, os.strerror(errno.ECHILD))
         return result
 
+    def _poll(self):
+        # subprocess's poll calls the waitpid it was defined with, which the
+        # patch above does not reach: the other reaper goes first here.
+        if self.returncode is None:
+            try:
+                pid, _ = real_waitpid(self.pid, os.WNOHANG)
+            except ChildProcessError:
+                pid = 0
+            if pid == self.pid:
+                taken.append(pid)
+        return real_poll(self)
+
     monkeypatch.setattr(os, "waitpid", _waitpid)
+    monkeypatch.setattr(subprocess.Popen, "poll", _poll)
     return taken
 
 
@@ -2100,35 +2121,82 @@ async def test_the_server_gets_the_credentials_libgit2_would_send(
             assert set(sent) == {None, expected}
 
 
+# What the remote redirects to: the same host on another port, or another
+# host name for the same address (libgit2 calls only another host name a
+# redirect off its site).
+_REDIRECT_TARGET_HOST = {"other-port": "127.0.0.1", "other-host": "localhost"}
+
+
+def _libgit2_clone(url: str, dest: Path, source) -> None:
+    """``url`` cloned to ``dest`` by libgit2, as the scopes fetcher clones
+    (GitCallback for the source's credentials)."""
+    pygit2.clone_repository(url, str(dest), callbacks=GitCallback(source)).free()
+
+
+@pytest.mark.parametrize("backend", ["libgit2", "cli"])
+@pytest.mark.parametrize("target", ["other-port", "other-host"])
 @pytest.mark.parametrize("target_asks", [False, True], ids=["open", "asks"])
 @pytest.mark.asyncio
-async def test_a_redirect_to_another_host_gets_no_credentials(
-    target_asks, git_http, make_git_http, make_origin, tmp_path
+async def test_a_redirect_to_another_host_or_port_gets_no_credentials(
+    backend, target, target_asks, git_http, make_git_http, make_origin, tmp_path
 ):
-    """The remote redirects to another host and port.
+    """The remote redirects to another port, or another host name.
 
     git asks its credential helper per host, and the helper answers only
-    for the remote's own host and port, so the other host never gets the
-    token, whether it asks for credentials or not.
+    for the remote's own host and port; libgit2 asks GitCallback with
+    the URL it was redirected to, which answers the same way. So the
+    other server never gets the token, whether it asks for credentials
+    or not.
     """
     other = make_git_http(tmp_path / "other")
     make_origin(other.root / "repo.git")
-    git_http.redirect_to = other.url("")
+    port = other.server_address[1]
+    git_http.redirect_to = f"http://{_REDIRECT_TARGET_HOST[target]}:{port}"
     other.authorization = _basic("git", "the-token") if target_asks else None
     url = git_http.url("repo.git")
     source = _source(url, GitHubTokenAuthData(token="the-token"))
+    dest = tmp_path / backend
 
     if target_asks:
-        with pytest.raises(GitCliError):
-            await _clone(url, tmp_path / "cli", source)
+        with pytest.raises((pygit2.GitError, GitCliError)):
+            if backend == "cli":
+                await _clone(url, dest, source)
+            else:
+                _libgit2_clone(url, dest, source)
     else:
-        await _clone(url, tmp_path / "cli", source)
-        assert "refs/remotes/origin/master" in _refs(tmp_path / "cli")
+        if backend == "cli":
+            await _clone(url, dest, source)
+        else:
+            _libgit2_clone(url, dest, source)
+        assert "refs/remotes/origin/master" in _refs(dest)
 
     assert git_http.requests and other.requests
-    assert [h.get("Authorization") for _, _, h in other.requests] == [None] * len(
-        other.requests
-    )
+    assert {h.get("Authorization") for _, _, h in other.requests} == {None}
+
+
+def test_libgit2_asks_for_credentials_with_the_url_it_was_redirected_to(
+    git_http, make_git_http, make_origin, tmp_path
+):
+    """GitCallback's host check relies on this: libgit2 (1.9.5 and later) asks
+    for credentials with the URL that asks, not the source's."""
+    other = make_git_http(tmp_path / "other")
+    make_origin(other.root / "repo.git")
+    port = other.server_address[1]
+    git_http.redirect_to = f"http://localhost:{port}"
+    other.authorization = _basic("git", "x")
+    asked = []
+
+    class _Recording(pygit2.RemoteCallbacks):
+        def credentials(self, url, username_from_url, allowed_types):
+            asked.append(url)
+            raise pygit2.Passthrough
+
+    with pytest.raises(pygit2.GitError):
+        pygit2.clone_repository(
+            git_http.url("repo.git"), str(tmp_path / "c"), callbacks=_Recording()
+        )
+    assert asked
+    assert all(u.startswith(f"http://localhost:{port}/") for u in asked), asked
 
 
 @pytest.mark.parametrize("where", ["token", "url"])
@@ -2163,6 +2231,39 @@ async def test_an_http_remote_that_redirects_to_https_on_its_host_gets_its_crede
     auths = [h.get("Authorization") for _, _, h in git_http.requests]
     sent = list(zip(git_http.schemes, auths))
     assert ("http", None) in sent
+    assert ("https", git_http.authorization) in sent
+    assert {auth for scheme, auth in sent if scheme == "http"} == {None}
+
+
+# pygit2's macOS wheel verifies TLS with SecureTransport, which reads no
+# SSL_CERT_FILE; the manylinux and musllinux wheels use OpenSSL, which does.
+@pytest.mark.skipif(
+    sys.platform == "darwin", reason="libgit2 on macOS reads no SSL_CERT_FILE"
+)
+def test_libgit2_gives_an_http_source_s_token_after_a_redirect_to_https_on_its_host(
+    git_http, tls_cert, make_origin, tmp_path
+):
+    """As the credential helper does: the token goes over https on the
+    source's own host and port, never over plain http."""
+    make_origin(git_http.root / "repo.git")
+    git_http.tls = tls_cert.context
+    git_http.redirect_to = git_http.url("", scheme="https")
+    git_http.authorization = _basic("git", "the-token")
+    home = tmp_path / "home"
+    home.mkdir()
+
+    cloned = _isolated_libgit2_clone(
+        git_http.url("repo.git"),
+        tmp_path / "libgit2",
+        home,
+        token="the-token",
+        env={"SSL_CERT_FILE": str(tls_cert.path)},
+    )
+
+    assert cloned == "cloned"
+    sent = list(
+        zip(git_http.schemes, (h.get("Authorization") for _, _, h in git_http.requests))
+    )
     assert ("https", git_http.authorization) in sent
     assert {auth for scheme, auth in sent if scheme == "http"} == {None}
 
@@ -2204,35 +2305,35 @@ _HTTP_REMOTE = "http://git.example:8080/org/repo.git"
 _HTTPS_REMOTE = "https://git.example:8080/org/repo.git"
 
 
-@pytest.mark.parametrize(
-    "url, asked, answers",
-    [
-        (_HTTP_REMOTE, "protocol=http\nhost=git.example:8080\n", True),
-        (
-            _HTTP_REMOTE,
-            "protocol=http\nhost=git.example:8080\npath=other/r.git\n",
-            True,
-        ),
-        (_HTTP_REMOTE, "protocol=https\nhost=git.example:8080\n", True),
-        (_HTTP_REMOTE, "protocol=http\nhost=git.example\n", False),
-        (_HTTP_REMOTE, "protocol=http\nhost=elsewhere.example:8080\n", False),
-        (_HTTP_REMOTE, "protocol=https\nhost=git.example\n", False),
-        (_HTTP_REMOTE, "protocol=https\nhost=elsewhere.example:8080\n", False),
-        (_HTTPS_REMOTE, "protocol=https\nhost=git.example:8080\n", True),
-        (_HTTPS_REMOTE, "protocol=http\nhost=git.example:8080\n", False),
-    ],
-    ids=[
-        "its-host",
-        "other-path",
-        "https-on-its-host",
-        "other-port",
-        "other-host",
-        "https-other-port",
-        "https-other-host",
-        "https-remote",
-        "https-remote-asked-for-http",
-    ],
-)
+_HELPER_CASES = [
+    (_HTTP_REMOTE, "protocol=http\nhost=git.example:8080\n", True),
+    (
+        _HTTP_REMOTE,
+        "protocol=http\nhost=git.example:8080\npath=other/r.git\n",
+        True,
+    ),
+    (_HTTP_REMOTE, "protocol=https\nhost=git.example:8080\n", True),
+    (_HTTP_REMOTE, "protocol=http\nhost=git.example\n", False),
+    (_HTTP_REMOTE, "protocol=http\nhost=elsewhere.example:8080\n", False),
+    (_HTTP_REMOTE, "protocol=https\nhost=git.example\n", False),
+    (_HTTP_REMOTE, "protocol=https\nhost=elsewhere.example:8080\n", False),
+    (_HTTPS_REMOTE, "protocol=https\nhost=git.example:8080\n", True),
+    (_HTTPS_REMOTE, "protocol=http\nhost=git.example:8080\n", False),
+]
+_HELPER_CASE_IDS = [
+    "its-host",
+    "other-path",
+    "https-on-its-host",
+    "other-port",
+    "other-host",
+    "https-other-port",
+    "https-other-host",
+    "https-remote",
+    "https-remote-asked-for-http",
+]
+
+
+@pytest.mark.parametrize("url, asked, answers", _HELPER_CASES, ids=_HELPER_CASE_IDS)
 def test_the_credential_helper_answers_only_for_the_remote_s_protocol_and_host(
     url, asked, answers, tmp_path
 ):
@@ -2245,7 +2346,7 @@ def test_the_credential_helper_answers_only_for_the_remote_s_protocol_and_host(
     included, and not http for an https remote."""
     source = _source(url, GitHubTokenAuthData(token="the-token"))
     remote = git_cli._remote_for_git(url, source)
-    with git_cli._git_env(source, remote) as (env, _):
+    with git_cli._git_env(source, remote, tmp_path / "clone") as (env, _):
         filled = subprocess.run(
             ["git", "credential", "fill"],
             input=asked + "\n",
@@ -2262,6 +2363,93 @@ def test_the_credential_helper_answers_only_for_the_remote_s_protocol_and_host(
     else:
         assert filled.returncode != 0
         assert "the-token" not in filled.stdout + filled.stderr
+
+
+def _asked_url(asked: str) -> str:
+    """The URL libgit2 would ask GitCallback with for git's credential request
+    ``asked`` (``protocol=..`` and ``host=..`` lines)."""
+    fields = dict(line.split("=", 1) for line in asked.splitlines() if line)
+    return f"{fields['protocol']}://{fields['host']}/{fields.get('path', 'r.git')}"
+
+
+_USERPASS = pygit2.enums.CredentialType.USERPASS_PLAINTEXT
+
+
+@pytest.mark.parametrize("url, asked, answers", _HELPER_CASES, ids=_HELPER_CASE_IDS)
+def test_libgit2_answers_for_the_hosts_the_credential_helper_answers_for(
+    url, asked, answers
+):
+    """The credential helper's table, asked of GitCallback; the same-server
+    tests above show both backends behave alike."""
+    callback = GitCallback(_source(url, GitHubTokenAuthData(token="the-token")))
+    if answers:
+        given = callback.credentials(_asked_url(asked), None, _USERPASS)
+        assert given.credential_tuple == ("git", "the-token")
+    else:
+        with pytest.raises(CredentialsNotGivenError) as info:
+            callback.credentials(_asked_url(asked), None, _USERPASS)
+        assert "the-token" not in str(info.value)
+
+
+@pytest.mark.parametrize(
+    "source_url, asked_url, answers",
+    [
+        ("https://h.example:443/r.git", "https://h.example/r.git", True),
+        ("https://h.example/r.git", "https://h.example:443/r.git", True),
+        ("http://h.example/r.git", "https://h.example/r.git", True),
+        ("https://H.Example/r.git", "https://h.example/r.git", True),
+        ("https://h.example/r.git", "https://user:pw@h.example/r.git", True),
+        ("https://h.example/r.git", "https://h.example:8443/r.git", False),
+        ("https://h.example/r.git", "http://h.example/r.git", False),
+        ("https://h.example/r.git", "https://h.example.evil/r.git", False),
+        # libgit2 writes an IPv6 host without its brackets: taken where only
+        # one reading is an address and a port (58203 is no group of an
+        # address), refused where both are (8080 and 443 are)
+        ("http://[::1]:58203/r.git", "http://::1:58203/r.git", True),
+        ("http://[::1]:58203/r.git", "http://[::1]:58203/r.git", True),
+        ("http://[::1]/r.git", "http://::1/r.git", True),
+        ("https://[2001:db8::1]/r.git", "https://2001:db8::1/r.git", True),
+        ("http://[::1]:58203/r.git", "http://::1:58204/r.git", False),
+        ("http://[::1]:58203/r.git", "http://::2:58203/r.git", False),
+        ("http://[::1]:8080/r.git", "http://::1:8080/r.git", False),
+        ("http://[2001:db8::1]:8080/r.git", "http://2001:db8::1:8080/r.git", False),
+        ("http://[2001:db8::1:8080]/r.git", "http://2001:db8::1:8080/r.git", False),
+        ("https://[2001:db8::1]/r.git", "https://2001:db8::1:443/r.git", False),
+        ("http://[::1]/r.git", "http://::1:8080/r.git", False),
+        ("http://[::1]:8080/r.git", "http://[::1]:8080/r.git", True),
+        ("https://h.example/r.git", "not a url", False),
+    ],
+)
+def test_libgit2_answers_for_the_source_s_own_host_and_port(
+    source_url, asked_url, answers
+):
+    callback = GitCallback(_source(source_url, GitHubTokenAuthData(token="t")))
+    if answers:
+        assert callback.credentials(asked_url, None, _USERPASS)
+    else:
+        with pytest.raises(CredentialsNotGivenError):
+            callback.credentials(asked_url, None, _USERPASS)
+
+
+def test_an_ipv6_host_and_port_libgit2_writes_ambiguously_get_nothing_and_say_why():
+    """``2001:db8::1:8080`` is the address ``2001:db8::1`` on port 8080, and
+    the address ``2001:db8::1:8080`` on the scheme's port: no token for
+    either."""
+    callback = GitCallback(
+        _source("http://[2001:db8::1]:8080/r.git", GitHubTokenAuthData(token="t"))
+    )
+    with pytest.raises(CredentialsNotGivenError, match="git command line"):
+        callback.credentials("http://2001:db8::1:8080/r.git", None, _USERPASS)
+
+
+def test_libgit2_gives_no_token_for_a_kind_of_credential_it_has_none_of():
+    callback = GitCallback(
+        _source("https://h.example/r.git", GitHubTokenAuthData(token="t"))
+    )
+    with pytest.raises(CredentialsNotGivenError):
+        callback.credentials(
+            "https://h.example/r.git", None, pygit2.enums.CredentialType.SSH_KEY
+        )
 
 
 @pytest.mark.parametrize("where", ["token", "url"])
@@ -2668,7 +2856,9 @@ def test_an_ssh_key_dir_whose_lock_fails_is_removed_and_fails_the_op_locally(
     _flock_fails_with(monkeypatch, errno.ENOLCK)
 
     with pytest.raises(GitCliLocalError, match="cannot write the SSH key file"):
-        with git_cli._git_env(source, git_cli._remote_for_git(url, source)):
+        with git_cli._git_env(
+            source, git_cli._remote_for_git(url, source), tmp_path / "clone"
+        ):
             pass
 
     assert list(keys.iterdir()) == []
@@ -2681,7 +2871,9 @@ def test_the_ssh_command_never_falls_back_to_the_server_user_s_own_keys(tmp_path
     url = "ssh://git@127.0.0.1:22/repo.git"
     for auth in (None, SSHAuthData(username="git", private_key=_FAKE_KEY)):
         source = _source(url, auth)
-        with git_cli._git_env(source, git_cli._remote_for_git(url, source)) as (env, _):
+        with git_cli._git_env(
+            source, git_cli._remote_for_git(url, source), tmp_path / "clone"
+        ) as (env, _):
             ssh = shlex.split(env["GIT_SSH_COMMAND"])
         assert "IdentityFile=none" in ssh
         if auth is not None:
@@ -2714,7 +2906,7 @@ async def test_the_ssh_git_runs_ends_a_silent_link_on_its_own(
         assert ssh[ssh.index(option) - 1] == "-o", ssh
 
 
-@pytest.mark.parametrize("known_hosts", [False, True], ids=["as-libgit2", "file"])
+@pytest.mark.parametrize("known_hosts", [False, True], ids=["on-first-use", "file"])
 @pytest.mark.asyncio
 async def test_the_ssh_git_runs_reads_no_ssh_config_and_no_system_known_hosts(
     known_hosts, git_origin, tmp_path, monkeypatch
@@ -2749,6 +2941,8 @@ async def test_the_ssh_git_runs_reads_no_ssh_config_and_no_system_known_hosts(
     assert ssh[ssh.index("GlobalKnownHostsFile=/dev/null") - 1] == "-o", ssh
     if known_hosts:
         assert f"UserKnownHostsFile={path}" in ssh, ssh
+    else:
+        assert f"UserKnownHostsFile={git_cli.host_key_record(clone)}" in ssh, ssh
 
 
 @pytest.mark.asyncio
@@ -2939,37 +3133,46 @@ exit 255""",
 
 _LIBGIT2_CLONE = """
 import sys
+from pathlib import Path
+
 import pygit2
 from opal_common.schemas.policy_source import GitPolicyScopeSource, SSHAuthData
-from opal_server.git_fetcher import GitCallback
+from opal_server.git_fetcher import GitCallback, prepare_libgit2_ssh
 
+url, dest, key_file, clones = sys.argv[1:]
 source = GitPolicyScopeSource(
     source_type="git",
-    url=sys.argv[1],
+    url=url,
     branch="master",
-    auth=SSHAuthData(username="git", private_key=open(sys.argv[3]).read()),
+    auth=SSHAuthData(username="git", private_key=open(key_file).read()),
 )
 try:
-    pygit2.clone_repository(sys.argv[1], sys.argv[2], callbacks=GitCallback(source)).free()
+    prepare_libgit2_ssh(Path(clones), url)
+    pygit2.clone_repository(url, dest, callbacks=GitCallback(source)).free()
     print("accepted")
 except pygit2.GitError as e:
     print("rejected:", e)
 """
 
 
-def _libgit2_ssh_clone(
-    url: str, dest: Path, key: str, home: Optional[Path] = None
-) -> str:
+def _libgit2_ssh_clone(url: str, dest: Path, key: str) -> str:
     """The control: ``url`` cloned to ``dest`` by libgit2 with the private
-    key ``key``, as the scopes fetcher clones (GitCallback), in a child
-    interpreter, whose HOME is ``home`` when given (libgit2 reads HOME once,
-    as it loads). What it printed: "accepted", or "rejected: ..."."""
+    key ``key``, as the scopes fetcher clones (the host's key trusted on
+    first use, GitCallback), in a child interpreter, as libgit2's home is
+    process-wide. What it printed: "accepted", or "rejected: ..."."""
     key_file = dest.parent / f"{dest.name}.key"
     key_file.write_text(key)
-    env = dict(os.environ) if home is None else {**os.environ, "HOME": str(home)}
+    clones = dest.parent / f"{dest.name}-git_sources"
     done = subprocess.run(
-        [sys.executable, "-c", _LIBGIT2_CLONE, url, str(dest), str(key_file)],
-        env=env,
+        [
+            sys.executable,
+            "-c",
+            _LIBGIT2_CLONE,
+            url,
+            str(dest),
+            str(key_file),
+            str(clones),
+        ],
         capture_output=True,
         text=True,
         timeout=120,
@@ -2977,71 +3180,13 @@ def _libgit2_ssh_clone(
     return done.stdout.strip() or done.stderr.strip()
 
 
-_KNOWN_HOSTS_CASES = [
-    "no file",
-    "another host only",
-    "this host, its key",
-    "this host, another key",
-]
-
-
 def _known_hosts(sshd, case: str):
     entry = f"[127.0.0.1]:{sshd.port}"
     return {
-        "no file": None,
         "another host only": f"[127.0.0.2]:{sshd.port} {sshd.public_key('host_key')}\n",
         "this host, its key": f"{entry} {sshd.public_key('host_key')}\n",
         "this host, another key": f"{entry} {sshd.public_key('other_host_key')}\n",
     }[case]
-
-
-@pytest.mark.parametrize("known_hosts", _KNOWN_HOSTS_CASES)
-@pytest.mark.asyncio
-async def test_ssh_host_keys_get_the_answer_libgit2_gives(
-    known_hosts, sshd, make_origin, tmp_path, monkeypatch
-):
-    """Measured with pygit2 1.14.1 and libgit2 1.7.2 against this sshd, with
-    $HOME/.ssh/known_hosts (the file libgit2 reads) holding:
-
-    ==========================  ===========  ======================
-    known_hosts                 libgit2      ssh's defaults
-                                             (BatchMode=yes)
-    ==========================  ===========  ======================
-    no file                     accepted     rejected
-    another host only           accepted     rejected
-    this host, its key          accepted     accepted
-    this host, another key      accepted     rejected
-    ==========================  ===========  ======================
-
-    libgit2 writes nothing to the file in any case. pygit2's certificate
-    callback answers "accept" for every libssh2 host key when the callbacks
-    (GitCallback) do not override certificate_check, so libgit2's own
-    verdict from known_hosts is not used. Without SCOPES_GIT_SSH_KNOWN_HOSTS
-    the options git_cli gives ssh accept all four too, and write no
-    known_hosts file either: the CLI backend accepts the hosts the libgit2
-    one does. libgit2 runs in a child interpreter here because it reads
-    $HOME once, when it loads.
-    """
-    home = tmp_path / "home"
-    (home / ".ssh").mkdir(parents=True)
-    contents = _known_hosts(sshd, known_hosts)
-    known = home / ".ssh" / "known_hosts"
-    if contents is not None:
-        known.write_text(contents)
-    origin = make_origin(tmp_path / "served" / "repo.git")
-    url = sshd.url(origin.path)
-
-    libgit2 = _libgit2_ssh_clone(url, tmp_path / "libgit2", sshd.client_key, home)
-    monkeypatch.setenv("HOME", str(home))
-    await _clone(
-        url,
-        tmp_path / "cli",
-        _source(url, SSHAuthData(username="git", private_key=sshd.client_key)),
-    )
-
-    assert libgit2 == "accepted", libgit2
-    assert "refs/remotes/origin/master" in _refs(tmp_path / "cli")
-    assert (known.read_text() if known.exists() else None) == contents
 
 
 @pytest.mark.parametrize(
@@ -3119,28 +3264,36 @@ async def test_a_known_hosts_file_that_cannot_be_read_fails_fast(
     await _clone(git_origin.url, tmp_path / "local")
 
 
-def test_a_known_hosts_file_with_the_cli_fetch_off_is_ignored_with_an_error(
+def test_with_the_cli_fetch_off_the_known_hosts_setting_is_checked_as_with_it_on(
     tmp_path, monkeypatch
 ):
-    """Turning the CLI fetch off (to fall back to libgit2, say) must not stop
-    every server that also has the known_hosts setting: it is logged and
-    ignored, missing file or not."""
+    """libgit2 checks host keys against the file too: a readable one starts
+    the server with nothing logged; a missing one, or one ssh would misread,
+    stops it, as with the CLI fetch on."""
     records = []
     sink = logger.add(lambda m: records.append(m.record), level="DEBUG")
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", False)
+    readable = tmp_path / "known_hosts"
+    readable.write_text("")
     try:
-        for path in (tmp_path / "known_hosts", tmp_path / "missing", "known hosts"):
+        monkeypatch.setattr(
+            opal_server_config, "SCOPES_GIT_SSH_KNOWN_HOSTS", str(readable)
+        )
+        validate_git_cli_settings()
+        assert known_hosts_file() == str(readable)
+        for path, problem in (
+            (tmp_path / "missing", "no readable file"),
+            (tmp_path / "known hosts", "whitespace"),
+        ):
             monkeypatch.setattr(
                 opal_server_config, "SCOPES_GIT_SSH_KNOWN_HOSTS", str(path)
             )
-            validate_git_cli_settings()
-            assert known_hosts_file() is None
+            with pytest.raises(ValueError, match=problem):
+                validate_git_cli_settings()
     finally:
         logger.remove(sink)
 
-    errors = [r for r in records if r["level"].name == "ERROR"]
-    assert len(errors) == 3
-    assert all("ignored" in r["message"] for r in errors)
+    assert [r for r in records if r["level"].name in ("WARNING", "ERROR")] == []
 
 
 def test_the_known_hosts_setting_is_checked_with_the_cli_fetch_on(
@@ -3179,7 +3332,7 @@ def test_a_known_hosts_path_that_ssh_would_expand_is_refused(
         validate_git_cli_settings()
     remote = git_cli._remote_for_git("ssh://git@h/r.git", _source("ssh://git@h/r.git"))
     with pytest.raises(GitCliLocalError, match=r"holds % or \$"):
-        git_cli._ssh_host_key_options(remote)
+        git_cli._ssh_host_key_options(remote, tmp_path / ".clone.known_hosts")
 
 
 @pytest.mark.parametrize("name", ["kn'own", 'kn"own"x', "kn\\own"])
@@ -3199,7 +3352,7 @@ def test_a_known_hosts_path_that_ssh_would_read_as_quoting_is_refused(
         validate_git_cli_settings()
     remote = git_cli._remote_for_git("ssh://git@h/r.git", _source("ssh://git@h/r.git"))
     with pytest.raises(GitCliLocalError, match="a quote or a backslash"):
-        git_cli._ssh_host_key_options(remote)
+        git_cli._ssh_host_key_options(remote, tmp_path / ".clone.known_hosts")
 
 
 @pytest.mark.parametrize("name", ["100%", "in-${HOME}"])
@@ -3238,7 +3391,7 @@ def test_a_relative_known_hosts_path_is_the_server_s_working_directory_s(
     assert known_hosts_file() == str(tmp_path / "known_hosts")
     remote = git_cli._remote_for_git("ssh://git@h/r.git", _source("ssh://git@h/r.git"))
     assert f"UserKnownHostsFile={tmp_path / 'known_hosts'}" in (
-        git_cli._ssh_host_key_options(remote)
+        git_cli._ssh_host_key_options(remote, tmp_path / ".clone.known_hosts")
     )
 
 
@@ -3318,7 +3471,7 @@ def test_a_uid_with_no_user_entry_is_logged_as_an_error_that_names_ssh_sources(
 
 
 def test_nss_wrapper_s_variables_reach_git_and_no_other_server_variable_does(
-    monkeypatch,
+    monkeypatch, tmp_path
 ):
     """nss_wrapper gives a uid with no passwd entry one, for ssh too, through
     LD_PRELOAD and NSS_WRAPPER_*; nothing else the server has gets through."""
@@ -3335,7 +3488,9 @@ def test_nss_wrapper_s_variables_reach_git_and_no_other_server_variable_does(
     url = "ssh://git@127.0.0.1/repo.git"
     source = _source(url, SSHAuthData(username="git", private_key=_FAKE_KEY))
 
-    with git_cli._git_env(source, git_cli._remote_for_git(url, source)) as (env, _):
+    with git_cli._git_env(
+        source, git_cli._remote_for_git(url, source), tmp_path / "clone"
+    ) as (env, _):
         given = dict(env)
 
     assert {k: given.get(k) for k in wrapper} == wrapper
@@ -3354,3 +3509,62 @@ def test_no_fetch_timeout_with_the_cli_fetch_on_is_warned_about(timeout, monkeyp
         logger.remove(sink)
     assert [r["level"].name for r in records] == ["WARNING"]
     assert "no time limit" in records[0]["message"]
+
+
+# --- a lock file unlinked while held (the orphan sweep's) ----------------------
+
+
+def _unlink_on_flock(monkeypatch, path: Path, times: int) -> list:
+    """Unlink ``path`` right before each of the next ``times`` flocks of the
+    clone lock: what the orphan sweep does to a reclaimed clone's lock file,
+    between another op's open and its flock. The sweep only unlinks a lock
+    file it holds, so the flock that follows takes a lock on a file no path
+    names any more. Returns, per flock, whether the file was unlinked first."""
+    real_flock = git_cli.fcntl.flock
+    unlinked = []
+
+    def flock(fd, operation):
+        unlink = sum(unlinked) < times
+        if unlink:
+            path.unlink()
+        unlinked.append(unlink)
+        return real_flock(fd, operation)
+
+    monkeypatch.setattr(git_cli.fcntl, "flock", flock)
+    return unlinked
+
+
+@pytest.mark.fetch_backend("both")
+def test_take_clone_lock_retries_on_an_unlinked_lock_file(tmp_path, monkeypatch):
+    clone = tmp_path / ("a" * 64 + "-0")
+    lock = clone_lock_path(clone)
+    lock.write_text("")
+    unlinked = _unlink_on_flock(monkeypatch, lock, times=1)
+
+    fd = git_cli.take_clone_lock(clone)
+
+    try:
+        assert fd is not None and unlinked == [True, False]
+        held = os.fstat(fd)
+        at_path = os.stat(lock)
+        assert (held.st_dev, held.st_ino) == (at_path.st_dev, at_path.st_ino)
+        assert list(git_cli._lock_fds) == [fd]
+    finally:
+        git_cli.drop_clone_lock(fd)
+    assert git_cli._lock_fds == {}
+
+
+@pytest.mark.fetch_backend("both")
+def test_take_clone_lock_gives_up_when_its_file_is_unlinked_again(
+    tmp_path, monkeypatch
+):
+    """Unlinked once more after the retry's open: the lock is in someone's
+    hands, so this is the busy answer, holding nothing."""
+    clone = tmp_path / ("b" * 64 + "-0")
+    lock = clone_lock_path(clone)
+    lock.write_text("")
+    unlinked = _unlink_on_flock(monkeypatch, lock, times=2)
+
+    assert git_cli.take_clone_lock(clone) is None
+
+    assert unlinked == [True, True] and git_cli._lock_fds == {}

@@ -1,11 +1,29 @@
 import os
 import shutil
+import subprocess
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import git
 from opal_common.security.tarsafe import TarSafe
 from pydantic import ValidationError
+
+
+def _isolated_git_env() -> Dict[str, str]:
+    """The environment of the bundle's git add.
+
+    As for the scope git ops, git reads no system or user git config,
+    ignore file or attributes, so what a bundle commits depends on the
+    bundle and the pattern only.
+    """
+    env = {name: value for name, value in os.environ.items() if name == "PATH"}
+    env["GIT_CONFIG_NOSYSTEM"] = "1"
+    env["GIT_CONFIG_GLOBAL"] = os.devnull
+    # The user's ignore and attributes files are looked up under HOME (or
+    # XDG_CONFIG_HOME, which is not passed on).
+    env["HOME"] = os.devnull
+    env["LC_ALL"] = "C"
+    return env
 
 
 class TarFileToLocalGitExtractor:
@@ -43,9 +61,34 @@ class TarFileToLocalGitExtractor:
         prev_commit = None
         if len(local_git.index.repo.heads):
             prev_commit = local_git.index.repo.head.commit
-        local_git.index.add(self.policy_bundle_git_add_pattern)
+        self._stage_bundle()
         new_commit = local_git.index.commit(init_commit_msg)
         return local_git, prev_commit, new_commit
+
+    def _stage_bundle(self):
+        """Stages the bundle's files that the pattern matches, deletions
+        included, with ``git add --all -- <pattern>``.
+
+        Raises:
+            git.GitCommandError: git add failed, e.g. the pattern matches no
+                file in the bundle or in the last commit.
+        """
+        command = [
+            git.Git.GIT_PYTHON_GIT_EXECUTABLE,
+            "add",
+            "--all",
+            "--",
+            self.policy_bundle_git_add_pattern,
+        ]
+        result = subprocess.run(
+            command,
+            cwd=self.local_clone_path,
+            env=_isolated_git_env(),
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise git.GitCommandError(command, result.returncode, result.stderr)
 
     def create_local_git(self):
         """Extract bundle create local git and commit this initial state."""

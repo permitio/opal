@@ -7,11 +7,9 @@ update:
   cooldown_days: 7
   freeze: true
 
-# The pinned formatter versions below (black 23.1.0, isort 5.12.0, docformatter
-# 1.7.x) do not run on Python 3.13+, so pin the hook toolchain to 3.12 (the version
-# CI uses). Without this, hooks fail on machines whose default python is newer.
+# The Python hooks run on 3.14, the one Python of OPAL, whatever the machine's default python is.
 default_language_version:
-  python: python3.12
+  python: python3.14
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -20,27 +18,19 @@ repos:
       - id: check-yaml
       - id: end-of-file-fixer
       - id: trailing-whitespace
-  - repo: https://github.com/psf/black
-    rev: b0d1fba7ac3be53c71fb0d3211d911e629f8aecb  # frozen: 23.1.0
+  # The rules and settings are in ruff.toml. ruff-check sorts the imports before ruff-format
+  # formats the code.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: c0f278f1254ccc8fb09676bcdb8d847e7db493e5  # frozen: v0.17.4
     hooks:
-      - id: black
-  - repo: https://github.com/pycqa/isort
-    rev: e44834b7b294701f596c9118d6c370f86671a50d  # frozen: 5.12.0
-    hooks:
-      - id: isort
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
   - repo: https://github.com/codespell-project/codespell
     rev: ec0f41b9573937aebab66e3ca5b00d00a7b339fa  # frozen: v2.2.4
     hooks:
       - id: codespell
         args: [--skip, "*.json,*.lock,*pnpm-lock.yaml"]
-  # v1.7.6 dropped the `docformatter-venv` hook whose `language: python_venv` made
-  # prek / pre-commit>=4 reject the whole manifest. Pinned to v1.7.6 (not v1.7.7,
-  # whose docstring wrapping differs) so the bump introduces no reformatting.
-  - repo: https://github.com/PyCQA/docformatter
-    rev: 4cf1ea547d79f6e15ce51eae0eb5f986053ab65c  # frozen: v1.7.6
-    hooks:
-      - id: docformatter
-        args: [--in-place]
   # Workflow checks. actionlint runs shellcheck on `run:` blocks when shellcheck is on
   # PATH (it is on GitHub's Ubuntu runners).
   - repo: https://github.com/rhysd/actionlint
@@ -74,3 +64,37 @@ repos:
     rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e  # frozen: v8.30.1
     hooks:
       - id: gitleaks
+  # The locks that uv pip compile writes. When a lock, its requirements.in or a file that one
+  # includes changes, its hook compiles the lock again with the command its header records and
+  # fails if the result differs, so a requirement cannot change without the lock following. They
+  # need the network.
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: d1df990f871e616da38bb602a2671d5e840b9989  # frozen: 0.13.7
+    hooks:
+      - id: pip-compile
+        name: uv pip compile docker/lock
+        args: [--no-config, --directory, docker/lock, --python-version, "3.14", --python-platform,
+               x86_64-unknown-linux-gnu, --generate-hashes, requirements.in, --output-file,
+               requirements.txt]
+        files: ^(packages/(opal-[a-z]+/)?requires\.txt|docker/lock/requirements\.(in|txt))$
+      - id: pip-compile
+        name: uv pip compile docker/server-test
+        args: [--no-config, --directory, docker/server-test, --python-version, "3.14", --universal,
+               --generate-hashes, requirements.in, --output-file, requirements.txt]
+        files: ^docker/server-test/requirements\.(in|txt)$
+      - id: pip-compile
+        name: uv pip compile app-tests
+        args: [--no-config, --directory, app-tests, --python-version, "3.14", --universal,
+               --generate-hashes, requirements.in, --output-file, requirements.txt]
+        files: ^app-tests/requirements\.(in|txt)$
+      - id: pip-compile
+        name: uv pip compile app-tests/git-leak
+        args: [--no-config, --directory, app-tests, --python-version, "3.14", --universal,
+               --generate-hashes, git-leak/requirements.in, --output-file,
+               git-leak/requirements.txt]
+        files: ^app-tests/git-leak/requirements\.(in|txt)$
+      - id: pip-compile
+        name: uv pip compile .github/scripts/tests
+        args: [--no-config, --directory, .github/scripts/tests, --python-version, "3.14",
+               --universal, --generate-hashes, requirements.in, --output-file, requirements.txt]
+        files: ^\.github/scripts/tests/requirements\.(in|txt)$

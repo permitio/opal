@@ -3,8 +3,8 @@
 # describes the options.
 #
 # - Every entry runs weekly on Monday with at most 5 open pull requests. The cooldown holds a
-#   new release back for 7 days, and a major release for 14 on pip and npm, the ecosystems that
-#   support per-level days, so a broken or malicious release has time to be pulled first.
+#   new release back for 7 days, and a major release for 14 on pip, uv and npm, the ecosystems
+#   that support per-level days, so a broken or malicious release has time to be pulled first.
 # - The version update groups take minor and patch releases only: a major release gets a pull
 #   request of its own.
 # - Security updates are a repository setting. The security group of an entry puts all of its
@@ -18,11 +18,14 @@
 # - An ignore entry needs a comment that says why, and when it can go.
 version: 2
 updates:
-  # The published packages' requirements. Each setup.py reads its install_requires from
+  # The hand-written requirement files: the published packages' ranges and the root
+  # requirements.txt (dev and test tools). Each setup.py reads its install_requires from
   # packages/requires.txt and packages/<pkg>/requires.txt. Dependabot's pip fetcher reads every
-  # *.txt in a configured directory and its immediate subdirectories whose lines parse as
-  # requirements, so "/" covers requirements.txt (dev and test tools) and packages/requires.txt,
-  # and each package directory covers its own requires.txt.
+  # *.txt and *.in in a configured directory and its immediate subdirectories whose lines parse
+  # as requirements, so "/" covers requirements.txt and packages/requires.txt, and each package
+  # directory covers its own requires.txt. The locks that uv pip compile writes belong to the uv
+  # entries below: exclude-paths keeps app-tests' lock out of "/", and the other locks sit two or
+  # more levels down, out of its reach.
   #
   # These are library ranges, which every downstream install resolves, so a floor must not rise
   # just because a newer release exists: increase-if-necessary leaves a requirement alone while
@@ -34,6 +37,8 @@ updates:
       - /packages/opal-common
       - /packages/opal-client
       - /packages/opal-server
+    exclude-paths:
+      - app-tests/requirements.*
     versioning-strategy: increase-if-necessary
     schedule:
       interval: weekly
@@ -56,6 +61,65 @@ updates:
         applies-to: version-updates
         patterns: [aiohttp, click, gitpython, pyjwt, tenacity]
         update-types: [major]
+      security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  # The images' lock: docker/lock/requirements.txt, which uv pip compile writes from
+  # docker/lock/requirements.in (the four requires.txt files, pip and setuptools), with every
+  # file's hash. The uv ecosystem compiles it again with uv and the options its header records,
+  # so the hashes stay complete; the pip ecosystem would compile it with pip-compile instead.
+  # /docker/lock is two levels down, out of reach of the "/" entry above, so this entry is the
+  # lock's only one. lockfile-only: the ranges belong to the entry above, and a release outside a
+  # range reaches the lock after that entry widens the range.
+  - package-ecosystem: uv
+    directory: /docker/lock
+    versioning-strategy: lockfile-only
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: deps
+    groups:
+      minor-and-patch:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: [minor, patch]
+      security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  # The test and CI tools' locks, each compiled with uv pip compile from the requirements.in beside
+  # it, which pins the tools exactly: app-tests (the E2E suite) and app-tests/git-leak (the scope
+  # bed), which the /app-tests job both reads, docker/server-test (the server-test image) and
+  # .github/scripts/tests (the workflow scripts' tests). As for the images' lock, the uv ecosystem
+  # compiles a lock again with uv and the options its header records. Each header's command runs
+  # in the directory of the job that owns the lock, so the "via" paths Dependabot writes are the
+  # ones in the file. increase moves the exact pins in the requirements.in files.
+  - package-ecosystem: uv
+    directories:
+      - /app-tests
+      - /docker/server-test
+      - /.github/scripts/tests
+    versioning-strategy: increase
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: deps-dev
+    groups:
+      minor-and-patch:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: [minor, patch]
       security:
         applies-to: security-updates
         patterns: ["*"]
@@ -83,10 +147,9 @@ updates:
 
   # The published images. Dependabot reads FROM lines only, so it cannot see the OPA image
   # (copied by skopeo from ARG opa_tag/opa_digest) or the EOPA binary (a wget URL checked against
-  # ARG checksums); bump those by hand. It does not update the two `alpine:latest` stages either.
-  # The python bases are two-part tags without a digest (python:3.12-bookworm), so Dependabot has
-  # nothing to offer inside 3.12, and the ignore below holds the minor: no python base pull
-  # requests come from this entry. Today it tracks permitio/cedar-agent.
+  # ARG checksums); bump those by hand. It tracks the digest of wolfi-base:latest, the one base of
+  # every stage and the only way its own packages (glibc, openssl, ...) move, and
+  # permitio/cedar-agent. Python is Wolfi's python-3.14 package, newest at each build.
   - package-ecosystem: docker
     directory: /docker
     schedule:
@@ -102,16 +165,8 @@ updates:
         applies-to: version-updates
         patterns: ["*"]
         update-types: [minor, patch]
-    ignore:
-      # opal-server's python_requires stops below 3.13, and the Dockerfile hard-codes the
-      # python3.12 site-packages path, so a python minor bump here would only be a red pull
-      # request. Remove this when opal-server supports the next minor and the Dockerfile moves
-      # with it.
-      - dependency-name: python
-        update-types: [version-update:semver-minor, version-update:semver-major]
 
-  # The test-only image of app-tests/git-leak. Its python base is not tied to opal-server's range,
-  # so nothing is held here.
+  # The test-only image of app-tests/git-leak, on the same wolfi-base digest.
   - package-ecosystem: docker
     directory: /app-tests/git-leak/seed
     schedule:
@@ -127,6 +182,18 @@ updates:
         applies-to: version-updates
         patterns: ["*"]
         update-types: [minor, patch]
+
+  # The Grype release that .github/scripts/image_gate.py runs, pinned in .github/grype/Dockerfile.
+  - package-ecosystem: docker
+    directory: /.github/grype
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci
 
   # The actions that the workflows in .github/workflows use, each pinned to a commit SHA with a
   # version comment, which Dependabot updates together. on_release.yml stays on older majors on
@@ -170,10 +237,8 @@ updates:
         patterns: ["*"]
         update-types: [minor, patch]
     ignore:
-      # The formatters are pinned on purpose (see .pre-commit-config.yaml): a bump rewrites files
-      # across the tree, so it cannot pass CI as a Dependabot pull request and has to land by hand
-      # together with the reformat. Remove an entry once its formatter is replaced or brought
-      # current that way.
-      - dependency-name: https://github.com/psf/black
-      - dependency-name: https://github.com/pycqa/isort
-      - dependency-name: https://github.com/PyCQA/docformatter
+      # A formatter bump can rewrite files across the tree, so it cannot pass CI as a Dependabot
+      # pull request and has to land by hand together with the reformat. ruff changes its
+      # formatting only in minor releases, so its patch releases still come through.
+      - dependency-name: https://github.com/astral-sh/ruff-pre-commit
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]

@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -102,7 +102,7 @@ class JWTSigner(JWTVerifier):
         self, sub: UUID, token_lifetime: timedelta, custom_claims: dict = {}
     ) -> str:
         payload = {}
-        issued_at = datetime.utcnow()
+        issued_at = datetime.now(timezone.utc)
         expire_at = issued_at + token_lifetime
         payload = {
             "iat": issued_at,

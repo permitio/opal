@@ -639,7 +639,7 @@ class OpaClient(LivenessProbeMixin, BasePolicyStoreClient):
 
     @staticmethod
     async def _attempt_operations_with_postponed_failure_retry(
-        ops: List[Callable[[], Awaitable[Response]]]
+        ops: List[Callable[[], Awaitable[Response]]],
     ):
         """Attempt to execute the given operations in the given order, where
         failed operations are tried again at the end (recursively).

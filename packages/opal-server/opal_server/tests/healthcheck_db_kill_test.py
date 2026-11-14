@@ -16,6 +16,7 @@ fault-injectable backbone (``InMemoryBackbone`` from the consistency test, where
 The route-level assertions tie these predicate states to the real OpalServer
 ``/healthcheck`` endpoint, proving the wiring and not just the predicate.
 """
+
 import asyncio
 import contextlib
 
@@ -71,7 +72,7 @@ async def _cancel_reader(task):
     task.cancel()
     try:
         await task
-    except (asyncio.CancelledError, Exception):
+    except asyncio.CancelledError, Exception:
         pass
 
 

@@ -1,5 +1,9 @@
+import unicodedata
+from urllib.parse import unquote, urlsplit
+
 from fastapi_websocket_pubsub import PubSubClient, Topic
 from opal_common.confi.confi import load_conf_if_none
+from opal_common.logger import logger
 from opal_common.topics.publisher import (
     ClientSideTopicPublisher,
     PeriodicPublisher,
@@ -8,6 +12,37 @@ from opal_common.topics.publisher import (
 )
 from opal_common.utils import get_authorization_header
 from opal_server.config import opal_server_config
+
+
+def password_decodes_to_control_characters(uri: str) -> bool:
+    """Whether the URI's password decodes to a control character.
+
+    Both broadcaster clients, asyncpg for Postgres and redis-py for Redis,
+    percent-decode the password in the URI, so a ``%`` written raw is read
+    as the start of an escape: ``%07`` reaches the backbone as a control
+    character and authentication fails. A ``%`` written as ``%25`` reaches
+    it as ``%``. A real password holds no control characters, so one after
+    decoding means a ``%`` that was not escaped.
+    """
+    try:
+        password = urlsplit(uri).password
+    except ValueError:  # a malformed URI, such as one with unmatched brackets
+        return False
+    if password is None:
+        return False
+    return any(unicodedata.category(char) == "Cc" for char in unquote(password))
+
+
+def warn_on_unescaped_percent_in_uri(uri: str) -> None:
+    """Log a warning when ``uri``'s password decodes to a control character,
+    without logging the password."""
+    if not password_decodes_to_control_characters(uri):
+        return
+    logger.warning(
+        "The password in OPAL_BROADCAST_URI decodes to a control character: the "
+        "URI's password is percent-decoded, so a % in it starts an escape. Write a "
+        "% in the password as %25 (urllib.parse.quote does it)."
+    )
 
 
 def setup_publisher_task(

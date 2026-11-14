@@ -7,6 +7,7 @@ registered 2160 scopes, stayed Ready and never cloned a thing (env B
 bring-up, 2026-08-18). The server now says so loudly at startup; it does
 not refuse to boot.
 """
+
 import pytest
 from opal_server import server as server_module
 from opal_server.config import opal_server_config
@@ -76,6 +77,7 @@ def test_scopes_without_the_watcher_warns_that_nothing_will_sync(scopes_on, warn
     ]
     assert hits, warnings
     assert "never SYNC or PURGE" in hits[0]
+    assert "no orphan sweep" in hits[0]
 
 
 def test_scopes_with_the_watcher_is_quiet(scopes_on, warnings):

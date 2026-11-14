@@ -142,6 +142,14 @@ def test_resolves_the_floor_and_the_ceiling_of_the_published_ranges(vuln):
     assert [entry.split()[0] for entry in vuln.logged("fetch-tool")] == ["uv", "trivy"]
 
 
+def test_resolves_for_the_python_the_packages_require(vuln):
+    result = vuln.run()
+
+    assert result.returncode == 0, result.output
+    for entry in vuln.logged("uv"):
+        assert " --python-version 3.14 " in entry
+
+
 def test_prepare_writes_the_trees_and_scans_nothing(vuln, tmp_path):
     trees = tmp_path / "trees"
 

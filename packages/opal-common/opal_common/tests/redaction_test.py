@@ -198,8 +198,24 @@ def test_loguru_diagnose_does_not_leak_model_value():
         # nothing sensitive -> returned byte-for-byte unchanged
         ("https://host:8443/p?q=1#frag", "https://host:8443/p?q=1#frag"),
         ("http://plain.example.com/data/", "http://plain.example.com/data/"),
+        # GitLab's private_token query param
+        (
+            "https://gl.example/o/r.git?private_token=glpat-S3CR3T",
+            "https://gl.example/o/r.git?private_token=***",
+        ),
+        # scp-style git url with a password: the whole userinfo goes, a password
+        # holding @ or : included
+        ("git:pw-S3CR3T@github.com:org/repo.git", "***@github.com:org/repo.git"),
+        ("git:p@ss-S3CR3T@10.0.0.5:org/repo.git", "***@10.0.0.5:org/repo.git"),
+        ("git:p:w-S3CR3T@[::1]:org/repo.git", "***@[::1]:org/repo.git"),
+        (
+            "git:pw-S3CR3T@github.com:org/repo.git?private_token=glpat-S3CR3T",
+            "***@github.com:org/repo.git?private_token=***",
+        ),
         # scp-style git url has no parseable userinfo and no password -> untouched
         ("git@github.com:org/repo.git", "git@github.com:org/repo.git"),
+        ("/srv/git/org/repo.git", "/srv/git/org/repo.git"),
+        ("ssh://git@host:2222/r.git", "ssh://***@host:2222/r.git"),
         ("", ""),
     ],
 )

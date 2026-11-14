@@ -1,3 +1,4 @@
+import json
 from functools import partial
 from pathlib import Path
 from typing import List, Optional, Set
@@ -27,6 +28,15 @@ from opal_common.schemas.policy import (
     PolicyBundle,
     RegoModule,
 )
+
+
+def _is_opa_bundle_manifest(text: str) -> bool:
+    """An OPA bundle's .manifest is a JSON object; OPAL's lists paths, one per
+    line."""
+    try:
+        return isinstance(json.loads(text), dict)
+    except ValueError:
+        return False
 
 
 class BundleMaker:
@@ -115,7 +125,7 @@ class BundleMaker:
             manifest_file_path = dir.path / manifest_file_name
             _branch.append(str(manifest_file_path))
 
-            logger.debug(f"Compiling manifest file { ' -> '.join(_branch)}")
+            logger.debug(f"Compiling manifest file {' -> '.join(_branch)}")
             try:
                 manifest_file = viewer.get_file(dir.path / manifest_file_name)
                 if manifest_file is None:
@@ -123,7 +133,14 @@ class BundleMaker:
                         f"Manifest file {manifest_file_path} not found, assuming empty"
                     )
                 else:
-                    for path_entry in manifest_file.read().splitlines():
+                    manifest_text = manifest_file.read()
+                    if _is_opa_bundle_manifest(manifest_text):
+                        logger.debug(
+                            f"Manifest file {manifest_file_path} is an OPA bundle's "
+                            "(JSON), not a list of paths: no explicit order"
+                        )
+                        return []
+                    for path_entry in manifest_text.splitlines():
                         # Path is relative to current directory, make it absolute
                         path_entry = dir.path / path_entry
 
@@ -245,8 +262,8 @@ class BundleMaker:
         manifest = []
 
         with CommitViewer(commit) as viewer:
-            filter = (
-                lambda f: self._has_extension(f)
+            filter = lambda f: (
+                self._has_extension(f)
                 and self._is_under_directories(f)
                 and self._find_ignore_match(f.path) == None
             )

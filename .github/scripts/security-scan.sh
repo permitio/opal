@@ -29,7 +29,7 @@
 #                      admit (vuln.sh --prepare resolves them)
 #   ceiling            the same on the newest versions they admit
 #   pypi-latest        the same on the latest opal-client and opal-server releases on PyPI, as
-#                      pip resolves them for an application
+#                      pip resolves them for an application on the Python they require (3.14)
 #   image-opal-server  trivy.sh report on permitio/opal-server:latest, the latest GA image
 #   image-opal-client  trivy.sh report on permitio/opal-client:latest
 #   dependabot-alerts  the open Dependabot alerts, read with gh api and DEPENDABOT_ALERTS_TOKEN;
@@ -207,14 +207,15 @@ scan_tree() {
   return "$code"
 }
 
-# scan_pypi resolves the latest opal-client and opal-server releases as an application does, and
-# scans the result.
+# scan_pypi resolves the latest opal-client and opal-server releases as an application on the
+# packages' Python (3.14) does, and scans the result. On an older Python, uv would pass over a
+# release that requires 3.14 and resolve the one before it.
 scan_pypi() {
   local dir=$work/pypi versions code=0
   mkdir -- "$dir" || return 2
   printf 'opal-client\nopal-server\n' >"$dir/requirements.in" || return 2
   bin/uv pip compile --no-config --no-header --quiet --index-url https://pypi.org/simple \
-    --python-version 3.12 --python-platform x86_64-manylinux_2_28 "$dir/requirements.in" \
+    --python-version 3.14 --python-platform x86_64-manylinux_2_28 "$dir/requirements.in" \
     -o "$dir/requirements.txt" || {
     echo "security-scan: uv could not resolve opal-client and opal-server from PyPI"
     return 2

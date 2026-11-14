@@ -9,17 +9,16 @@ runs against `master` as well as this branch — `git checkout origin/master && 
 app-tests/git-leak && pytest -k postgres_bounce` is exactly how the baseline
 below was measured.
 
-**Status as of PR3: the three orphan-sweep gates are RED again by design.** The
-reconciliation sweep was split out of PR3 (it is where the review kept finding
-defects, and a distributed reclaim policy wants its own change) — see the
-follow-up, **PER-15612**. PR3 delivers the offline-repo resilience and the
-fleet-wide purge; the sweep gates flip when PER-15612 lands.
+**The orphan sweep is off in the bed, as by default.** The three orphan-sweep
+gates recreate the server container with `OPAL_TEST_ORPHAN_SWEEP_INTERVAL=10`
+for their own run, and recreate it as it was after. Their results are not yet
+measured on this branch.
 
-Of the 23 rows below: **19 pass outright**; the three orphan-sweep gates are red
-by design (`test_orphan_clone_dir_is_reclaimed` and
-`test_redis_wiped_boot_reclaims_clones` fail outright,
-`test_shard_reconfig_still_serves_but_orphans_old_clones` passes its green half
-and fails its red half); and `test_server_recovers_after_postgres_bounce` passes
+Of the 24 rows below: **20 pass outright**; the three orphan-sweep gates are
+not yet measured with the sweep on (`test_orphan_clone_dir_is_reclaimed`,
+`test_redis_wiped_boot_refuses_to_reclaim_clones`, and the second half of
+`test_shard_reconfig_still_serves_but_orphans_old_clones`); and
+`test_server_recovers_after_postgres_bounce` passes
 assertions (a)–(c) with (d) intermittently red — at the same rate on the pre-PR3
 merge-base, so PR3 did not introduce it. See its row for the mechanism and what
 it does and does not imply for a deployment. The one knob still
@@ -60,6 +59,19 @@ env `BOOT_TARGET_SECONDS=120` (tighten the boot gate), env
 `REPACK_GATE_SERVER_LIMIT=0` (run the repack gate with repacking off; it must
 fail).
 
+The fetch backend is the server's default unless an override file sets it.
+CI runs a leg on each, with the override in `COMPOSE_FILE`:
+```bash
+# the git command-line backend
+COMPOSE_FILE=docker-compose.yml:docker-compose.cli.yml python -m pytest -v --boot-scopes=10
+# libgit2, with 3 clone shards (OPAL_TEST_SHARDS sets another count)
+COMPOSE_FILE=docker-compose.yml:docker-compose.libgit2.yml python -m pytest -v --boot-scopes=10
+```
+`test_backend.py` fails when the server runs another backend than the one the
+compose files ask for: a git command-line clone holds only `.git`, a libgit2
+clone a checkout too. The source ids the tests and invariants compute use the
+shard count the compose files set.
+
 ## Expected behavior
 
 Gate-coverage matrix (what each flagship test actually does):
@@ -72,23 +84,24 @@ Gate-coverage matrix (what each flagship test actually does):
 | `test_offline_repo_does_not_block_healthy_scopes` | **gate (PR3)** | PASSES since PR3's fetch timeout — fails without it, where 40 hung clones starve the executor and a healthy scope never serves |
 | `test_boot_loads_all_scopes` | **baseline → gate (PR4)** | PASSES with the loose default target; set `BOOT_TARGET_SECONDS` low (plan: 120 @ 50) on PR4 to gate the parallel-boot fix |
 | `test_repeat_sync_rss_stays_bounded` | **RSS guard** | PASSES; an RSS-budget guard against per-sync allocation leaks (the cache *count* can't grow for any impl, so there is no count assertion — see below) |
-| `test_server_recovers_after_postgres_bounce` | **guard (PER-15065)** + **(d) intermittently red** | Assertions (a)-(c) PASS. **Assertion (d) fails intermittently, and did so before PR3**: measured on `origin/master` (this branch's merge-base) 1 pass / 4 runs, and on the PR3 head 2 passes / 6 runs — same assertion, same line, same message. That measurement supports "PR3 did not introduce this", and nothing more. The mechanism is a **production property, not a bed artifact**: `_flush_outbound_buffer()` is reached only from `_recover_after_gap()`, scheduled only from inside the reader loop, which runs only inside a listening context — entered by the leader's watcher, or globally only under `STATISTICS_ENABLED` (default `False`). A worker with no connected websocket client and statistics off therefore has no reader, never schedules gap recovery, and never replays its outbound buffer; `is_in_backbone_gap()` also returns `False` without a reader, so the publish is not frozen either. The bed hits it because it has no `opal-client` service and statistics off; a deployment avoids it only insofar as its workers actually have clients or statistics on — a config property worth confirming rather than assuming. Owned by the broadcaster work (#933), not by PR3: `pubsub_resilience.py` gets zero lines from this branch |
+| `test_server_recovers_after_postgres_bounce` | **guard (in-place broadcaster reconnect)** + **(d) intermittently red** | Assertions (a)-(c) PASS. **Assertion (d) fails intermittently, and did so before PR3**: measured on `origin/master` (this branch's merge-base) 1 pass / 4 runs, and on the PR3 head 2 passes / 6 runs — same assertion, same line, same message. That measurement supports "PR3 did not introduce this", and nothing more. The mechanism is a **production property, not a bed artifact**: `_flush_outbound_buffer()` is reached only from `_recover_after_gap()`, scheduled only from inside the reader loop, which runs only inside a listening context — entered by the leader's watcher, or globally only under `STATISTICS_ENABLED` (default `False`). A worker with no connected websocket client and statistics off therefore has no reader, never schedules gap recovery, and never replays its outbound buffer; `is_in_backbone_gap()` also returns `False` without a reader, so the publish is not frozen either. The bed hits it because it has no `opal-client` service and statistics off; a deployment avoids it only insofar as its workers actually have clients or statistics on — a config property worth confirming rather than assuming. Owned by the broadcaster work (#933), not by PR3: `pubsub_resilience.py` gets zero lines from this branch |
 | `test_delete_recreate_storm` | **guard (lock re-mint)** | PASSES — rapid delete/re-create of the same source serializes on the repo lock and ends with clean caches; guards 89e090be |
 | `test_randomized_churn_holds_invariants` | **guard (seeded churn)** | PASSES — seeded random put/refresh/delete churn holds invariants at every settle point (replay a failure with `CHURN_SEED=<seed>`); `repoint` ops remain deliberately excluded (covered separately by the repoint gates, which pass since PR3's repoint purge), but the delete-vs-inflight-sync exclusion is lifted now that PR3's fleet purge lands |
 | `test_delete_during_hung_fetch_no_crash` | **guard (use-after-free)** | PASSES — deleting a scope whose clone is hung never crashes a worker; guards the use-after-free class 89e090be fixed |
 | `test_delete_during_hung_fetch_returns_bounded` | **gate (PR3)** | PASSES since PR3's fetch timeout — fails without it, where the purge waits on a repo lock a hung clone holds indefinitely and the DELETE never returns in bounded time |
 | `test_repoint_during_inflight_fetch_drains_old_source` | **gate (PR3, update path)** | PASSES, both halves — repointing while the old source's clone is hung still serves the new source, AND the old source's cache entries drain (the half that needs PR3's update-path purge) |
 | `test_multiworker_churn_drains_every_worker` | **gate (PR3, broadcast)** | PASSES since PR3's fleet-wide purge — fails without it, where purges are process-local and a worker whose caches were populated by something other than the DELETE it served (e.g. the leader's watcher syncs) leaks permanently; this was the HIGH finding from the PR2 review, as a gate |
-| `test_delete_reclaims_clone_when_the_purge_broadcast_is_lost` | **gate (PR3, delete floor)** | PASSES — with Postgres stopped so the purge broadcast is lost, a DELETE still reclaims the serving pod's clone dir. The only test here that measures the floor at all: every other delete path runs with a healthy backbone. Since the leader's disk role was cut to PER-15612, the floor is the only path in the server that removes a clone dir, so nothing else can satisfy this |
+| `test_delete_reclaims_clone_when_the_purge_broadcast_is_lost` | **gate (PR3, delete floor)** | PASSES — with Postgres stopped so the purge broadcast is lost, a DELETE still reclaims the serving pod's clone dir. The only test here that measures the floor at all: every other delete path runs with a healthy backbone. The leader's purge does no disk work, and the orphan sweep is off in the bed (only the three orphan gates turn it on, for their own container), so the floor is the only path that can remove these dirs |
 | `test_warm_boot_reuses_clones` | **guard (S2)** | PASSES — a restart with intact clones must serve without re-cloning |
 | `test_corrupt_clone_recovers_without_clone_loop` | **guard (S3/T7)** | PASSES — emptying a clone's object store in place while the server holds a warm cached handle is detected as invalid and recovers through the invalid-repo branch with exactly one re-clone, no serve-500s wedge and no re-clone loop; verifies the gutted-object-store detection fix |
-| `test_orphan_clone_dir_is_reclaimed` | **gate (orphan sweep, PER-15612)** | FAILS — a clone dir with no live scope is never reclaimed; no orphan sweep exists yet (PR3+, tracked as PER-15612) |
-| `test_redis_wiped_boot_reclaims_clones` | **gate (orphan sweep, PER-15612)** | FAILS — after a scope-store wipe, on-disk clones referencing nothing are never reclaimed; same missing-sweep class as the orphan-dir gate |
+| `test_orphan_clone_dir_is_reclaimed` | **gate (orphan sweep)** | Not yet measured — with the sweep on for its container, a clone dir no stored scope uses, beside one live scope's clone (an unused share of 0.5, allowed), must go within two looks |
+| `test_redis_wiped_boot_refuses_to_reclaim_clones` | **gate (orphan sweep, share guard)** | Not yet measured — with the sweep on for its container: after a scope-store wipe the store lists no scope, which looks the same as a store pointed at the wrong database: the clones must stay while three looks log `outcome refused`, then go once the container runs with `OPAL_SCOPES_ORPHAN_SWEEP_MAX_SHARE=1.0` |
 | `test_boot_with_unreachable_remotes_still_serves_healthy` | **gate (PR3)** | PASSES since PR3's fetch timeout — fails without it, where unreachable remotes present at boot hang the preload/first-sync clones and starve the executor so a healthy scope can't serve |
-| `test_shard_reconfig_still_serves_but_orphans_old_clones` | **half-gate (S5, orphan sweep)** | Green half PASSES — serving survives a `SCOPES_REPO_CLONES_SHARDS` reconfig (re-clone under new ids); red half FAILS (PER-15612) — the old-shard dirs are orphaned until the orphan sweep lands |
+| `test_shard_reconfig_still_serves_but_orphans_old_clones` | **half-gate (S5, orphan sweep)** | Green half PASSES — serving survives a `SCOPES_REPO_CLONES_SHARDS` reconfig (re-clone under new ids; the reconfigured server fetches with libgit2, since the git command line keeps one clone per repository); second half not yet measured — with the sweep on for its container, the orphan sweep must remove the old-shard dirs (one old and one new dir is an unused share of 0.5, allowed) |
 | `test_force_push_rewrite_recovers` | **characterization** | PASSES — a force-pushed (rewritten) head is picked up on refresh, pinning today's behavior (pygit2's forced default fetch refspec plus `set_target` moving the local ref) |
 | `test_deleted_branch_keeps_serving_last_head` | **characterization** | PASSES — deleting the tracked branch upstream doesn't crash anything; fetch doesn't prune, so OPAL silently keeps serving the last known head (documented, not necessarily desirable, behavior) |
 | `test_pushes_keep_pack_count_bounded` | **gate (scope clone repack)** | PASSES since the scope clone repack — 10 pushes to one repo, each followed by a refresh, keep the clone's `pack-*.pack` count at or below `SCOPES_GIT_REPACK_PACK_LIMIT` (5, set for this test's container only via `OPAL_TEST_REPACK_PACK_LIMIT`) while the scope serves the last push, and the count must build up to the limit and drop back, with at least one repack of that clone in the server log ending at one pack (so a clone it cannot see, or fetches that stop writing packs, fail it instead of passing it); measured `[1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3]`, two repacks of 5 packs into 1. Fails without it, where libgit2 writes one pack per fetch and never merges them, so the count reaches the push count plus the clone's own pack: `REPACK_GATE_SERVER_LIMIT=0` runs it with repacking off, which for this gate is `origin/master`'s behaviour, and measured `[1, 2, …, 11]`, no repack logged, FAIL. Prints each repack's duration and pack-dir bytes before/after from the server log |
+| `test_a_scope_clone_is_the_backends_clone` | **guard (backend legs)** | PASSES on each leg — fails when the server runs another fetch backend than the compose files ask for (a git command-line clone holds only `.git`, a libgit2 clone a checkout too), or clones outside the shard the compose files' shard count puts it in |
 
 ## Invariants
 `invariants.py` defines quiescence invariants I1-I6, checked at every `opal`-fixture
@@ -127,7 +140,8 @@ Notes on the guards:
   direction).
 
 ## Requires
-Docker + docker compose v2, plus host Python with `pytest pytest-timeout requests GitPython`.
+Docker + docker compose v2, plus host Python 3.14 with this directory's
+requirements: `python -m pip install --require-hashes -r requirements.txt`.
 
 ## Notes
 - Auth is disabled in the stack: `OPAL_AUTH_PUBLIC_KEY` is left unset so the JWT
@@ -140,9 +154,11 @@ Docker + docker compose v2, plus host Python with `pytest pytest-timeout request
   would make a round-robin read miss the worker that fetched and let a `== 0`
   drain assertion pass falsely. One worker makes every cache read deterministic;
   the leak/boot/offline bugs all reproduce single-worker.
-- First-sync of a fresh scope takes the clone path, which fills only `repo_locks`;
-  `repos` / `repos_last_fetched` are filled by the discover/fetch path on a second
-  sync, so the load helpers issue a `refresh_all()` before asserting on `repos`.
+- First-sync of a fresh scope takes the clone path, which fills `repo_locks` and
+  `repos_last_fetched`; `repos` is filled by the discover/fetch path on a second
+  sync, so the load helpers issue a `refresh_all()` before asserting on `repos`. A
+  git command-line fetch that names its branches fills `branch_attempts`, not
+  `repos_last_fetched`.
 - `OPAL_SCOPES_GIT_FETCH_TIMEOUT` is set to `10` (code default: `120`) so hung
   clones/fetches against the `blackhole` sidecar fail fast — the code default
   exceeds this bed's serve windows, so offline-repo/timeout gates need the

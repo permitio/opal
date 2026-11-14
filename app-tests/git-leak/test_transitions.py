@@ -2,6 +2,7 @@
 
 See docs/superpowers/specs/2026-07-13-scope-fetcher-lifecycle-tests-design.md.
 """
+
 import time
 
 import pytest
@@ -30,9 +31,9 @@ def test_delete_recreate_storm(opal, repo_count):
             lambda: opal.get_scope_policy("storm").status_code == 200, timeout=300
         ), f"round {i}: recreated scope never served"
         opal.delete_scope("storm")
-    assert wait_until(
-        lambda: opal.stats(samples=1)["repo_locks"] == 0, timeout=60
-    ), f"caches did not drain after the storm: {opal.stats()}"
+    assert wait_until(lambda: opal.stats(samples=1)["repo_locks"] == 0, timeout=60), (
+        f"caches did not drain after the storm: {opal.stats()}"
+    )
 
 
 @pytest.mark.timeout(1200)
@@ -83,13 +84,13 @@ def test_randomized_churn_holds_invariants(opal, repo_count):
                 live.pop(sid_)
         opal.delete_scope(f"ghost-{round_no}")  # delete-missing stays a 204 no-op
         drained = wait_until(
-            lambda: opal.stats(samples=1)["repo_locks"]
-            <= len({r for r in live.values()}),
+            lambda: (
+                opal.stats(samples=1)["repo_locks"] <= len({r for r in live.values()})
+            ),
             timeout=120,
         )
         assert drained, (
-            f"round {round_no}: locks exceed live sources (seed {seed}): "
-            f"{opal.stats()}"
+            f"round {round_no}: locks exceed live sources (seed {seed}): {opal.stats()}"
         )
 
 
@@ -99,9 +100,8 @@ def test_randomized_churn_holds_invariants(opal, repo_count):
 # green — exempting exactly the invariants the purge under test exists to
 # satisfy. Measured on this head: all three of these gates pass with I3/I4
 # enforced, so the exemptions were stale and are gone. I1 stays: a delete or
-# repoint that races a hung clone still leaves the DIR on disk (nothing
-# reconciles in this PR — PER-15612), which is the documented trade, not a
-# memory leak.
+# repoint that races a hung clone still leaves the DIR on disk (the orphan
+# sweep is off in this bed), which is the documented trade, not a memory leak.
 @pytest.mark.invariant_exempt("I1")
 def test_delete_during_hung_fetch_no_crash(opal):
     """Deleting a scope whose clone is hung must never crash a worker (the use-
@@ -119,9 +119,9 @@ def test_delete_during_hung_fetch_no_crash(opal):
             opal.delete_scope("hung-nc")
         except _requests.RequestException:
             pass  # a slow/blocked DELETE is the OTHER test's concern
-        assert (
-            worker_pids() == pids
-        ), "worker crashed/respawned during delete-vs-hung-fetch"
+        assert worker_pids() == pids, (
+            "worker crashed/respawned during delete-vs-hung-fetch"
+        )
     finally:
         opal.hard_reset()
 
@@ -142,9 +142,9 @@ def test_delete_during_hung_fetch_returns_bounded(opal):
     try:
         start = time.time()
         resp = _requests.delete(f"{opal.base_url}/scopes/hung-b", timeout=90)
-        assert (
-            resp.status_code in (200, 204) and time.time() - start < 90
-        ), "DELETE of a hung-fetch scope did not return in bounded time"
+        assert resp.status_code in (200, 204) and time.time() - start < 90, (
+            "DELETE of a hung-fetch scope did not return in bounded time"
+        )
     finally:
         opal.hard_reset()
 
@@ -255,9 +255,9 @@ def test_delete_reclaims_clone_when_the_purge_broadcast_is_lost(
     a publish on ``SCOPES_PURGE_CHANNEL``, which is droppable: the DELETE usually
     lands on a non-leader worker and must traverse the broadcaster, and that
     channel is freeze-exempt, so during a backbone gap the publish is *attempted
-    and lost* rather than deferred and replayed. With nothing else reclaiming
-    (the reconciliation sweep is split out, PER-15612), the dir would then
-    survive restart, redeploy and leader failover.
+    and lost* rather than deferred and replayed. With the orphan sweep off
+    (its default), nothing else reclaims it, and the dir would then survive
+    restart, redeploy and leader failover.
 
     This is the only test in the bed that measures the floor: every other delete
     path here runs with a healthy backbone, where the confirmation arrives and
@@ -265,10 +265,10 @@ def test_delete_reclaims_clone_when_the_purge_broadcast_is_lost(
 
     ATTRIBUTION. An earlier version of this docstring claimed the leader's purge
     would otherwise have removed the dir. That was true when written and is not
-    now: the leader's disk role was cut out of this PR (PER-15612), so the floor
-    is the ONLY path in the server that removes a clone dir. Nothing else can
-    satisfy this assertion, which is what makes it a gate rather than a
-    coincidence.
+    now: the leader's purge does no disk work, and the orphan sweep is off in
+    this bed (only the three orphan gates turn it on, for their own container).
+    So the floor is the ONLY path that can remove these dirs, which is what
+    makes this a gate rather than a coincidence.
 
     Runs 2 workers so the backbone is genuinely in the path (a single worker
     fans out in-process and never touches Postgres).
@@ -290,9 +290,9 @@ def test_delete_reclaims_clone_when_the_purge_broadcast_is_lost(
     for i, repo in enumerate(list_seeded_repos(n)):
         opal.put_scope(f"lost-{i}", gitea_repo_url(repo))
 
-    assert wait_until(
-        lambda: len(clone_dirs() - baseline) >= n, timeout=600
-    ), f"clones never appeared on disk: {clone_dirs() - baseline}"
+    assert wait_until(lambda: len(clone_dirs() - baseline) >= n, timeout=600), (
+        f"clones never appeared on disk: {clone_dirs() - baseline}"
+    )
     ours = clone_dirs() - baseline
 
     def _delete_during_the_outage():

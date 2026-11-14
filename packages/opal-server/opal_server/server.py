@@ -3,13 +3,14 @@ import logging
 import os
 import signal
 import sys
+import time
 import traceback
 from pathlib import Path
 from typing import List, Optional
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.openapi.docs import get_redoc_html
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 from fastapi_websocket_pubsub.event_broadcaster import EventBroadcasterContextManager
 from opal_common.authentication.deps import JWTAuthenticator, StaticBearerAuthenticator
 from opal_common.authentication.signer import JWTSigner
@@ -30,6 +31,11 @@ from opal_server.data.api import init_data_updates_router
 from opal_server.data.data_update_publisher import DataUpdatePublisher
 from opal_server.debug_stats import register_internal_stats_route
 from opal_server.git_cli import remove_dead_key_dirs, validate_git_cli_settings
+from opal_server.health import (
+    WorkerHealth,
+    register_health_routes,
+    running_leader_heartbeat,
+)
 from opal_server.loadlimiting import init_loadlimit_router
 from opal_server.metrics_setup import configure_server_metrics
 from opal_server.policy.bundles.api import router as bundles_router
@@ -42,7 +48,9 @@ from opal_server.pubsub_resilience import ReconnectingBroadcaster
 from opal_server.redis_utils import RedisDB
 from opal_server.scopes.api import init_scope_router
 from opal_server.scopes.loader import load_scopes
+from opal_server.scopes.missing_scope import validate_missing_scope_settings
 from opal_server.scopes.purge import subscribe_worker_purge_handler
+from opal_server.scopes.readiness import validate_required_repos
 from opal_server.scopes.scope_repository import ScopeRepository
 from opal_server.scopes.service import ScopesService
 from opal_server.security.api import init_security_router
@@ -146,7 +154,9 @@ class OpalServer:
         # through loguru's default handler (no gunicorn master configured it
         # when uvicorn runs the server on its own).
         validate_git_cli_settings()
-        if opal_server_config.SCOPES_GIT_FETCH_WITH_CLI:
+        validate_required_repos()
+        validate_missing_scope_settings()
+        if opal_server_config.SCOPES and opal_server_config.SCOPES_GIT_FETCH_WITH_CLI:
             # SSH key files of a worker that died (SIGKILL, an OOM kill) before
             # it could remove them; the pre-fork preload sweeps them too.
             remove_dead_key_dirs()
@@ -223,9 +233,10 @@ class OpalServer:
         #     stale repo_locks entries for the life of the process.
         # So the "global" listening context is held whenever either is on and a
         # broadcaster exists (single-process deployments have nothing to read).
-        self.broadcast_listening_context: Optional[
-            EventBroadcasterContextManager
-        ] = None
+        self.broadcast_listening_context: Optional[EventBroadcasterContextManager] = (
+            None
+        )
+        wants_reader_for_scopes = False
         if self.broadcaster_uri is not None:
             # Legacy EventBroadcaster (BROADCAST_RECONNECT_ENABLED=false): its
             # reader connects EAGERLY in __aenter__ and re-raises, so a backbone
@@ -281,7 +292,8 @@ class OpalServer:
                     "OPAL_REPO_WATCHER_ENABLED is off while OPAL_SCOPES is on: the "
                     "leader worker will never SYNC or PURGE scopes (no periodic "
                     "sync_scopes pass, no post-leadership sync-all, no fleet "
-                    "purge). NOTE the gunicorn master's PRE-FORK PRELOAD still "
+                    "purge, no orphan sweep). NOTE the gunicorn master's PRE-FORK "
+                    "PRELOAD still "
                     "clones/fetches every registered scope on every boot - this "
                     "flag does not gate it, so git traffic and clone-tree growth "
                     "at boot are expected regardless. If ongoing sync is "
@@ -291,6 +303,15 @@ class OpalServer:
         # Set BEFORE _init_fast_api_app(): _configure_api_routes assigns it,
         # and it must exist even when SCOPES is off (shutdown reads it).
         self._scopes_service: Optional[ScopesService] = None
+
+        # What the health routes read; the background task fills in the rest.
+        self.health = WorkerHealth(
+            expects_scopes_leader=bool(opal_server_config.SCOPES)
+            and bool(self._init_policy_watcher)
+            and self.publisher is not None,
+            expects_backbone_subscription=wants_reader_for_scopes
+            and self.publisher is not None,
+        )
 
         # init fastapi app
         self.app: FastAPI = self._init_fast_api_app()
@@ -410,31 +431,7 @@ class OpalServer:
             # Liveness / process-up: trivially ok as long as the process serves.
             return {"status": "ok"}
 
-        @app.get("/healthcheck", include_in_schema=False)
-        def healthcheck():
-            # Readiness: also reflect broadcaster-reader health so a wedged reader
-            # (reader task absent/dead while clients depend on it) fails the probe
-            # and k8s can route away from / restart this worker. Stays ok through a
-            # normal transient reconnect (see ReconnectingBroadcaster.is_reader_healthy).
-            broadcaster = self.pubsub.broadcaster
-            if opal_server_config.BROADCAST_HEALTHCHECK_ENABLED and isinstance(
-                broadcaster, ReconnectingBroadcaster
-            ):
-                healthy = broadcaster.is_reader_healthy()
-                # Publish what the probe already decided. A wedged reader is
-                # otherwise invisible outside this handler: where no liveness
-                # probe runs, nothing acts on the 503 below.
-                metrics.gauge(
-                    "opal_server.broadcaster_reader_healthy",
-                    1 if healthy else 0,
-                    tags={"pid": str(os.getpid())},
-                )
-                if not healthy:
-                    return JSONResponse(
-                        status_code=503,
-                        content={"status": "error", "broadcaster": "unhealthy"},
-                    )
-            return {"status": "ok"}
+        register_health_routes(app, self)
 
         register_internal_stats_route(
             app,
@@ -496,9 +493,8 @@ class OpalServer:
                     )
                     try:
                         await self.broadcast_listening_context.__aenter__()
-                    except (
-                        Exception
-                    ) as exc:  # noqa: BLE001 — everything below must still run
+                        self.health.backbone_subscribed = True
+                    except Exception as exc:  # noqa: BLE001 — everything below must still run
                         # Belt and braces for the eager-connect case the isinstance
                         # gate above should already exclude: an unreadable backbone
                         # must not cost this worker its purge subscription, the
@@ -530,6 +526,7 @@ class OpalServer:
                                 "after a failed enter"
                             )
                         self.broadcast_listening_context = None
+                        self.health.backbone_subscribed = False
                     if (
                         self.broadcast_listening_context is not None
                         and self.opal_statistics is not None
@@ -572,13 +569,21 @@ class OpalServer:
                     # lock on purpose: non-leaders block on that lock forever.
                     await subscribe_worker_purge_handler(self.pubsub.endpoint)
 
+                # Started: what follows waits for the leadership lock.
+                self.health.started_at = time.time()
+
                 # We want only one worker to run repo watchers
                 # (otherwise for each new commit, we will publish multiple updates via pub/sub).
                 # leadership is determined by the first worker to obtain a lock
                 self.leadership_lock = NamedLock(
                     opal_server_config.LEADER_LOCK_FILE_PATH
                 )
-                async with self.leadership_lock:
+                # The heartbeat starts with the lock, before load_scopes reads
+                # Redis: liveness never waits on Redis or git.
+                async with (
+                    self.leadership_lock,
+                    running_leader_heartbeat(self.health.expects_scopes_leader),
+                ):
                     # only one worker gets here, the others block. in case the leader worker
                     # is terminated, another one will obtain the lock and become leader.
                     logger.info(
@@ -615,6 +620,9 @@ class OpalServer:
                     logger.info(
                         "stopped listening on the broadcast channel on this worker"
                     )
+        else:
+            # Nothing else starts on a worker with no publisher.
+            self.health.started_at = time.time()
 
     async def stop_server_background_tasks(self):
         logger.info("stopping background tasks...")
@@ -649,8 +657,8 @@ class OpalServer:
 
         Without this, a DELETE that returns 204 followed by SIGTERM loses its
         floor: the task is detached, nothing else references it, and the clone
-        dir it was about to remove survives with nothing left to reclaim it (no
-        reconciliation in this PR — PER-15612). Master removed the dir inline,
+        dir it was about to remove survives until the orphan sweep (off by
+        default) reclaims it. Master removed the dir inline,
         before returning 204, so an undrained floor is a regression against the
         merge base rather than merely a missing improvement.
         """
@@ -659,7 +667,8 @@ class OpalServer:
         except asyncio.TimeoutError:
             logger.warning(
                 "Abandoned in-flight scope clone purges at shutdown after "
-                "{timeout}s; their clone dirs stay on disk (PER-15612)",
+                "{timeout}s; their clone dirs stay on disk until the orphan "
+                "sweep reclaims them (OPAL_SCOPES_ORPHAN_SWEEP_INTERVAL)",
                 timeout=timeout,
             )
         except Exception:

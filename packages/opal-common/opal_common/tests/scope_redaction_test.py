@@ -8,7 +8,6 @@ and a ValidationError raised on bad scope input must not quote them.
 ``model_dump()`` is the wire / Redis format and must keep the real values.
 """
 
-
 import pytest
 from loguru import logger
 from opal_common.schemas.policy_source import (

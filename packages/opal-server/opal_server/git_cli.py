@@ -1,4 +1,4 @@
-"""Scope fetches and clones through the git command line (PER-17993).
+"""Scope fetches and clones through the git command line.
 
 With SCOPES_GIT_FETCH_WITH_CLI on, the scopes fetcher runs ``git fetch`` and
 ``git clone`` as child processes instead of calling libgit2 on a thread. A
@@ -39,6 +39,7 @@ user can read, in a directory of its own, removed when the op ends.
 
 import asyncio
 import base64
+import errno
 import fcntl
 import itertools
 import math
@@ -53,11 +54,22 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, FrozenSet, Iterator, List, Optional, Set, Tuple
+from typing import (
+    Callable,
+    Dict,
+    FrozenSet,
+    Iterator,
+    List,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+)
 from urllib.parse import unquote, unquote_plus, urlsplit, urlunsplit
 
 import pygit2
@@ -85,6 +97,11 @@ class GitCliError(RuntimeError):
         super().__init__(f"{message}: {stderr_tail}" if stderr_tail else message)
         self.returncode = returncode
         self.stderr_tail = stderr_tail
+
+
+class GitCliHostKeyError(GitCliError):
+    """The git host's key, refused by ssh: not the one recorded for the clone,
+    or, with SCOPES_GIT_SSH_KNOWN_HOSTS set, not in that file."""
 
 
 class GitCliLocalError(GitCliError):
@@ -124,6 +141,12 @@ class GitCliTimeoutError(TimeoutError):
 # later, once that process exits.
 KILL_WAIT_SECONDS = 10.0
 _DEFAULT_KILL_GRACE_SECONDS = 5.0
+# SCOPES_GIT_CLONE_TIMEOUT, when unset, is this many SCOPES_GIT_FETCH_TIMEOUTs.
+_CLONE_TIMEOUT_FETCH_TIMEOUTS = 5
+# The libgit2 way back, named by every startup refusal of what the CLI needs.
+_LIBGIT2_WAY_BACK = (
+    "; set OPAL_SCOPES_GIT_FETCH_WITH_CLI=false to fetch with libgit2 instead"
+)
 # How often a group whose pipes are closed is checked for members left, and a
 # clone's lock for being free.
 _GROUP_POLL_SECONDS = 0.05
@@ -150,10 +173,8 @@ _SH = "/bin/sh"
 # git runs under sh, which prints git's exit status on its stdout once git is
 # done. The status is read from there because waitpid cannot be trusted for it:
 # the scope preload runs in the gunicorn master, whose SIGCHLD handler reaps
-# every child with waitpid(-1), and asyncio then reports 255 for a child that
-# handler reaped first. Python 3.12's PidfdChildWatcher loses that race on
-# every child (it reaps through a pidfd the handler's waitpid(-1) beats);
-# 3.11's ThreadedChildWatcher only when the handler happens to run first.
+# every child with waitpid(-1), and subprocess reads 0 for a child that
+# handler reaped first (_Reaper).
 # git's own stdout goes to /dev/null, so the status is all that sh's stdout
 # carries, and no status at all means sh was killed before git's came back.
 #
@@ -284,32 +305,32 @@ _SSH_OPTIONS = (
     "-o",
     "ServerAliveCountMax=4",
 )
-# Host keys without SCOPES_GIT_SSH_KNOWN_HOSTS: measured (see git_cli_test's
-# host-key test), libgit2 through pygit2 accepts the host key of every server,
-# known, unknown or changed, and records none, so ssh does the same.
-_SSH_HOST_KEYS_AS_LIBGIT2 = (
+# Host keys without SCOPES_GIT_SSH_KNOWN_HOSTS: trust on first use. The first
+# ssh of a clone records the host's key in the clone's record (host_key_record,
+# its UserKnownHostsFile), and a later one refuses another key. ssh records
+# only the key of the type it negotiated, and adds no other (UpdateHostKeys=no),
+# nor the host's address beside its name (CheckHostIP=no).
+_SSH_HOST_KEYS_ON_FIRST_USE = (
     "-o",
-    "StrictHostKeyChecking=no",
-    "-o",
-    "UserKnownHostsFile=/dev/null",
+    "StrictHostKeyChecking=accept-new",
     "-o",
     "GlobalKnownHostsFile=/dev/null",
+    "-o",
+    "UpdateHostKeys=no",
+    "-o",
+    "CheckHostIP=no",
 )
-# What ssh says, at INFO, of each host key it takes with the options above:
-# that it added the key to known_hosts, which is /dev/null. It says so on every
-# op that reaches the server, so it is left out of the op's error. ssh ends its
-# lines with CRLF.
+# What ssh writes when it refuses a host key, whatever the reason.
+_HOST_KEY_REFUSED = "Host key verification failed"
+# What ssh says, at INFO, of a host key it records: that it added the key to
+# the known hosts. It is no part of an error, so it is left out of the op's.
+# ssh ends its lines with CRLF.
 _SSH_HOST_KEY_ADDED = re.compile(
     r"^Warning: Permanently added .* to the list of known hosts\.\r?\n?",
     re.MULTILINE,
 )
 _HTTP_SCHEMES = ("http", "https")
 _SSH_SCHEMES = ("ssh", "git+ssh", "ssh+git")
-# Query string or fragment parameters that carry a credential: those OPAL's own
-# redaction masks, and GitLab's private_token. git would hand them to its
-# remote helper on its command line, send them on every request and print
-# them in its errors, so such a URL is refused.
-_QUERY_CREDENTIALS = SENSITIVE_QUERY_PARAMS | {"private_token"}
 # The password of GitHub's https://<token>:x-oauth-basic@... URLs, whose user
 # is the token.
 _PASSWORD_OF_A_TOKEN_USER = "x-oauth-basic"
@@ -360,6 +381,9 @@ _SHM = "/dev/shm"
 _background: Set["asyncio.Future"] = set()
 # Every clone-lock fd this process holds, and its lock file.
 _lock_fds: Dict[int, Path] = {}
+# The processes that logged that SCOPES_REPO_CLONES_SHARDS is ignored: once
+# each, a worker forked after the preload included.
+_shards_warned_pids: Set[int] = set()
 
 
 def background_ops() -> int:
@@ -389,7 +413,7 @@ def kill_grace_seconds() -> float:
     validate_git_cli_settings refuses at startup)."""
     try:
         grace = float(opal_server_config.SCOPES_GIT_CLI_KILL_GRACE)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return _DEFAULT_KILL_GRACE_SECONDS
     if not math.isfinite(grace) or grace < 0:
         return _DEFAULT_KILL_GRACE_SECONDS
@@ -398,68 +422,156 @@ def kill_grace_seconds() -> float:
 
 def known_hosts_file() -> Optional[str]:
     """SCOPES_GIT_SSH_KNOWN_HOSTS as an absolute path (a relative one is the
-    server's working directory's), or None when it is unset, empty, or the git
-    command-line fetch is off."""
+    server's working directory's), or None when it is unset or empty: host keys
+    are then trusted on first use."""
     path = opal_server_config.SCOPES_GIT_SSH_KNOWN_HOSTS
-    if not path or not opal_server_config.SCOPES_GIT_FETCH_WITH_CLI:
+    if not path:
         return None
     return os.path.abspath(path)
 
 
-def validate_git_cli_settings() -> None:
-    """Check, at startup, what the git command-line fetch needs.
+def known_hosts_problem() -> Optional[str]:
+    """Why SCOPES_GIT_SSH_KNOWN_HOSTS cannot be used now, or None (it can, or
+    it is unset)."""
+    path = known_hosts_file()
+    return None if path is None else _known_hosts_problem(path)
 
-    With SCOPES_GIT_FETCH_WITH_CLI off it only logs an ERROR when
-    SCOPES_GIT_SSH_KNOWN_HOSTS is set, which is then ignored: turning the
-    CLI setting off alone, to fall back to libgit2, never stops a server.
-    With it on, a uid with no entry in the user database, which ssh
-    refuses to run under, is logged as an ERROR: only SSH sources fail.
+
+def host_key_record(repo_path: Path) -> Path:
+    """The SSH host keys recorded for the clone at ``repo_path`` by the git
+    command line (trust on first use): a file beside the clone, as its lock
+    file is, so that a re-clone keeps them.
+
+    Absolute, as ssh reads it from git's working directory, which for a
+    fetch is the clone.
+    """
+    return Path(os.path.abspath(repo_path.parent)) / f".{repo_path.name}.known_hosts"
+
+
+def clone_timeout() -> float:
+    """The timeout of a git command-line clone: SCOPES_GIT_CLONE_TIMEOUT, or,
+    when it is unset, 5 times SCOPES_GIT_FETCH_TIMEOUT.
+
+    Read as SCOPES_GIT_FETCH_TIMEOUT is: 0 or less, or not finite, means
+    no limit.
+    """
+    timeout = opal_server_config.SCOPES_GIT_CLONE_TIMEOUT
+    if timeout is None:
+        fetch_timeout = float(opal_server_config.SCOPES_GIT_FETCH_TIMEOUT)
+        return _CLONE_TIMEOUT_FETCH_TIMEOUTS * fetch_timeout
+    return float(timeout)
+
+
+def validate_git_cli_settings() -> None:
+    """Check, at startup, the settings of the scope clones and what the git
+    command-line fetch needs.
+
+    Without SCOPES it checks nothing: a server without scopes runs no scope
+    git op, and needs no git. With SCOPES_GIT_FETCH_WITH_CLI off it checks
+    SCOPES_REPO_CLONES_SHARDS, SCOPES_GIT_SSH_KNOWN_HOSTS and the path
+    libgit2 takes its SSH host keys from, and logs an ERROR when host keys
+    are trusted on first use and there is no ssh-keyscan to record them
+    with: only SSH sources fail. With it on, a uid with no entry in the user
+    database, which ssh refuses to run under, is logged as an ERROR: only
+    SSH sources fail. So is, as a WARNING once per process, a
+    SCOPES_REPO_CLONES_SHARDS other than 1, which the git command-line
+    fetch ignores.
 
     Raises:
-        ValueError: with SCOPES_GIT_FETCH_WITH_CLI on, there is no git on
-            PATH, or one older than 2.32, or no executable /bin/sh;
-            SCOPES_GIT_CLI_KILL_GRACE is not a finite number >= 0;
+        ValueError: SCOPES_REPO_CLONES_SHARDS is below 1;
             SCOPES_GIT_SSH_KNOWN_HOSTS names no readable file, or its path
             holds whitespace (which ssh would read as a list of files), % or
-            $, a quote or a backslash; or the directory SSH key files go to
-            has % or $ in its path (ssh expands both, in a known_hosts path
-            and in a key's).
+            $, a quote or a backslash; with SCOPES_GIT_FETCH_WITH_CLI off,
+            BASE_DIR's git_sources path holds : or $ (libgit2 would read its
+            home there as a list, or expand it); or, with it on, there is no
+            git on PATH, or one older than 2.32, or no executable /bin/sh;
+            SCOPES_GIT_CLI_KILL_GRACE is not a finite number >= 0;
+            SCOPES_GIT_CLI_NARROW_FETCH_MAX_BRANCHES is negative;
+            SCOPES_GIT_CLONE_TIMEOUT is below SCOPES_GIT_FETCH_TIMEOUT;
+            BASE_DIR's git_sources path, where a clone's recorded host keys
+            are, holds what the known_hosts path may not; or the directory
+            SSH key files go to has % or $ in its path (ssh expands both, in
+            a known_hosts path and in a key's).
     """
+    if not opal_server_config.SCOPES:
+        return
+    shards = opal_server_config.SCOPES_REPO_CLONES_SHARDS
+    if shards < 1:
+        raise ValueError(
+            f"SCOPES_REPO_CLONES_SHARDS={shards}: must be 1 or more (the number "
+            "of clones of one repository)"
+        )
+    problem = known_hosts_problem()
+    if problem is not None:
+        raise ValueError(problem)
+    # Where GitPolicyFetcher.base_dir puts the clones and their host keys.
+    clones_dir = os.path.join(
+        os.path.abspath(opal_server_config.BASE_DIR), "git_sources"
+    )
     if not opal_server_config.SCOPES_GIT_FETCH_WITH_CLI:
-        if opal_server_config.SCOPES_GIT_SSH_KNOWN_HOSTS:
+        if ":" in clones_dir or "$" in clones_dir:
+            raise ValueError(
+                f"BASE_DIR={opal_server_config.BASE_DIR!r}: libgit2 reads the SSH "
+                f"host keys from a directory in {clones_dir!r}, whose path holds : "
+                "or $, which libgit2 would read as a list of directories or "
+                "expand; use another BASE_DIR"
+            )
+        if known_hosts_file() is None and shutil.which("ssh-keyscan") is None:
             logger.error(
-                "SCOPES_GIT_SSH_KNOWN_HOSTS is set but SCOPES_GIT_FETCH_WITH_CLI is "
-                "off: only the git command-line fetch verifies the git host's SSH "
-                "key against that file, so it is ignored"
+                "SCOPES_GIT_FETCH_WITH_CLI is off and SCOPES_GIT_SSH_KNOWN_HOSTS is "
+                "not set, but there is no ssh-keyscan on PATH: libgit2 records an "
+                "SSH host's key with it the first time, so every scope source "
+                "fetched over SSH fails (HTTP sources are not affected). Install "
+                "ssh-keyscan (OpenSSH's client), or set SCOPES_GIT_SSH_KNOWN_HOSTS"
             )
         return
     grace = opal_server_config.SCOPES_GIT_CLI_KILL_GRACE
     try:
         valid_grace = math.isfinite(float(grace)) and float(grace) >= 0
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         valid_grace = False
     if not valid_grace:
         raise ValueError(
             f"SCOPES_GIT_CLI_KILL_GRACE={grace!r}: must be a finite number of "
             "seconds, 0 or more"
         )
+    narrow_max = opal_server_config.SCOPES_GIT_CLI_NARROW_FETCH_MAX_BRANCHES
+    if narrow_max < 0:
+        raise ValueError(
+            f"SCOPES_GIT_CLI_NARROW_FETCH_MAX_BRANCHES={narrow_max}: must be 0 "
+            "(every fetch fetches every branch) or more"
+        )
     _check_git_version()
     if not os.access(_SH, os.X_OK):
         raise ValueError(
             f"SCOPES_GIT_FETCH_WITH_CLI is on but {_SH} is not executable: git "
-            "runs under it"
+            f"runs under it{_LIBGIT2_WAY_BACK}"
         )
-    if _timeout_or_none(opal_server_config.SCOPES_GIT_FETCH_TIMEOUT) is None:
+    fetch_limit = _timeout_or_none(opal_server_config.SCOPES_GIT_FETCH_TIMEOUT)
+    if fetch_limit is None:
         logger.warning(
             "SCOPES_GIT_FETCH_WITH_CLI is on but SCOPES_GIT_FETCH_TIMEOUT is not "
             "positive: scope git ops have no time limit, and a hung one is never "
             "stopped"
         )
-    path = known_hosts_file()
-    if path is not None:
-        problem = _known_hosts_problem(path)
+    clone_limit = _timeout_or_none(clone_timeout())
+    if clone_limit is not None and (fetch_limit is None or clone_limit < fetch_limit):
+        raise ValueError(
+            "SCOPES_GIT_CLONE_TIMEOUT="
+            f"{opal_server_config.SCOPES_GIT_CLONE_TIMEOUT!r} is below "
+            "SCOPES_GIT_FETCH_TIMEOUT="
+            f"{opal_server_config.SCOPES_GIT_FETCH_TIMEOUT!r}: a clone downloads "
+            "the whole repository, so it gets at least a fetch's time; raise it, "
+            "or unset it for 5 times the fetch timeout"
+        )
+    if known_hosts_file() is None:
+        problem = _ssh_path_problem(os.path.join(clones_dir, ".SOURCE_ID.known_hosts"))
         if problem is not None:
-            raise ValueError(problem)
+            raise ValueError(
+                f"BASE_DIR={opal_server_config.BASE_DIR!r}: the git command line "
+                f"records SSH host keys in {clones_dir!r}, whose path {problem}; "
+                "use another BASE_DIR, or set SCOPES_GIT_SSH_KNOWN_HOSTS"
+            )
     key_dir_parent = _key_dir_parent()
     if _ssh_expands(key_dir_parent):
         raise ValueError(
@@ -468,6 +580,23 @@ def validate_git_cli_settings() -> None:
             f"expand; point TMPDIR elsewhere, or make {_SHM} writable"
         )
     _check_user_entry()
+    if shards != 1:
+        _warn_shards_ignored(shards)
+
+
+def _warn_shards_ignored(shards: int) -> None:
+    """A WARNING, once per process, that the git command-line fetch keeps one
+    clone per repository whatever SCOPES_REPO_CLONES_SHARDS says."""
+    if os.getpid() in _shards_warned_pids:
+        return
+    _shards_warned_pids.add(os.getpid())
+    logger.warning(
+        "SCOPES_REPO_CLONES_SHARDS={shards} is ignored with the git command-line "
+        "fetch: each repository has one clone. Remove it, or set "
+        "OPAL_SCOPES_GIT_FETCH_WITH_CLI=false to keep {shards} libgit2 clones "
+        "per repository",
+        shards=shards,
+    )
 
 
 def _check_user_entry() -> None:
@@ -493,7 +622,9 @@ def _check_user_entry() -> None:
 def _check_git_version() -> None:
     git = shutil.which("git")
     if git is None:
-        raise ValueError("SCOPES_GIT_FETCH_WITH_CLI is on but there is no git on PATH")
+        raise ValueError(
+            f"SCOPES_GIT_FETCH_WITH_CLI is on but there is no git on PATH{_LIBGIT2_WAY_BACK}"
+        )
     try:
         out = subprocess.run(
             [git, "--version"],
@@ -504,7 +635,8 @@ def _check_git_version() -> None:
         ).stdout
     except (OSError, subprocess.SubprocessError) as e:
         raise ValueError(
-            f"SCOPES_GIT_FETCH_WITH_CLI is on but {git} --version failed: {e}"
+            f"SCOPES_GIT_FETCH_WITH_CLI is on but {git} --version failed: "
+            f"{e}{_LIBGIT2_WAY_BACK}"
         ) from None
     match = _GIT_VERSION_RE.search(out)
     found = tuple(int(n) for n in match.groups()) if match else None
@@ -513,26 +645,32 @@ def _check_git_version() -> None:
         raise ValueError(
             f"SCOPES_GIT_FETCH_WITH_CLI is on but {git} is "
             f"{out.strip() or 'of an unknown version'}; it needs git {needed} or "
-            "later"
+            f"later{_LIBGIT2_WAY_BACK}"
         )
 
 
-def _known_hosts_problem(path: str) -> Optional[str]:
+def _ssh_path_problem(path: str) -> Optional[str]:
+    """What keeps ssh from reading ``path`` as one known_hosts file, given as
+    UserKnownHostsFile: "holds ...", or None."""
     if any(c.isspace() for c in path):
-        return (
-            f"SCOPES_GIT_SSH_KNOWN_HOSTS={path!r}: the path holds whitespace, "
-            "which ssh would read as more than one file"
-        )
+        return "holds whitespace, which ssh would read as more than one file"
     if _ssh_expands(path):
         return (
-            f"SCOPES_GIT_SSH_KNOWN_HOSTS={path!r}: the path holds % or $, which "
-            "ssh would expand (%h to the host, ${VAR} to a variable)"
+            "holds % or $, which ssh would expand (%h to the host, ${VAR} to a "
+            "variable)"
         )
     if any(c in path for c in "'\"\\"):
         return (
-            f"SCOPES_GIT_SSH_KNOWN_HOSTS={path!r}: the path holds a quote or a "
-            "backslash, which ssh would read as quoting (another file, or none)"
+            "holds a quote or a backslash, which ssh would read as quoting "
+            "(another file, or none)"
         )
+    return None
+
+
+def _known_hosts_problem(path: str) -> Optional[str]:
+    problem = _ssh_path_problem(path)
+    if problem is not None:
+        return f"SCOPES_GIT_SSH_KNOWN_HOSTS={path!r}: the path {problem}"
     if not os.path.isfile(path) or not os.access(path, os.R_OK):
         return f"SCOPES_GIT_SSH_KNOWN_HOSTS={path!r}: no readable file there"
     return None
@@ -549,7 +687,7 @@ def _timeout_or_none(timeout: float) -> Optional[float]:
     finite, as run_in_git_executor reads it."""
     try:
         timeout = float(timeout)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     return timeout if math.isfinite(timeout) and timeout > 0 else None
 
@@ -573,27 +711,49 @@ def take_clone_lock(repo_path: Path) -> Optional[int]:
     pass_fds to have the child hold the lock as well. Raises OSError when
     the lock file cannot be opened.
 
-    No at-fork handler closes it in a child forked without exec: uvloop
-    forks to spawn every child, and would close it before pass_fds hands
-    it on. The one process that forks without exec, the gunicorn master,
-    closes any left once its preload is over (close_leftover_lock_fds).
+    No at-fork handler closes it in a child forked without exec: a
+    process start that forks and runs the at-fork handlers (uvloop's, any
+    os.fork) would close it before pass_fds hands it on. The one process
+    that forks without exec, the gunicorn master, closes any left once its
+    preload is over (close_leftover_lock_fds).
+
+    The orphan sweep unlinks the lock file of a clone it removes, while
+    it holds the lock. An op that opened the file before that gets the
+    flock once the sweep lets go, on a file no path names any more: the
+    file is opened once more then, and a second such miss is the busy
+    answer.
     """
     path = clone_lock_path(repo_path)
-    raw = os.open(path, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o600)
-    try:
-        fd = fcntl.fcntl(raw, fcntl.F_DUPFD_CLOEXEC, _LOCK_FD_MIN)
-    finally:
-        os.close(raw)
-    _lock_fds[fd] = path
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
+    for _ in range(2):
+        raw = os.open(path, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o600)
+        try:
+            fd = fcntl.fcntl(raw, fcntl.F_DUPFD_CLOEXEC, _LOCK_FD_MIN)
+        finally:
+            os.close(raw)
+        _lock_fds[fd] = path
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            if _locks_the_file_at(fd, path):
+                return fd
+        except BlockingIOError:
+            drop_clone_lock(fd)
+            return None
+        except BaseException:
+            drop_clone_lock(fd)
+            raise
         drop_clone_lock(fd)
-        return None
-    except BaseException:
-        drop_clone_lock(fd)
-        raise
-    return fd
+    return None
+
+
+def _locks_the_file_at(fd: int, path: Path) -> bool:
+    """Whether ``fd`` is open on the file at ``path``, not on one unlinked from
+    there since it was opened."""
+    held = os.fstat(fd)
+    try:
+        named = os.stat(path)
+    except FileNotFoundError:
+        return False
+    return (held.st_dev, held.st_ino) == (named.st_dev, named.st_ino)
 
 
 def drop_clone_lock(fd: int) -> None:
@@ -699,7 +859,11 @@ def sweep_clone_leftovers(clones_dir: Path) -> None:
     every clone, and every directory a clone was being made in, each under
     the clone's lock (a clone whose lock is held is left alone). A dead
     op's record stays in the clone's lock file until all of that is gone.
-    A clone that cannot be read is logged and left; never raises.
+    The lock file of a clone that is gone, with nothing of it left (a
+    delete of a scope never cloned takes the lock too), is removed under
+    its lock: nothing else runs then, and nothing else removes one whose
+    clone never existed. A clone that cannot be read is logged and left;
+    never raises.
     """
     remove_dead_key_dirs()
     try:
@@ -718,28 +882,71 @@ def sweep_clone_leftovers(clones_dir: Path) -> None:
         for n in names
         if n.startswith(".") and _CLONE_DIR_MARK in n
     }
+    # A clone's lock file is ".<source id>.lock".
+    targets |= {
+        n[1 : -len(_LOCK_SUFFIX)]
+        for n in names
+        if n.startswith(".")
+        and n.endswith(_LOCK_SUFFIX)
+        and "." not in n[1 : -len(_LOCK_SUFFIX)]
+    }
+    # A stray ".lock" or "..clone-*" names no clone: "" is git_sources itself.
+    targets.discard("")
+    removed_locks = 0
     for name in sorted(targets):
         repo_path = Path(clones_dir) / name
         try:
-            _sweep_clone(repo_path)
+            removed_locks += _sweep_clone(repo_path)
         except OSError as e:
             logger.warning("Not sweeping {path}: {err!r}", path=repo_path, err=e)
+    if removed_locks:
+        logger.info(
+            "Removed {count} lock files of clones no longer in {path}",
+            count=removed_locks,
+            path=clones_dir,
+        )
 
 
-def _sweep_clone(repo_path: Path) -> None:
+def _sweep_clone(repo_path: Path) -> bool:
+    """Sweep one clone (see sweep_clone_leftovers); whether its lock file was
+    removed, the clone being gone."""
     fd = take_clone_lock(repo_path)
     if fd is None:
         logger.warning(
             "Not sweeping {path}: a git op of another process holds it",
             path=repo_path,
         )
-        return
+        return False
     try:
         # A record of a dead op stays until what it left is all gone.
-        if remove_dead_op_leftovers(repo_path):
-            mark_op_finished(fd)
+        if not remove_dead_op_leftovers(repo_path):
+            return False
+        mark_op_finished(fd)
+        if os.path.lexists(repo_path):
+            return False
+        return _remove_held_lock_file(repo_path)
     finally:
         drop_clone_lock(fd)
+
+
+def _remove_held_lock_file(repo_path: Path) -> bool:
+    """Remove the lock file of a clone that is gone, its lock held by the
+    caller; whether it went.
+
+    An op that opened the file meanwhile finds, once it has the flock,
+    that no path names its file any more (take_clone_lock).
+    """
+    lock = clone_lock_path(repo_path)
+    try:
+        os.unlink(lock)
+    except OSError as e:
+        logger.warning(
+            "Could not remove the lock file {path} of a clone that is gone: {err!r}",
+            path=lock,
+            err=e,
+        )
+        return False
+    return True
 
 
 def remove_dead_op_leftovers(repo_path: Path) -> bool:
@@ -749,14 +956,14 @@ def remove_dead_op_leftovers(repo_path: Path) -> bool:
     whether all of it is gone. For the holder of the clone's lock.
 
     A git dir that cannot be looked at (EACCES, EIO) counts as not all
-    gone, so that the dead op stays recorded: Path.is_dir() raises then
-    on Python 3.11 and 3.12, and os.path.isdir() says there is none.
+    gone, so that the dead op stays recorded: os.path.isdir() and
+    Path.is_dir() say there is none then.
     """
     git_dir = repo_path / ".git"
     complete = True
     try:
         has_git_dir = stat.S_ISDIR(os.stat(git_dir).st_mode)
-    except (FileNotFoundError, NotADirectoryError):
+    except FileNotFoundError, NotADirectoryError:
         has_git_dir = False
     except OSError as e:
         logger.warning("Could not look at {path}: {err!r}", path=git_dir, err=e)
@@ -895,11 +1102,14 @@ async def cli_fetch(
     prune: bool,
     timeout: float,
     on_gone: Optional[OnGone] = None,
+    refspecs: Optional[Sequence[str]] = None,
+    negotiation_tips: Sequence[str] = (),
 ) -> None:
     """Fetch ``remote`` into the clone at ``repo_path`` with ``git fetch``.
 
-    The remote's URL and refspecs are read from the clone's config, as
-    libgit2 reads them. Tags are not fetched. FETCH_HEAD is rewritten
+    The remote's URL is read from the clone's config, as libgit2 reads
+    it, and so are the refspecs unless ``refspecs`` is given. Tags are
+    not fetched. FETCH_HEAD is rewritten
     (empty) only once git exited 0; a fetch that fails or is
     stopped leaves it as it was. A FETCH_HEAD that cannot be written then (a
     full disk) is logged at ERROR, and the fetch still counts as one that
@@ -920,6 +1130,11 @@ async def cli_fetch(
             left in the clone removed and the clone's lock released. That
             can be after this returns or raises (a stop under way, a
             process that outlived SIGKILL).
+        refspecs: The refspecs to fetch instead of the configured ones.
+        negotiation_tips: Refs of the clone whose commits alone git tells
+            the remote it has (``--negotiation-tip``); none: every ref. Each
+            must name a ref the clone has: git 2.39 fails the fetch on one
+            that does not, where later versions ignore it.
 
     Raises:
         GitCliTimeoutError: git ran past ``timeout`` and was stopped (SIGTERM
@@ -928,8 +1143,11 @@ async def cli_fetch(
         GitCliBusyError: another op holds the clone's lock.
         GitCliLocalError: the op failed locally (see that class).
         GitCliError: git exited non-zero.
-        ValueError: ``remote`` cannot be given to git.
+        ValueError: ``remote`` cannot be given to git, or ``refspecs`` is
+            empty (git would fetch no ref).
     """
+    if refspecs is not None and not refspecs:
+        raise ValueError(f"no refspec to fetch into {repo_path}")
     repo_path = Path(repo_path)
     # The pack dir's leftovers as the op starts, under its lock: none of them
     # is this op's to remove.
@@ -945,7 +1163,7 @@ async def cli_fetch(
     op = _Op(f"fetch of {repo_path}", repo_path, on_gone, clean_up=_clean_up)
     try:
         _check_remote(remote)
-        url, refspecs = await _run_local(_remote_config, repo_path, remote)
+        url, configured = await _run_local(_remote_config, repo_path, remote)
         remote_for_git = _remote_for_git(url, source)
         await op.start()
         pack_leftovers_before = await _run_local(_pack_leftovers, repo_path)
@@ -958,10 +1176,11 @@ async def cli_fetch(
         *_GIT_CONFIG_ARGS,
         *_FETCH_ARGS,
         "--prune" if prune else "--no-prune",
+        *(f"--negotiation-tip={tip}" for tip in negotiation_tips),
         # Ends git's options: neither the URL nor a refspec can be taken for one.
         "--",
         remote_for_git.url,
-        *refspecs,
+        *(configured if refspecs is None else refspecs),
     ]
     await _run_op(op, args, source, remote_for_git, timeout)
 
@@ -1115,13 +1334,28 @@ async def _run_op(
     0, with the op still to finish (see _run_git)."""
     running = False
     try:
-        with _git_env(source, remote) as (env, redact):
+        with _git_env(source, remote, op.repo_path) as (env, redact):
             running = True
             await _run_git(args, env=env, timeout=timeout, redact=redact, op=op)
+    except GitCliError as e:
+        if not running:
+            await op.not_started()
+            raise
+        if type(e) is GitCliError and remote.is_ssh and _refused_a_host_key(e):
+            raise GitCliHostKeyError(e.returncode, e.stderr_tail) from None
+        raise
     except BaseException:
         if not running:  # git's environment could not be set up
             await op.not_started()
         raise
+
+
+def _refused_a_host_key(error: GitCliError) -> bool:
+    """Whether ssh itself refused the host's key: its own line, not a line of
+    the remote's (``remote: ...``) or one git quotes."""
+    return any(
+        line.startswith(_HOST_KEY_REFUSED) for line in error.stderr_tail.splitlines()
+    )
 
 
 async def _take_clone_lock_off_loop(repo_path: Path) -> Optional[int]:
@@ -1699,11 +1933,16 @@ def _stands_alone(text: str, start: int, end: int) -> bool:
 
 def _carries_a_credential(component: str) -> bool:
     """Whether a URL's query string or fragment has a parameter with a value
-    whose name (decoded, any case) is one of _QUERY_CREDENTIALS; parameters are
-    split on ``&`` and ``;``, as OPAL's redaction splits them."""
+    whose name (decoded, any case) is one OPAL's redaction masks
+    (SENSITIVE_QUERY_PARAMS, GitLab's private_token included).
+
+    git would hand such a value to its remote helper on its command line,
+    send it on every request and print it in its errors. Parameters are
+    split on ``&`` and ``;``, as OPAL's redaction splits them.
+    """
     for pair in re.split(r"[&;]", component):
         name, _, value = pair.partition("=")
-        if value and unquote_plus(name).lower() in _QUERY_CREDENTIALS:
+        if value and unquote_plus(name).lower() in SENSITIVE_QUERY_PARAMS:
             return True
     return False
 
@@ -1798,9 +2037,10 @@ def _remote_for_git(url: str, source: GitPolicyScopeSource) -> _Remote:
     return remote
 
 
-def _ssh_host_key_options(remote: _Remote) -> List[str]:
+def _ssh_host_key_options(remote: _Remote, record: Path) -> List[str]:
     """The host-key options of ssh: verified against SCOPES_GIT_SSH_KNOWN_HOSTS
-    when it is set (and never written to), else as libgit2 does it.
+    when it is set (and never written to), else trusted on first use, with
+    ``record`` (the clone's host_key_record) as the known hosts.
 
     Raises:
         GitCliLocalError: the known_hosts file cannot be read, for an SSH
@@ -1808,7 +2048,7 @@ def _ssh_host_key_options(remote: _Remote) -> List[str]:
     """
     path = known_hosts_file()
     if path is None:
-        return list(_SSH_HOST_KEYS_AS_LIBGIT2)
+        return [*_SSH_HOST_KEYS_ON_FIRST_USE, "-o", f"UserKnownHostsFile={record}"]
     if remote.is_ssh:
         problem = _known_hosts_problem(path)
         if problem is not None:
@@ -1842,7 +2082,7 @@ def _safe_directories() -> List[str]:
     ):
         try:
             found += open_config().get_multivar("safe.directory")
-        except (OSError, pygit2.GitError):
+        except OSError, pygit2.GitError:
             continue
     return found
 
@@ -1877,10 +2117,10 @@ def _isolated_env() -> Dict[str, str]:
 
 @contextmanager
 def _git_env(
-    source: GitPolicyScopeSource, remote: _Remote
+    source: GitPolicyScopeSource, remote: _Remote, repo_path: Path
 ) -> Iterator[Tuple[Dict[str, str], Callable[[str], str]]]:
-    """The environment of git for one op, and a function that redacts the op's
-    credentials from text.
+    """The environment of git for one op on the clone at ``repo_path``, and a
+    function that redacts the op's credentials from text.
 
     The SSH key file, in a directory of its own, is removed on the way
     out, whatever happened.
@@ -1919,7 +2159,11 @@ def _git_env(
     def redact(text: str) -> str:
         return redact_sensitive_text(remote.redact(text), source.url)
 
-    ssh = ["ssh", *_SSH_OPTIONS, *_ssh_host_key_options(remote)]
+    ssh = [
+        "ssh",
+        *_SSH_OPTIONS,
+        *_ssh_host_key_options(remote, host_key_record(repo_path)),
+    ]
     key_dir: Optional[str] = None
     key_lock: Optional[int] = None
     try:
@@ -2028,7 +2272,7 @@ def remove_dead_key_dirs() -> None:
                 continue
             try:
                 fd = _lock_key_dir(path)
-            except (BlockingIOError, FileNotFoundError):
+            except BlockingIOError, FileNotFoundError:
                 continue  # an op under way holds it, or it is gone meanwhile
             except OSError as e:
                 logger.warning(
@@ -2108,7 +2352,7 @@ def live_members(pgid: int) -> bool:
         try:
             with open(f"/proc/{name}/stat", encoding="utf-8", errors="replace") as f:
                 fields = f.read().rpartition(")")[2].split()
-        except (FileNotFoundError, ProcessLookupError):
+        except FileNotFoundError, ProcessLookupError:
             continue  # gone meanwhile
         except PermissionError:
             continue  # another user's (/proc's hidepid=1); git's are this one's
@@ -2143,7 +2387,7 @@ class _PipeReader:
         assert self._fd is not None
         try:
             chunk = os.read(self._fd, 65536)
-        except (BlockingIOError, InterruptedError):
+        except BlockingIOError, InterruptedError:
             return
         except OSError as e:
             logger.warning("Could not read from the sh git runs under: {err!r}", err=e)
@@ -2183,7 +2427,8 @@ class _Group:
 
     def __init__(
         self,
-        proc: "asyncio.subprocess.Process",
+        proc: subprocess.Popen,
+        reaper: "_Reaper",
         stdin: int,
         status: _PipeReader,
         stderr: _PipeReader,
@@ -2192,9 +2437,9 @@ class _Group:
         self._stdin: Optional[int] = stdin
         self._status = status
         self._stderr = stderr
-        # asyncio has none of sh's pipes to wait for: this is done once sh is
-        # reaped.
-        self._reaped = asyncio.ensure_future(proc.wait())
+        self._reaper = reaper
+        # Done once sh is reaped.
+        self._reaped = reaper.reaped
         self._empty = False
 
     @property
@@ -2264,30 +2509,30 @@ class _Group:
             os.close(stdin)
 
     def abandon(self) -> None:
-        """The event loop is ending: close sh's pipes, and asyncio's transport
-        for sh, while the loop still runs. Left to the garbage collector,
-        they would be closed on a closed loop, which raises."""
+        """The event loop is ending: close sh's pipes, and stop watching sh,
+        while the loop still runs. Left to the garbage collector, their
+        readers would be removed from a closed loop, which raises. sh is
+        reaped all the same (_Reaper.abandon)."""
         self.close_stdin()
         self._status.close()
         self._stderr.close()
-        # asyncio's Process has no public close: its transport is private.
-        self._proc._transport.close()  # type: ignore[attr-defined]
+        self._reaper.abandon()
 
     def status(self) -> Optional[int]:
         """The exit status of git as sh reported it; None when sh reported none
         (it was killed first)."""
         try:
             return int(self._status.done.result().strip())
-        except (asyncio.CancelledError, Exception):
+        except asyncio.CancelledError, Exception:
             return None
 
     def stderr_tail(self, redact: Callable[[str], str]) -> str:
         """The end of git's stderr, ``redact``-ed before it is cut, so that no
         part of a secret the cut goes through is left, and without ssh's note
-        of a host key it added to /dev/null."""
+        of a host key it recorded."""
         try:
             raw = self._stderr.done.result()
-        except (asyncio.CancelledError, Exception):
+        except asyncio.CancelledError, Exception:
             return ""
         text = redact(raw.decode("utf-8", "replace"))
         if self._stderr.trimmed:
@@ -2338,14 +2583,8 @@ async def _run_git(
         await op.not_started()
         raise GitCliLocalError(127, "git not found on PATH")
     assert op.lock_fd is not None
-    # sh's pipes are this module's own, not ones asyncio makes. Cancelled
-    # before it has connected its pipes, asyncio leaves the ends it made
-    # open (sh's stdin, which the watchdog reads: it would wait for good),
-    # and, from Python 3.12, its give-up waits for every pipe it goes on
-    # connecting to close: sh's stderr too, which git holds until the
-    # watchdog ends it, which it does only once this process closes sh's
-    # stdin after that give-up. With no pipe of asyncio's, the give-up
-    # waits for sh alone.
+    # sh's pipes are this module's own: sh is started with subprocess.Popen
+    # (see below), which is given their ends as they are.
     fds: List[int] = []
     try:
         for _ in range(3):
@@ -2367,17 +2606,23 @@ async def _run_git(
         if isinstance(e, OSError):
             raise GitCliLocalError(127, f"could not start git: {e}") from None
         raise
-    # From here on sh may be running whatever the start ends in: the group's
-    # id is not known then, so the clone's lock, which every member that can
-    # write in the clone holds (all but ssh), says when it is gone.
+    # sh is started with subprocess.Popen, on the loop's thread and not with
+    # the event loop's subprocess_exec: CPython starts it with vfork (Linux),
+    # whose cost does not grow with the memory the worker holds, and runs no
+    # at-fork hook (there is no preexec_fn). uvloop's subprocess_exec, which
+    # the server's workers run, forks the whole worker and runs every at-fork
+    # hook of the process with the loop held (an APM tracer's stop and
+    # restart of its threads, a metrics client's flush): 20-50 ms per op in
+    # a worker of 1-2 GiB. _Reaper reaps sh.
+    #
+    # Should the start fail once sh runs (nothing can reap it), the clone's
+    # lock, which every member that can write in the clone holds (all but
+    # ssh), says when the group is gone: sh's watchdog kills it as its stdin
+    # closes, and sh is reaped then.
+    proc: Optional[subprocess.Popen] = None
     try:
-        proc = await asyncio.create_subprocess_exec(
-            _SH,
-            "-c",
-            _STATUS_SCRIPT,
-            "sh",
-            git,
-            *args,
+        proc = subprocess.Popen(
+            [_SH, "-c", _STATUS_SCRIPT, "sh", git, *args],
             stdin=watched,
             stdout=status_write,
             stderr=stderr_write,
@@ -2385,20 +2630,21 @@ async def _run_git(
             start_new_session=True,
             pass_fds=(op.lock_fd,),
         )
+        reaper = _Reaper(proc)
     except BaseException as e:
-        # asyncio, giving up on a start, kills sh only; sh's watchdog, if sh
-        # got that far, kills the rest of the group as its stdin closes.
         os.close(watching)
         status.close()
         stderr.close()
         _keep(op.finish_once_unlocked())
+        if proc is not None:
+            _keep(_reap_once_gone(proc))
         if isinstance(e, OSError):
             raise GitCliLocalError(127, redact(f"could not start git: {e}")) from None
         raise
     finally:
         for fd in (watched, status_write, stderr_write):
             os.close(fd)
-    group = _Group(proc, watching, status, stderr)
+    group = _Group(proc, reaper, watching, status, stderr)
     limit = _timeout_or_none(timeout)
     try:
         finished = await group.wait(limit)
@@ -2421,6 +2667,134 @@ async def _run_git(
             f"status. {group.stderr_tail(redact)}".strip(),
         )
     raise GitCliError(status, group.stderr_tail(redact))
+
+
+class _Reaper:
+    """Reaps sh and hands its exit status to the event loop (``reaped``).
+
+    Where the kernel gives a pidfd (Linux), the loop watches sh's: it
+    costs the loop nothing until sh exits, and sh is then reaped with a
+    waitpid that does not block. Elsewhere (macOS), or where pidfd_open
+    fails, a thread of its own waits for sh. A start of that thread can
+    hold the loop's thread for tens of milliseconds while other threads
+    hold the GIL.
+
+    sh is reaped whatever becomes of the event loop: once the loop ends
+    (abandon), a thread waits for it. A child that another reaper took
+    first (the gunicorn master's SIGCHLD handler) reads 0, which is why
+    git's status is read from sh's stdout. A wait that fails is logged
+    and reads -1: the op goes on by sh's pipes and its group.
+
+    Raises:
+        OSError: no pidfd could be watched and no thread started (EAGAIN).
+    """
+
+    def __init__(self, proc: subprocess.Popen) -> None:
+        self._proc = proc
+        self._loop = asyncio.get_running_loop()
+        self.reaped: "asyncio.Future[int]" = self._loop.create_future()
+        self._pidfd: Optional[int] = None
+        if not self._watch():
+            self._wait_on_a_thread()
+
+    def _watch(self) -> bool:
+        """Watch sh's pidfd on the loop; whether it is watched (or found reaped
+        already)."""
+        pidfd_open = getattr(os, "pidfd_open", None)
+        if pidfd_open is None:
+            return False
+        try:
+            pidfd = pidfd_open(self._proc.pid)
+        except ProcessLookupError:
+            # Gone already: another reaper took it (it reads 0).
+            returncode = self._poll()
+            self._done(-1 if returncode is None else returncode)
+            return True
+        except OSError:  # ENOSYS, EPERM (a seccomp filter): a thread instead
+            return False
+        try:
+            self._loop.add_reader(pidfd, self._readable)
+        except OSError:  # a loop that cannot poll a pidfd: a thread instead
+            os.close(pidfd)
+            return False
+        except BaseException:
+            os.close(pidfd)
+            raise
+        self._pidfd = pidfd
+        return True
+
+    def _readable(self) -> None:
+        returncode = self._poll()
+        if returncode is None:
+            return
+        self._stop_watching()
+        self._done(returncode)
+
+    def _poll(self) -> Optional[int]:
+        try:
+            return self._proc.poll()
+        except Exception as e:
+            logger.error(
+                "Could not reap the sh of git (pid {pid}): {err!r}",
+                pid=self._proc.pid,
+                err=e,
+            )
+            return -1
+
+    def _stop_watching(self) -> None:
+        pidfd, self._pidfd = self._pidfd, None
+        if pidfd is not None:
+            self._loop.remove_reader(pidfd)
+            os.close(pidfd)
+
+    def _done(self, returncode: int) -> None:
+        if not self.reaped.done():
+            self.reaped.set_result(returncode)
+
+    def _wait_on_a_thread(self) -> None:
+        try:
+            threading.Thread(
+                target=self._wait, name=f"git-sh-{self._proc.pid}", daemon=True
+            ).start()
+        except RuntimeError as e:  # no thread can be started
+            raise OSError(
+                errno.EAGAIN, f"cannot start a thread to reap sh: {e}"
+            ) from None
+
+    def _wait(self) -> None:
+        try:
+            returncode = self._proc.wait()
+        except BaseException as e:
+            logger.error(
+                "Could not wait for the sh of git (pid {pid}): {err!r}",
+                pid=self._proc.pid,
+                err=e,
+            )
+            returncode = -1
+        try:
+            self._loop.call_soon_threadsafe(self._done, returncode)
+        except RuntimeError:  # the loop is closed: nothing waits for it
+            pass
+
+    def abandon(self) -> None:
+        """The event loop is ending: stop watching sh on it, and have a thread
+        reap sh once it exits. Nothing waits for its status any more."""
+        if self._pidfd is None:
+            return
+        self._stop_watching()
+        if self._poll() is None:
+            try:
+                self._wait_on_a_thread()
+            except OSError:
+                # Left to subprocess's own clean-up at a later start.
+                pass
+
+
+async def _reap_once_gone(proc: subprocess.Popen) -> None:
+    """Reap a sh whose start was given up on, once its watchdog has ended its
+    group (as its stdin closes)."""
+    while proc.poll() is None:
+        await asyncio.sleep(_GROUP_POLL_SECONDS)
 
 
 def _background_stop(group: _Group, op: _Op) -> "asyncio.Future[bool]":
@@ -2494,6 +2868,11 @@ async def _stop(group: _Group, what: str, grace: float) -> bool:
     if grace > 0:
         group.signal(signal.SIGTERM)
         if await group.wait(grace):
+            logger.info(
+                "Stopped git {what} (pid {pid}): SIGTERM was enough",
+                what=what,
+                pid=group.pid,
+            )
             return True
         logger.warning(
             "git {what} (pid {pid}) still running {grace}s after SIGTERM; "
@@ -2504,6 +2883,9 @@ async def _stop(group: _Group, what: str, grace: float) -> bool:
         )
     group.signal(signal.SIGKILL)
     if await group.wait(KILL_WAIT_SECONDS):
+        logger.info(
+            "Stopped git {what} (pid {pid}) with SIGKILL", what=what, pid=group.pid
+        )
         return True
     logger.error(
         "git {what} (pid {pid}) still running {secs}s after SIGKILL (stuck in "

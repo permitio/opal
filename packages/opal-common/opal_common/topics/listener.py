@@ -5,8 +5,7 @@ from opal_common.logger import logger
 
 
 class TopicCallback(Protocol):
-    def __call__(self, topic: Topic, data: Any) -> Coroutine:
-        ...
+    def __call__(self, topic: Topic, data: Any) -> Coroutine: ...
 
 
 class TopicListener:

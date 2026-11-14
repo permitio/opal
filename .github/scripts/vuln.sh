@@ -6,7 +6,7 @@
 #
 # opal-common, opal-client and opal-server read their install_requires from
 # packages/requires.txt and packages/<pkg>/requires.txt, and those ranges are what every
-# downstream install resolves. uv pip compile resolves the four files together for CPython 3.12
+# downstream install resolves. uv pip compile resolves the four files together for CPython 3.14
 # on manylinux x86_64, from wheels only, into two trees of exact pins:
 #
 #   floor    every direct requirement at the lowest version its range admits (lowest-direct)
@@ -61,7 +61,7 @@ mkdir -- "$trees/floor" "$trees/ceiling" || fail "creating the tree directories 
 files=(packages/requires.txt packages/opal-common/requires.txt packages/opal-client/requires.txt
   packages/opal-server/requires.txt)
 compile=(bin/uv pip compile --no-config --no-header --quiet --no-build
-  --index-url https://pypi.org/simple --python-version 3.12 --python-platform x86_64-manylinux_2_28)
+  --index-url https://pypi.org/simple --python-version 3.14 --python-platform x86_64-manylinux_2_28)
 echo "vuln: resolving the floor and the ceiling of ${files[*]}"
 "${compile[@]}" --resolution lowest-direct "${files[@]}" -o "$trees/floor/requirements.txt" ||
   fail "resolving the floor failed"

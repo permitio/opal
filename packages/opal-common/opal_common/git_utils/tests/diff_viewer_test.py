@@ -77,7 +77,7 @@ def test_diff_viewer_filter_changes(repo_with_diffs: Tuple[Repo, Commit, Commit]
 
 
 def test_diff_viewer_filter_by_change_type(
-    repo_with_diffs: Tuple[Repo, Commit, Commit]
+    repo_with_diffs: Tuple[Repo, Commit, Commit],
 ):
     """Test added(), deleted(), renamed(), modified() return only appropriate
     diffs."""
@@ -125,7 +125,7 @@ def test_diff_viewer_affected_paths(repo_with_diffs: Tuple[Repo, Commit, Commit]
 
 
 def test_diff_viewer_returns_blob_for_added_file(
-    repo_with_diffs: Tuple[Repo, Commit, Commit]
+    repo_with_diffs: Tuple[Repo, Commit, Commit],
 ):
     """If we added a file, we expect the blob of the new version to be
     returned."""
@@ -143,7 +143,7 @@ def test_diff_viewer_returns_blob_for_added_file(
 
 
 def test_diff_viewer_returns_blob_for_modified_file(
-    repo_with_diffs: Tuple[Repo, Commit, Commit]
+    repo_with_diffs: Tuple[Repo, Commit, Commit],
 ):
     """If we modified a file, we expect the blob of the new version to be
     returned."""
@@ -156,7 +156,7 @@ def test_diff_viewer_returns_blob_for_modified_file(
 
 
 def test_diff_viewer_returns_blob_for_deleted_file(
-    repo_with_diffs: Tuple[Repo, Commit, Commit]
+    repo_with_diffs: Tuple[Repo, Commit, Commit],
 ):
     """If we deleted a file, we expect the blob of the *old* version to be
     returned."""

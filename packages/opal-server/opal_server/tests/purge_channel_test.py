@@ -309,8 +309,8 @@ async def test_leader_confirms_memory_purge_for_unshared_source(tmp_path):
 
     Disk reclaim on delete belongs to the DELETE-serving worker's floor
     (ScopesService._purge_local_clone_best_effort); distributed disk
-    reclaim is PER-15612. Mutation: dropping the confirmation publish
-    fails here.
+    reclaim is the orphan sweep's. Mutation: dropping the confirmation
+    publish fails here.
     """
     dead = _scope("dead", "https://git/repo-a.git")
     sid = GitPolicyFetcher.source_id(dead.policy)
@@ -361,9 +361,9 @@ async def test_leader_keeps_disk_when_live_sibling_shares_source(tmp_path):
     # alone could not fail once the leader lost its disk role — nothing in the
     # process could delete it — so deleting the whole keep-branch left this
     # test green while killing two others.
-    assert not _confirmations(
-        pubsub
-    ), "authorized a fleet-wide purge of a source a live sibling still shares"
+    assert not _confirmations(pubsub), (
+        "authorized a fleet-wide purge of a source a live sibling still shares"
+    )
     assert sid in GitPolicyFetcher.repo_locks, "drained a live source's lock"
     assert clone.exists(), "shared clone must survive a sibling's delete"
 
@@ -433,9 +433,9 @@ async def test_leader_purges_defensively_when_sibling_check_raises(tmp_path):
 
     assert _confirmations(pubsub), "a raising scan withheld the purge on a delete"
     assert clone.exists(), "the leader must not mutate the clone tree"
-    assert any(
-        "confirming defensively" in w for w in warnings
-    ), f"not emitted: {warnings}"
+    assert any("confirming defensively" in w for w in warnings), (
+        f"not emitted: {warnings}"
+    )
 
 
 @pytest.mark.asyncio
@@ -469,9 +469,9 @@ async def test_leader_keeps_clone_on_repoint_when_sibling_check_raises(
     # The observable effect is the WITHHELD confirmation. Asserting clone.exists()
     # alone pinned nothing once the leader lost its disk role — nothing in the
     # process could have deleted it, so that assertion was true by construction.
-    assert not _confirmations(
-        pubsub
-    ), "repoint fail-open authorized a fleet-wide purge on a raising scan"
+    assert not _confirmations(pubsub), (
+        "repoint fail-open authorized a fleet-wide purge on a raising scan"
+    )
     assert clone.exists()
 
 
@@ -655,9 +655,9 @@ async def test_confirmation_is_published_while_holding_the_source_lock(tmp_path)
         ).model_dump(),
     )
     await task
-    assert lock_state_at_publish == [
-        True
-    ], f"confirmation published outside lock_source: {lock_state_at_publish}"
+    assert lock_state_at_publish == [True], (
+        f"confirmation published outside lock_source: {lock_state_at_publish}"
+    )
 
 
 @pytest.mark.asyncio
@@ -733,18 +733,21 @@ async def test_concurrent_purges_for_shared_source_do_not_both_skip(tmp_path):
         await task
 
     await asyncio.gather(delete_then_purge("a"), delete_then_purge("b"))
-    assert _confirmations(
-        pubsub
-    ), "both purges skipped — the shared source's caches leaked fleet-wide"
+    assert _confirmations(pubsub), (
+        "both purges skipped — the shared source's caches leaked fleet-wide"
+    )
 
 
+# Shards exist only with libgit2: the git command line keeps one clone per repo.
+@pytest.mark.fetch_backend("libgit2")
 @pytest.mark.asyncio
 async def test_find_scope_sharing_source_distinguishes_shards(monkeypatch):
     monkeypatch.setattr(opal_server_config, "SCOPES_REPO_CLONES_SHARDS", 4)
     a = _scope("a", "https://git/shared.git", branch="main")
     b = _scope("b", "https://git/shared.git", branch="prod")
-    sid_a, sid_b = GitPolicyFetcher.source_id(a.policy), GitPolicyFetcher.source_id(
-        b.policy
+    sid_a, sid_b = (
+        GitPolicyFetcher.source_id(a.policy),
+        GitPolicyFetcher.source_id(b.policy),
     )
     assert sid_a != sid_b
     repo = FakeScopeRepository([b])
@@ -843,9 +846,9 @@ async def test_handle_purge_message_waits_for_the_source_lock(tmp_path, monkeypa
     try:
         for _ in range(10):
             await asyncio.sleep(0)
-        assert (
-            path in GitPolicyFetcher.repos
-        ), "handle freed while another holder owned lock_source"
+        assert path in GitPolicyFetcher.repos, (
+            "handle freed while another holder owned lock_source"
+        )
         assert not task.done()
     finally:
         holder.release()
@@ -969,9 +972,9 @@ async def test_live_sibling_keeps_its_repo_lock_entry(tmp_path):
     )
 
     assert not _confirmations(pubsub), "authorized a purge a live sibling needs"
-    assert (
-        sid in GitPolicyFetcher.repo_locks
-    ), "drained the lock entry of a source a live sibling still shares"
+    assert sid in GitPolicyFetcher.repo_locks, (
+        "drained the lock entry of a source a live sibling still shares"
+    )
 
 
 @pytest.mark.asyncio
@@ -1081,9 +1084,9 @@ async def test_forged_source_id_cannot_free_an_arbitrary_cached_handle(
         },
     )
 
-    assert (
-        GitPolicyFetcher.repos.get(victim_key) is sentinel
-    ), "a forged source_id evicted a cached handle"
+    assert GitPolicyFetcher.repos.get(victim_key) is sentinel, (
+        "a forged source_id evicted a cached handle"
+    )
 
 
 @pytest.mark.asyncio

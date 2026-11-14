@@ -1,0 +1,402 @@
+# The weekly rebuild: the latest GA release's images, with their Wolfi packages upgraded, so OS
+# fixes published after a release reach its tags. A rebuild republishes new bytes under a release
+# tag, so it takes the release's path: each image is built once into an OCI archive (with an SLSA
+# provenance and an SBOM), gated (both platforms) and tested (amd64), then that archive is copied
+# to Docker Hub and the index Docker Hub serves under the pushed digest is verified.
+#
+# Each image is an overlay (.github/rebuild/Dockerfile): FROM the release's own image, by digest,
+# the version pins dropped from /etc/apk/world (so wolfi-base's own packages move too), apk
+# upgrade, and the trust-store check. The Python packages, OPAL's code and known_hosts stay as
+# released. Each rebuild starts from the release image, never from an earlier rebuild: the label
+# ac.opal.rebuilt-from names it. The tags: <version> and latest move to the rebuild, and
+# <version>-<YYYYMMDD> keeps it.
+#
+# While the latest GA release's images are not Wolfi (0.9.x builds on Debian, which has no apk),
+# the run ends with a notice and rebuilds nothing. A manual run can rebuild another release's tag
+# with dry-run only, and a dry run publishes nothing.
+name: Rebuild images
+
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The release tag to rebuild (default the latest GA release; another only with dry-run)
+        type: string
+        default: ""
+      dry-run:
+        description: Build, gate and test only; publish nothing
+        type: boolean
+        default: false
+
+permissions: {}
+
+# One rebuild at a time; a running one is never cancelled.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash --noprofile --norc -euo pipefail {0}
+
+env:
+  # As in on_release.yml: no build provenance in the printed metadata file, and no build record
+  # uploaded as an artifact.
+  BUILDX_METADATA_PROVENANCE: disabled
+  DOCKER_BUILD_RECORD_UPLOAD: "false"
+
+jobs:
+  # The release to rebuild, its PyPI version, and whether its images are Wolfi.
+  resolve:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read  # the latest release
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      date: ${{ steps.release.outputs.date }}
+      wolfi: ${{ steps.wolfi.outputs.wolfi }}
+    steps:
+      - name: Choose the release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.tag }}
+          DRY_RUN: ${{ inputs.dry-run || false }}
+        run: |
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+          tag=${INPUT_TAG:-$latest}
+          if ! [[ $tag =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::'$tag' is not a GA release tag; only GA releases are rebuilt"
+            exit 1
+          fi
+          if [ "$tag" != "$latest" ] && [ "$DRY_RUN" != true ]; then
+            echo "::error::only the latest GA release ($latest) is republished; rebuild $tag with dry-run"
+            exit 1
+          fi
+          {
+            echo "tag=$tag"
+            echo "version=${tag#v}"
+            echo "date=$(date -u +%Y%m%d)"
+          } >>"$GITHUB_OUTPUT"
+          echo "Rebuilding $tag (latest GA: $latest)"
+
+      - name: Check that the release's images are Wolfi
+        id: wolfi
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          # shellcheck disable=SC2016 # the image expands $ID
+          id=$(docker run --rm --platform linux/amd64 --entrypoint sh "permitio/opal-server:$TAG" \
+            -c '. /etc/os-release && echo "$ID"')
+          if [ "$id" = wolfi ]; then
+            echo "wolfi=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "::notice title=Rebuild::permitio/opal-server:$TAG is $id, not Wolfi; nothing is rebuilt"
+            echo "wolfi=false" >>"$GITHUB_OUTPUT"
+          fi
+
+  # Each image's overlay, for linux/amd64 and linux/arm64, into an OCI archive.
+  build:
+    needs: resolve
+    if: needs.resolve.outputs.wolfi == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: client
+            repository: permitio/opal-client
+          - name: client-standalone
+            repository: permitio/opal-client-standalone
+          - name: client-cedar
+            repository: permitio/opal-client-cedar
+          - name: client-eopa
+            repository: permitio/opal-client-eopa
+          - name: server
+            repository: permitio/opal-server
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Find the release image
+        id: release
+        env:
+          REPOSITORY: ${{ matrix.repository }}
+          TAG: ${{ needs.resolve.outputs.tag }}
+        run: |
+          current=$(docker buildx imagetools inspect "$REPOSITORY:$TAG" --format '{{json .Manifest}}' | jq -r .digest)
+          from=$(docker buildx imagetools inspect "$REPOSITORY:$TAG" --format '{{json .Image}}' |
+            jq -r '."linux/amd64".config.Labels["ac.opal.rebuilt-from"] // empty')
+          image=${from:-$REPOSITORY@$current}
+          if ! [[ $image =~ ^$REPOSITORY@sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::$REPOSITORY:$TAG names '$image' as its release image, not $REPOSITORY@sha256:<digest>"
+            exit 1
+          fi
+          echo "image=$image" >>"$GITHUB_OUTPUT"
+          echo "$REPOSITORY:$TAG is $current; its release image is $image"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1  # v4.4.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
+
+      - name: Build the overlay of ${{ matrix.name }}
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        with:
+          context: .github/rebuild
+          file: .github/rebuild/Dockerfile
+          target: rebuild
+          platforms: linux/amd64,linux/arm64
+          build-args: RELEASE_IMAGE=${{ steps.release.outputs.image }}
+          pull: true
+          no-cache: true
+          outputs: type=oci,dest=${{ runner.temp }}/image.tar
+          provenance: mode=max
+          sbom: true
+
+      - name: Keep the archive for the jobs that test and publish it
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: image-${{ matrix.name }}
+          path: ${{ runner.temp }}/image.tar
+          if-no-files-found: error
+          retention-days: 3
+
+  # As on_release.yml's test-images: every overlay passes the image gate (EOPA reported only),
+  # still installs the release version, and the client and the server run the release's example
+  # stack.
+  test:
+    needs: [resolve, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checkout the release
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+          path: release
+          persist-credentials: false
+
+      - name: Fetch the image archives
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          pattern: image-*
+          path: ${{ runner.temp }}/images
+
+      - name: Load the amd64 and the arm64 images
+        env:
+          IMAGES: ${{ runner.temp }}/images
+        run: |
+          for name in client client-standalone client-cedar client-eopa server; do
+            archive=$IMAGES/image-$name/image.tar
+            skopeo copy --override-os linux --override-arch amd64 \
+              "oci-archive:$archive" "docker-daemon:permitio/opal-$name:test"
+            # Docker keeps an image of another platform; it is saved and scanned, never run.
+            skopeo copy --override-os linux --override-arch arm64 \
+              "oci-archive:$archive" "docker-daemon:permitio/opal-$name:test-arm64"
+          done
+
+      # Every platform that is published passes the gate; the checks after it run amd64 only.
+      - name: Gate the images on Trivy and Grype
+        run: >-
+          .github/scripts/image_gate.py --summary "$GITHUB_STEP_SUMMARY"
+          --report-only permitio/opal-client-eopa:test
+          --report-only permitio/opal-client-eopa:test-arm64
+          permitio/opal-client:test permitio/opal-client-standalone:test
+          permitio/opal-client-cedar:test permitio/opal-server:test
+          permitio/opal-client:test-arm64 permitio/opal-client-standalone:test-arm64
+          permitio/opal-client-cedar:test-arm64 permitio/opal-server:test-arm64
+
+      - name: Check that each image still installs the release version
+        env:
+          EXPECTED: ${{ needs.resolve.outputs.version }}
+        run: |
+          for name in client client-standalone client-cedar client-eopa server; do
+            image=permitio/opal-$name:test
+            actual=$(docker run --rm --entrypoint pip "$image" show opal-common | sed -n 's/^Version: //p')
+            echo "$image installs opal-common $actual"
+            if [ "$actual" != "$EXPECTED" ]; then
+              echo "::error::$image installs opal-common '$actual', expected '$EXPECTED'"
+              exit 1
+            fi
+          done
+
+      - name: Bring up the release's example stack
+        working-directory: release
+        run: |
+          sed 's/:latest/:test/g' docker/docker-compose-example.yml > docker/docker-compose-test.yml
+          docker compose -f docker/docker-compose-test.yml up -d
+
+      - name: Check if OPA is healthy
+        working-directory: release
+        run: ./scripts/wait-for.sh -t 60 http://localhost:8181/v1/data/users -- sleep 10 && curl -s "http://localhost:8181/v1/data/users" | jq '.result.bob.location.country == "US"'
+
+      - name: Output container logs
+        if: always()
+        working-directory: release
+        run: docker compose -f docker/docker-compose-test.yml logs
+
+  # Not on a dry run. As on_release.yml's publish-images, in the same docker-hub environment and
+  # through the same OIDC login, and never at the same time as a release's copy of the same
+  # repository.
+  publish:
+    needs: [resolve, test]
+    if: ${{ !inputs.dry-run }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: docker-hub
+    permissions:
+      contents: read  # the latest release, checked again before the copy
+      id-token: write  # the GitHub ID token Docker Hub exchanges for the short-lived token
+    concurrency:
+      group: docker-hub-${{ matrix.repository }}
+      cancel-in-progress: false
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: client
+            repository: permitio/opal-client
+          - name: client-standalone
+            repository: permitio/opal-client-standalone
+          - name: client-cedar
+            repository: permitio/opal-client-cedar
+          - name: client-eopa
+            repository: permitio/opal-client-eopa
+          - name: server
+            repository: permitio/opal-server
+    steps:
+      - name: Check that the release is still the latest GA release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.resolve.outputs.tag }}
+        run: |
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+          if [ "$latest" != "$TAG" ]; then
+            echo "::error::the latest GA release is now $latest, not $TAG; nothing was published"
+            exit 1
+          fi
+
+      - name: Fetch the image archive
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: image-${{ matrix.name }}
+          path: ${{ runner.temp }}/image
+
+      - name: Login to Docker Hub (OIDC)
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0
+        env:
+          DOCKERHUB_OIDC_CONNECTIONID: ${{ vars.DOCKERHUB_OIDC_CONNECTIONID }}
+          DOCKERHUB_OIDC_EXPIREIN: '600'
+        with:
+          username: ${{ vars.DOCKERHUB_ORGANIZATION }}
+
+      - name: Publish ${{ matrix.name }}
+        env:
+          ARCHIVE: ${{ runner.temp }}/image/image.tar
+          REPOSITORY: ${{ matrix.repository }}
+          TAG: ${{ needs.resolve.outputs.tag }}
+          DATE: ${{ needs.resolve.outputs.date }}
+        run: |
+          if ! skopeo login --get-login docker.io >/dev/null; then
+            echo "::error::the Docker Hub login left no credential skopeo can read; nothing was published"
+            exit 1
+          fi
+          built=$(skopeo inspect --raw "oci-archive:$ARCHIVE" | sha256sum | cut -d' ' -f1)
+          for tag in "$TAG-$DATE" "$TAG" latest; do
+            skopeo copy --all --preserve-digests --retry-times 3 \
+              "oci-archive:$ARCHIVE" "docker://$REPOSITORY:$tag"
+            pushed=$(skopeo inspect --raw "docker://$REPOSITORY:$tag" | sha256sum | cut -d' ' -f1)
+            if [ "$pushed" != "$built" ]; then
+              echo "::error::$REPOSITORY:$tag is sha256:$pushed, not the tested sha256:$built"
+              exit 1
+            fi
+            echo "$REPOSITORY:$tag is sha256:$built, the image that was tested"
+          done
+          echo "sha256:$built" >"$RUNNER_TEMP/digest"
+
+      - name: Keep the pushed digest for verify
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: digest-${{ matrix.name }}
+          path: ${{ runner.temp }}/digest
+          if-no-files-found: error
+          retention-days: 3
+
+  # What Docker Hub now serves under each release tag carries the rebuild's provenance (this
+  # repository, this run's commit, the overlay's target) and an SBOM.
+  verify:
+    needs: [resolve, publish]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fetch the pushed digests
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          pattern: digest-*
+          path: ${{ runner.temp }}/digests
+
+      - name: Check each image's platforms, provenance and SBOM
+        env:
+          DIGESTS: ${{ runner.temp }}/digests
+          COMMIT: ${{ github.sha }}
+        run: |
+          code=0
+          for name in client client-standalone client-cedar client-eopa server; do
+            digest=$(cat -- "$DIGESTS/digest-$name/digest")
+            digest=${digest#sha256:}
+            .github/scripts/verify_release.py image "permitio/opal-$name@sha256:$digest" \
+              --target rebuild --commit "$COMMIT" --repository "$GITHUB_REPOSITORY" || code=1
+          done
+          exit "$code"
+
+  # A scheduled or manual rebuild that failed, other than a dry run: a notice to the security
+  # Slack channel that names the failed jobs.
+  notify:
+    needs: [resolve, build, test, publish, verify]
+    if: always() && !inputs.dry-run && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: security-scan
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Post to Slack
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          TAG: ${{ needs.resolve.outputs.tag }}
+          SECURITY_SLACK_WEBHOOK_URL: ${{ secrets.SECURITY_SLACK_WEBHOOK_URL }}
+        run: |
+          body=$RUNNER_TEMP/failed-jobs.txt
+          jq -r 'to_entries[] | select(.value.result == "failure" or .value.result == "cancelled")
+            | "• \(.key): \(.value.result)"' <<<"$NEEDS" >"$body"
+          .github/scripts/notify.sh "image rebuild ${TAG:-of the latest release}" "failed" "$body"

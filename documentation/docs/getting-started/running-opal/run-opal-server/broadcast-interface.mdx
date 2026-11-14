@@ -6,7 +6,7 @@
 
 When scaling the OPAL Server to **multiple workers** and/or **multiple containers**, we use a **broadcast channel** to sync between all the instances of OPAL Server. In other words, communication on the broadcast channel is **communication between OPAL servers**, and is not related to the OPAL client.
 
-Under the hood, our interface to the broadcast channel **backbone service** is implemented by [encode/broadcaster](https://github.com/encode/broadcaster).
+Under the hood, our interface to the broadcast channel **backbone service** is implemented by [encode/broadcaster](https://github.com/encode/broadcaster), except for Redis, where OPAL uses its own backend on [redis-py](https://github.com/redis/redis-py).
 
 At the moment, the supported broadcast channel backbones are:
 
@@ -62,7 +62,7 @@ This is how you define the number of workers (pay attention: this env var is not
 
 #### 4) Broadcaster reconnection (resilience)
 
-If the broadcast backbone (Postgres/Redis/Kafka) briefly drops — for example during a managed-database failover or restart — OPAL servers reconnect to it automatically with bounded exponential backoff, instead of dropping their connected clients. This is enabled by default; the following **server-side** env vars (all prefixed with `OPAL_`) tune it:
+If the broadcast backbone (Postgres/Redis/Kafka) briefly drops — for example during a managed-database failover or restart — OPAL servers reconnect to it automatically with bounded exponential backoff, instead of dropping their connected clients. On Redis, OPAL makes every reconnect itself, so a Redis restart is handled like a Postgres one. This is enabled by default; the following **server-side** env vars (all prefixed with `OPAL_`) tune it:
 
 | Env Var Name                                 | Default | Function                                                                                                                                          |
 | :------------------------------------------- | :------ | :----------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -73,7 +73,7 @@ If the broadcast backbone (Postgres/Redis/Kafka) briefly drops — for example d
 | OPAL_BROADCAST_REPLAY_BUFFER_SIZE            | `10000` | Max number of outbound broadcasts buffered while the backbone is down and replayed on reconnect (`0` disables buffering). On overflow the oldest are dropped. |
 | OPAL_BROADCAST_RESYNC_ON_RECONNECT           | `true`  | After a backbone gap, force this worker's clients to reconnect so they re-fetch full policy + data state. Set to `false` to rely only on best-effort replay. |
 | OPAL_BROADCAST_RESYNC_SETTLE_SECONDS         | `2`     | Grace period after a reconnect before replaying buffered broadcasts and resyncing clients, to let peer servers re-subscribe.                      |
-| OPAL_BROADCAST_HEALTHCHECK_ENABLED           | `true`  | Make `/healthcheck` reflect the broadcaster reader's health: it returns `503` (instead of `200`) when the reader is wedged while clients depend on it, so a k8s readiness/liveness probe can route away from or restart the worker. A normal transient reconnect still reads healthy. Set to `false` to keep `/healthcheck` always `200`. |
+| OPAL_BROADCAST_HEALTHCHECK_ENABLED           | `true`  | Make `/healthcheck` (readiness) and `/healthz/live` (liveness) reflect the broadcaster reader's health: they return `503` (instead of `200`) when the reader is wedged or gave up while clients depend on it, so a k8s probe can route away from or restart the worker. In scopes mode `/healthcheck` also returns `503` until the worker's own backbone subscription has started. A normal transient reconnect still reads healthy. Set to `false` to drop these broadcaster checks from both routes. |
 
 Consistency across the outage is handled in two layers. While the backbone is unreachable, client websocket connections are kept alive but cross-server fan-out is paused. On reconnect:
 

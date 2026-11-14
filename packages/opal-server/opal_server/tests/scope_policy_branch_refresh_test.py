@@ -18,6 +18,7 @@ scope's clients even when the clone's scope ref already equals the branch
 head, which is what a move back to a repository the scope used before looks
 like.
 """
+
 import asyncio
 import datetime
 import re
@@ -49,6 +50,9 @@ from opal_server.scopes.scope_repository import ScopeNotFoundError
 from opal_server.scopes.service import NewCommitsCallbacks, ScopesService
 from opal_server.scopes.task import ScopesPolicyWatcherTask
 from starlette.requests import Request
+
+# What these tests stub or measure is libgit2's fetch and clone.
+pytestmark = pytest.mark.fetch_backend("libgit2")
 
 _WAIT_METRIC = "opal_server.scopes.policy_clone_wait"
 _REFRESH_METRIC = "opal_server.scopes.policy_branch_refresh"
@@ -622,9 +626,9 @@ async def test_a_client_that_hangs_up_during_a_branch_wait_is_not_reported(
     assert not [
         r["message"] for r in logs.emitted if r["level"].name in ("WARNING", "ERROR")
     ]
-    assert not [
-        t for t, _ in emitted["event"] if t == "ScopePolicyUnavailable"
-    ], "a client that had hung up still produced a 409 event"
+    assert not [t for t, _ in emitted["event"] if t == "ScopePolicyUnavailable"], (
+        "a client that had hung up still produced a 409 event"
+    )
 
 
 def test_the_claims_are_bounded(monkeypatch):
@@ -981,7 +985,7 @@ async def test_a_burst_for_a_missing_branch_costs_one_fetch(monkeypatch, tmp_pat
     """A fetch that started after a sync request arrived already looked for the
     branch, so that request does not fetch again.
 
-    Mutation: dropping the `_was_fetched_after(req_time)` check in the
+    Mutation: dropping the `_fetched_after(branch, req_time)` check in the
     missing-branch arm of `_should_fetch` fetches for every request.
     """
     fetcher = GitPolicyFetcher(Path(tmp_path), "live", _scope().policy)
@@ -993,9 +997,9 @@ async def test_a_burst_for_a_missing_branch_costs_one_fetch(monkeypatch, tmp_pat
     GitPolicyFetcher.repos_last_fetched.pop(fetcher._source_id, None)
     try:
         assert await fetcher._should_fetch(None, req_time=asked) is True
-        GitPolicyFetcher.repos_last_fetched[
-            fetcher._source_id
-        ] = asked + datetime.timedelta(seconds=1)
+        GitPolicyFetcher.repos_last_fetched[fetcher._source_id] = (
+            asked + datetime.timedelta(seconds=1)
+        )
         assert await fetcher._should_fetch(None, req_time=asked) is False
         # Without a request time (a pass), the missing branch is still fetched.
         assert await fetcher._should_fetch(None) is True
@@ -1172,9 +1176,9 @@ async def test_a_coalesced_sync_finds_a_branch_another_scopes_fetch_brought(
 
     await service.sync_scope(scope_id="s2", req_time=asked, honor_backoff=True)
 
-    assert (
-        GitPolicyFetcher.repos_last_fetched[source_id] == fetched_at
-    ), "the coalesced sync fetched again"
+    assert GitPolicyFetcher.repos_last_fetched[source_id] == fetched_at, (
+        "the coalesced sync fetched again"
+    )
     assert len(pubsub.published) == published + 1, "s2's clients were not told"
     clone = git.Repo(
         GitPolicyFetcher.repo_clone_path(tmp_path, scopes._scopes["s2"].policy)
@@ -1496,14 +1500,15 @@ def test_a_clone_deleted_during_a_branch_hold_keeps_the_hold(monkeypatch, emitte
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("cloned, status", [(True, 409), (False, 503)])
+@pytest.mark.parametrize("cloned", [True, False])
 async def test_a_branch_name_that_cannot_be_a_ref_is_answered_at_once(
-    tmp_path, emitted, clear_fetcher_caches, cloned, status
+    tmp_path, emitted, clear_fetcher_caches, cloned
 ):
-    """``x~1`` parses as a revision, so make_bundle answers a miss for it, but
-    no fetch can ever bring it: it cannot name a ref. The route answers what
-    it answered before the wait existed, at once, and asks no server for a
-    sync, which would fail on the name on every server.
+    """No fetch can ever bring ``x~1``: it cannot name a ref. The route answers
+    the 409 of a missing branch at once, whether the scope's clone is there or
+    not (a clone that is not there would otherwise be a 503 to retry forever),
+    and asks no server for a sync, which would fail on the name on every
+    server.
 
     Mutation: offering such a name the branch wait holds the request for the
     whole wait and publishes a sync request.
@@ -1519,7 +1524,7 @@ async def test_a_branch_name_that_cannot_be_a_ref_is_answered_at_once(
     async with _route_app(scopes, pubsub, service) as client:
         resp = await client.get("/scopes/moved/policy")
 
-    assert resp.status_code == status, resp.text
+    assert resp.status_code == 409, resp.text
     assert _waits(emitted) == []
     assert pubsub.syncs() == []
 
@@ -1767,6 +1772,32 @@ async def test_a_publish_that_took_time_and_failed_reports_that_time(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_a_clone_repair_asks_for_no_sync_while_the_publishes_are_at_the_bound(
+    monkeypatch, emitted
+):
+    """As for a missing branch: with as many publishes pending as the bound,
+    a clone that lacks its branch's commit starts none and claims nothing."""
+    monkeypatch.setattr(scopes_api, "_BRANCH_REFRESH_PUBLISHES_MAX", 1)
+    release = asyncio.Event()
+    first = asyncio.ensure_future(release.wait())
+    scopes_api._branch_refresh_publishes.add(first)
+    first.add_done_callback(scopes_api._branch_refresh_publishes.discard)
+
+    async def _unexpected():
+        raise AssertionError("a publish started at the bound")
+
+    key = ("commit", "live", "source", "main")
+    now = asyncio.get_running_loop().time()
+    await scopes_api._request_clone_repair(key, _unexpected, now, WAIT, scope_id="live")
+
+    assert key not in scopes_api._branch_refresh_requested
+    assert _refreshes(emitted) == ["publish_backlog"]
+    release.set()
+    await first
+    await asyncio.sleep(0)  # its done callback
+
+
+@pytest.mark.asyncio
 async def test_a_stuck_broadcast_backend_does_not_pile_up_publishes(
     monkeypatch, emitted
 ):
@@ -1911,8 +1942,8 @@ def test_a_branch_change_on_one_repository_is_a_repoint(monkeypatch):
 async def test_a_publish_that_raises_timeout_error_itself_is_a_failed_publish(
     monkeypatch, emitted
 ):
-    """Mutation: `wait_for` (as before) takes it for the hold running out on
-    3.11+: the claim is kept and the request held for a sync never sent."""
+    """Mutation: `wait_for` (as before) takes it for the hold running out: the
+    claim is kept and the request held for a sync never sent."""
 
     async def times_out():
         raise TimeoutError("the broadcast backend timed out")
@@ -2294,3 +2325,68 @@ async def test_a_failed_publish_restores_the_claim_a_request_is_still_riding(
     timed_out = {"outcome": "timeout", "for": "branch"}
     cancelled = {"outcome": "cancelled", "for": "branch"}
     assert _waits(emitted) == ([cancelled, timed_out] if abandoned else [timed_out])
+
+
+# --- a branch whose commit the clone lost ------------------------------------
+
+
+def _gut_object_store(clone_path):
+    """What a crash mid-gc or a corrupt disk leaves: refs intact, objects gone."""
+    git_dir = Path(clone_path) / ".git"
+    (git_dir / "objects").rename(Path(clone_path).parent / "objects-moved-away")
+    (git_dir / "objects" / "pack").mkdir(parents=True)
+
+
+@pytest.mark.parametrize(
+    "interval, wait",
+    [(60.0, WAIT), (0.0, WAIT), (60.0, 0.0)],
+    ids=["interval-on", "interval-off", "wait-off"],
+)
+@pytest.mark.asyncio
+async def test_a_branch_whose_commit_is_gone_requests_the_sync_that_repairs_it(
+    tmp_path, monkeypatch, emitted, clear_fetcher_caches, interval, wait
+):
+    """The clone has the branch's ref but not the commit it names: the request
+    gets the retryable 503 at once, and, as for a missing branch, asks for one
+    sync of the scope per interval. That sync finds the commit gone, deletes
+    the clone and clones it again, and the next request is served. With the
+    interval or the wait off nothing is asked for, as for the branch wait.
+
+    Mutation: answering the 503 without asking for the sync fails the
+    interval-on case.
+    """
+    monkeypatch.setattr(
+        opal_server_config, "SCOPES_POLICY_BRANCH_REFRESH_INTERVAL", interval
+    )
+    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", wait)
+    origin, url = _shared_bed(tmp_path)
+    scope = _git_scope("live", url, "main")
+    scopes = FakeScopeRepository([scope])
+    pubsub = RecordingPubSub()
+    service = ScopesService(base_dir=tmp_path, scopes=scopes, pubsub_endpoint=pubsub)
+    await service.sync_scope(scope_id="live")
+    pubsub.published.clear()
+    _gut_object_store(GitPolicyFetcher.repo_clone_path(tmp_path, scope.policy))
+    GitPolicyFetcher.reset_caches()
+
+    async with _route_app(scopes, pubsub, service) as client:
+        first = await client.get("/scopes/live/policy")
+        again = await client.get("/scopes/live/policy")
+        requested = pubsub.syncs()
+        for sync in requested:
+            await service.sync_scope(**sync)
+        repaired = await client.get("/scopes/live/policy")
+
+    assert first.status_code == 503, first.text
+    assert first.headers["retry-after"] == "5"
+    assert again.status_code == 503
+    if interval and wait:
+        assert requested == [
+            {"scope_id": "live", "force_fetch": False, "honor_backoff": True}
+        ], "one sync per interval"
+        assert _refreshes(emitted) == ["requested"]
+        assert repaired.status_code == 200, repaired.text
+        assert PolicyBundle(**repaired.json()).hash == origin.head.commit.hexsha
+    else:
+        assert requested == []
+        assert repaired.status_code == 503

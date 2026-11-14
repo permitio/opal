@@ -2,10 +2,10 @@
 -e ./packages/opal-client
 -e ./packages/opal-server
 ipython>=8.10.0
-pytest
-pytest-asyncio
-pytest-rerunfailures
+pytest==9.2.0
+pytest-asyncio==1.4.1
+pytest-rerunfailures==16.7
 wheel>=0.38.0
 twine
-setuptools>=78.1.1 # not directly required, pinned by Snyk to avoid a vulnerability
+setuptools>=84.1.0 # not directly required; below 84.1.0: CVE-2026-59890, GHSA-xmj3-9gf7-h52w
 zipp>=3.19.1 # not directly required, pinned by Snyk to avoid a vulnerability

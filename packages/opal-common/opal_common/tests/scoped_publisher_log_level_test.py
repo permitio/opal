@@ -14,7 +14,7 @@ class _RecordingEndpoint:
 
 @pytest.mark.asyncio
 async def test_scoped_publish_line_is_debug_and_still_publishes():
-    """'Publishing to topics' is DEBUG (PER-16361).
+    """'Publishing to topics' is DEBUG.
 
     For a policy push it repeated the push's one INFO line ("Triggering
     policy update for scope").

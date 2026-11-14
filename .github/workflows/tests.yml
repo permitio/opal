@@ -60,17 +60,8 @@ jobs:
       # cancels the others and hides whether they pass.
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
-        # 3.13 leg: opal-common and opal-client only. Their python_requires
-        # admits 3.13; opal-server's does not, because its pinned pygit2<1.15
-        # ships no cp313 wheel and the sdist needs libgit2 1.7 headers. So this
-        # leg cannot install requirements.txt (which pulls in all three) and
-        # instead pip-installs the two relaxed packages - with pip, deliberately:
-        # uv does not enforce Requires-Python for local path sources, so a uv
-        # install here would pass even if the metadata still said <3.13.
-        include:
-          - python-version: "3.13"
-            common-and-client-only: true
+        # The one Python the packages' python_requires admits.
+        python-version: ["3.14"]
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -81,22 +72,13 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
     - name: Install dependencies
-      env:
-        COMMON_AND_CLIENT_ONLY: ${{ matrix.common-and-client-only }}
       run: |
         python -m pip install pip==26.2.2
-        python -m pip install flake8==7.5.0
-        if [ "$COMMON_AND_CLIENT_ONLY" = "true" ]; then
-          pip install -e ./packages/opal-common -e ./packages/opal-client \
-            pytest==9.2.0 pytest-asyncio==1.4.1 pytest-rerunfailures==16.7
-        else
-          pip install -r requirements.txt
-        fi
+        pip install -r requirements.txt
     # opa_argv_real_binary_test.py hands the argv OPAL generates to the REAL
     # binary. Without it those assertions SKIP. How the enums in that argv
     # render has changed with the python version before (Enum.__format__ in
-    # 3.11), so they run on every leg of this matrix, 3.11 to 3.13, and not
-    # only on the 3.12 the images run.
+    # 3.11), so they run on every leg of this matrix.
     - name: Install OPA (for the inline-OPA argv tests)
       run: |
         # --retry: a dropped connection mid-download failed a whole leg once (curl: (56))
@@ -107,28 +89,8 @@ jobs:
       env:
         # pinned: an unpinned `latest` would make a flag rename look like our bug
         OPA_VERSION: 1.21.4  # keep equal to the opa-extractor image in docker/Dockerfile
-    - name: Lint with flake8
-      run: |
-        # stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     - name: Test with pytest
-      env:
-        COMMON_AND_CLIENT_ONLY: ${{ matrix.common-and-client-only }}
-      run: |
-        if [ "$COMMON_AND_CLIENT_ONLY" = "true" ]; then
-          # These three need a running/importable opal-server, which this leg
-          # cannot install (see the matrix note). Everything else in the two
-          # relaxed packages runs - including the wire_compat corpus, the enum
-          # inventory sweep and the real-binary OPA argv tests.
-          pytest packages/opal-common packages/opal-client \
-            --ignore=packages/opal-common/opal_common/tests/test_config.py \
-            --ignore=packages/opal-client/opal_client/tests/data_updater_test.py \
-            --ignore=packages/opal-client/opal_client/tests/server_to_client_intergation_test.py
-        else
-          pytest
-        fi
+      run: pytest
 
   e2e-tests:
     runs-on: ubuntu-24.04
@@ -178,143 +140,222 @@ jobs:
           tags: |
             permitio/opal-server:test
 
-      - name: Check that no test certificate fixture is in the images
-        # .dockerignore and docker/Dockerfile's COPY --exclude both keep them out. This fails if
-        # one slips back in. These builds read .dockerignore, so they can't show that --exclude
-        # works alone; pin it, since a build that skips .dockerignore (docker build <git-url>)
-        # has only --exclude.
+      - name: Check that the packages' tests are not in the images
+        # .dockerignore and docker/Dockerfile's COPY --exclude both keep them out, fixtures with
+        # certificates and keys included. This fails if one slips back in. These builds read
+        # .dockerignore, so they can't show that --exclude works alone; pin it, since a build
+        # that skips .dockerignore (docker build <git-url>) has only --exclude.
         run: |
-          if [ "$(grep -cF -- 'COPY --exclude=**/tests/*.pem ./packages ./packages/' docker/Dockerfile)" -ne 2 ]; then
-            echo "::error::docker/Dockerfile must keep COPY --exclude=**/tests/*.pem in both stages, for builds that skip .dockerignore"
+          if [ "$(grep -cF -- 'COPY --exclude=**/tests ./packages ./packages/' docker/Dockerfile)" -ne 1 ]; then
+            echo "::error::docker/Dockerfile must keep COPY --exclude=**/tests in the common stage, for builds that skip .dockerignore"
             exit 1
           fi
           for image in permitio/opal-client:test permitio/opal-server:test; do
-            tests=$(docker run --rm --entrypoint sh "$image" -c 'find /opal/packages -path "*/tests/*" -name "*.py" | wc -l')
-            found=$(docker run --rm --entrypoint sh "$image" -c 'find /opal/packages -name "*.pem"')
-            if [ "$tests" -eq 0 ]; then
-              echo "::error::$image: no test modules under /opal/packages, so this check saw nothing"
+            modules=$(docker run --rm --entrypoint sh "$image" -c 'find /opal/packages /opt/venv -path "*/opal_*" -name "*.py" | wc -l')
+            found=$(docker run --rm --entrypoint sh "$image" -c 'find /opal/packages /opt/venv -type d -name tests -path "*/opal_*"')
+            if [ "$modules" -eq 0 ]; then
+              echo "::error::$image: no OPAL modules under /opal/packages or /opt/venv, so this check saw nothing"
               exit 1
             fi
             if [ -n "$found" ]; then
-              echo "::error::$image carries certificate fixtures:"
+              echo "::error::$image carries the packages' tests:"
               echo "$found"
               exit 1
             fi
-            echo "$image: no .pem among $tests test files"
+            echo "$image: no tests directory among $modules OPAL modules"
           done
 
+      - name: Check the images' base, Python and user
+        # Wolfi, Python 3.14 from the venv at /opt/venv, and the opal user (uid and gid 1000,
+        # home /opal) with an /etc/passwd entry, which ssh needs to fetch a policy repo over SSH.
+        run: |
+          # shellcheck disable=SC2016 # the script runs in the image, which expands it
+          check='
+            . /etc/os-release
+            [ "$ID" = wolfi ] || { echo "the base is $ID, not wolfi"; exit 1; }
+            [ "$(command -v python)" = /opt/venv/bin/python ] ||
+              { echo "python is $(command -v python), not /opt/venv/bin/python"; exit 1; }
+            python -c "import sys; assert sys.version_info[:2] == (3, 14), sys.version"
+            [ "$(id -u):$(id -g)" = 1000:1000 ] || { echo "the user is $(id -u):$(id -g)"; exit 1; }
+            python -c "import pwd; home = pwd.getpwuid(1000).pw_dir; assert home == \"/opal\", home"
+          '
+          for image in permitio/opal-client:test permitio/opal-server:test; do
+            if ! docker run --rm --entrypoint sh "$image" -c "$check"; then
+              echo "::error::$image is not Wolfi with Python 3.14 in /opt/venv and opal 1000:1000 at /opal"
+              exit 1
+            fi
+            echo "$image: Wolfi, Python 3.14 in /opt/venv, opal 1000:1000 with home /opal"
+          done
+
+      - name: Check the server image's SSH known_hosts and home
+        # For an SSH policy repo on github.com, ssh and libgit2 read $HOME/.ssh/known_hosts, which
+        # the build fills with POLICY_REPO_HOST's keys (github.com by default). The opal user's
+        # HOME must be /opal, where that file is, and the file must hold github.com's ed25519
+        # and ecdsa keys, each one GitHub publishes now (api.github.com/meta): the build checks
+        # them against the fingerprints docker/Dockerfile pins, and this catches a pin GitHub
+        # has since rotated. ssh-keygen runs on the runner; the image has none.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          image=permitio/opal-server:test
+          # shellcheck disable=SC2016 # the image expands $HOME
+          home=$(docker run --rm --entrypoint sh "$image" -c 'echo "$HOME"')
+          if [ "$home" != /opal ]; then
+            echo "::error::$image runs as opal with HOME=$home, not /opal"
+            exit 1
+          fi
+          known_hosts=$RUNNER_TEMP/known_hosts
+          if ! docker run --rm --entrypoint cat "$image" /opal/.ssh/known_hosts >"$known_hosts"; then
+            echo "::error::$image has no /opal/.ssh/known_hosts: the build did not scan POLICY_REPO_HOST"
+            exit 1
+          fi
+          entries=$(ssh-keygen -F github.com -f "$known_hosts") || entries=''
+          for type in ssh-ed25519 ecdsa-sha2-nistp256; do
+            if ! grep -q " $type " <<<"$entries"; then
+              echo "::error::$image: /opal/.ssh/known_hosts has no $type key for github.com"
+              exit 1
+            fi
+          done
+          published=$(gh api meta --jq '.ssh_key_fingerprints[]')
+          for fingerprint in $(ssh-keygen -lf "$known_hosts" | cut -d ' ' -f 2); do
+            if ! grep -qxF "${fingerprint#SHA256:}" <<<"$published"; then
+              echo "::error::$image: known_hosts holds $fingerprint, which GitHub does not publish"
+              exit 1
+            fi
+          done
+          echo "$image: HOME=/opal, and known_hosts holds github.com's published ed25519 and ecdsa keys"
+
+      - name: Gate the images on Trivy and Grype
+        # .github/scripts/image_gate.py scans both images with Trivy and with Grype and fails on a
+        # fixable HIGH or CRITICAL vulnerability that no waiver in force in
+        # .github/image-waivers.toml covers. The job summary lists what blocked and what is waived.
+        # The steps after it still run when the gate failed (they publish nothing), so a finding
+        # the pull request did not cause does not hide what its E2E does; never after a cancel.
+        id: gate
+        run: >-
+          .github/scripts/image_gate.py --summary "$GITHUB_STEP_SUMMARY"
+          permitio/opal-client:test permitio/opal-server:test
+
+      - name: Check that an image built FROM the client adds a package with pip install --user
+        if: ${{ !cancelled() && (success() || steps.gate.outcome == 'failure') }}
+        # The docs add a custom fetch provider this way. The venv keeps the user site for it. The
+        # default builder is the one that sees the image loaded above.
+        run: |
+          dir=$RUNNER_TEMP/derived
+          mkdir -p "$dir/opal_fetcher_ci"
+          echo 'OK = 1' >"$dir/opal_fetcher_ci/__init__.py"
+          printf '%s\n' '[project]' 'name = "opal-fetcher-ci"' 'version = "0"' \
+            '[build-system]' 'requires = ["setuptools"]' 'build-backend = "setuptools.build_meta"' \
+            >"$dir/pyproject.toml"
+          printf '%s\n' 'FROM permitio/opal-client:test' 'COPY --chown=opal . /tmp/fetcher' \
+            'RUN pip install --user --no-build-isolation /tmp/fetcher' >"$dir/Dockerfile"
+          docker buildx build --builder default --load -t opal-client:derived "$dir"
+          docker run --rm --entrypoint python opal-client:derived -c 'import opal_fetcher_ci'
+
       - name: Set up Python
+        if: ${{ !cancelled() && (success() || steps.gate.outcome == 'failure') }}
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
-          python-version: "3.11"
+          python-version: "3.14"
 
-      - name: Install opal packages
-        run: |
-          python -m pip install -e ./packages/opal-common
-          python -m pip install -e ./packages/opal-client
-          python -m pip install -e ./packages/opal-server
+      - name: Install the E2E suite's requirements
+        if: ${{ !cancelled() && (success() || steps.gate.outcome == 'failure') }}
+        run: python -m pip install --require-hashes -r app-tests/requirements.txt
 
-      - name: App Tests
-        working-directory: ./app-tests
+      # The policy repo is on the stack's own git server, so this needs no secret and runs
+      # on pull requests from forks too. e2e-github.yml runs the policy repo tests again
+      # with the repo on github.com, outside the required checks.
+      - name: E2E tests
+        if: ${{ !cancelled() && (success() || steps.gate.outcome == 'failure') }}
+        working-directory: app-tests
         env:
           OPAL_IMAGE_TAG: test
-          OPAL_TESTS_POLICY_REPO_DEPLOY_KEY: ${{ secrets.OPAL_TESTS_POLICY_REPO_DEPLOY_KEY }}
-        run: |
-          # Prepare git for using tests policy repo
-          OPAL_POLICY_REPO_SSH_KEY_PATH="$(realpath .)/opal-tests-policy-repo-key"
-          export OPAL_POLICY_REPO_SSH_KEY_PATH
-          echo "$OPAL_TESTS_POLICY_REPO_DEPLOY_KEY" > "$OPAL_POLICY_REPO_SSH_KEY_PATH"
-          chmod 400 "$OPAL_POLICY_REPO_SSH_KEY_PATH"
+        run: python -m pytest
 
-          git config --global core.sshCommand "ssh -i $OPAL_POLICY_REPO_SSH_KEY_PATH -o IdentitiesOnly=yes"
-          git config --global user.name "$GITHUB_ACTOR"
-          git config --global user.email "<>"
-
-          ./run.sh
-
-  e2e-tests-alpine:
+  # The git command-line tests in the server image, so they run under the image's busybox sh,
+  # git and ssh, the ones the server runs git with. server-test is the server image plus what
+  # the tests need (sshd, git-daemon, openssl, pytest); it is never published.
+  git-cli-in-image:
+    name: Git CLI tests in the server image
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    name: E2E Tests (Alpine)
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
-      - name: Checkout
+      - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          fetch-depth: 0
           persist-credentials: false
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1  # v4.4.0
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
 
-      - name: Build client (alpine)
-        id: build_client_alpine
+      - name: Build the server test image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
         with:
           context: .
           file: docker/Dockerfile
+          target: server-test
           push: false
-          target: client-alpine
-          cache-from: type=registry,ref=permitio/opal-client:latest-alpine
-          cache-to: type=inline
           load: true
-          tags: |
-            permitio/opal-client:test-alpine
+          tags: opal-server-test:ci
 
-      - name: Build server (alpine)
-        id: build_server_alpine
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+      # As uid 1000, the image's user (as root, the permission tests skip themselves), with no
+      # network. The checkout's packages come first on PYTHONPATH, since the tests import each
+      # other as opal_server.tests modules, which the installed package leaves out. --init
+      # reaps the processes the tests orphan, as a pod's init does. TESTS_REQUIRE_SSHD=1 fails
+      # a test that needs sshd where none starts, instead of skipping it.
+      - name: Run the git CLI tests in the server image
+        run: >-
+          docker run --rm --init --user 1000:1000 --network none -e TESTS_REQUIRE_SSHD=1
+          -e PYTHONPATH=/src/packages/opal-common:/src/packages/opal-server
+          -v "$PWD:/src:ro" -w /src opal-server-test:ci
+          python -m pytest -p no:cacheprovider -q -ra
+          packages/opal-server/opal_server/tests/git_cli_test.py
+          packages/opal-server/opal_server/tests/git_cli_fetch_test.py
+          packages/opal-server/opal_server/tests/git_cli_isolation_test.py
+          packages/opal-server/opal_server/tests/git_cli_lifecycle_test.py
+          packages/opal-server/opal_server/tests/git_cli_pass_test.py
+          packages/opal-server/opal_server/tests/git_cli_narrow_fetch_test.py
+          packages/opal-server/opal_server/tests/git_cli_spawn_test.py
+          packages/opal-server/opal_server/tests/git_config_isolation_test.py
+          packages/opal-server/opal_server/tests/git_repack_test.py
+          packages/opal-server/opal_server/tests/default_fetch_backend_test.py
+          packages/opal-server/opal_server/tests/git_host_keys_test.py
+
+  # The scope bed (app-tests/git-leak) on each fetch backend. Each leg sets its backend in an
+  # override file, so it keeps its meaning whatever the server's default is.
+  e2e-scopes:
+    name: Scope E2E (${{ matrix.backend }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [libgit2, cli]
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          context: .
-          file: docker/Dockerfile
-          push: false
-          target: server-alpine
-          cache-from: type=registry,ref=permitio/opal-server:latest-alpine
-          cache-to: type=inline
-          load: true
-          tags: |
-            permitio/opal-server:test-alpine
+          persist-credentials: false
 
-      - name: Check that no test certificate fixture is in the images
-        # .dockerignore and docker/Dockerfile's COPY --exclude both keep them out. This fails if
-        # one slips back in. These builds read .dockerignore, so they can't show that --exclude
-        # works alone; pin it, since a build that skips .dockerignore (docker build <git-url>)
-        # has only --exclude.
-        run: |
-          if [ "$(grep -cF -- 'COPY --exclude=**/tests/*.pem ./packages ./packages/' docker/Dockerfile)" -ne 2 ]; then
-            echo "::error::docker/Dockerfile must keep COPY --exclude=**/tests/*.pem in both stages, for builds that skip .dockerignore"
-            exit 1
-          fi
-          for image in permitio/opal-client:test-alpine permitio/opal-server:test-alpine; do
-            tests=$(docker run --rm --entrypoint sh "$image" -c 'find /opal/packages -path "*/tests/*" -name "*.py" | wc -l')
-            found=$(docker run --rm --entrypoint sh "$image" -c 'find /opal/packages -name "*.pem"')
-            if [ "$tests" -eq 0 ]; then
-              echo "::error::$image: no test modules under /opal/packages, so this check saw nothing"
-              exit 1
-            fi
-            if [ -n "$found" ]; then
-              echo "::error::$image carries certificate fixtures:"
-              echo "$found"
-              exit 1
-            fi
-            echo "$image: no .pem among $tests test files"
-          done
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.14"
 
-      - name: Create alpine docker compose file
-        run: sed 's/:latest-alpine/:test-alpine/g' docker/docker-compose-example-alpine.yml > docker/docker-compose-test-alpine.yml
+      - name: Install the scope bed's requirements
+        run: python -m pip install --require-hashes -r app-tests/git-leak/requirements.txt
 
-      - name: Bring up alpine stack
-        run: docker compose -f docker/docker-compose-test-alpine.yml up -d
-
-      - name: Check if inline OPA is healthy (alpine)
-        run: ./scripts/wait-for.sh -t 60 http://localhost:8181/v1/data/users -- sleep 10 && curl -s "http://localhost:8181/v1/data/users" | jq '.result.bob.location.country == "US"'
-
-      - name: Output container logs (alpine)
-        run: docker compose -f docker/docker-compose-test-alpine.yml logs
+      - name: Run the scope bed
+        working-directory: app-tests/git-leak
+        env:
+          COMPOSE_FILE: docker-compose.yml:docker-compose.${{ matrix.backend }}.yml
+        run: >-
+          python -m pytest -v --boot-scopes=10 test_backend.py test_leak.py
+          test_transitions.py test_remote_transitions.py test_repack.py test_boot.py
 
   binary-stages:
     # The OPA and EOPA extraction stages, for both release architectures. The jobs above
@@ -400,6 +441,26 @@ jobs:
           fail-on-severity: high
           comment-summary-in-pr: on-failure
 
+  # On a pull request only: .github/scripts/vuln.sh resolves the ranges the published packages
+  # declare (packages/requires.txt and packages/*/requires.txt, which dependency-review does not
+  # read) at their floor and at their ceiling, and fails when either tree has a vulnerability of
+  # high or critical severity that has a fixed version: raise the floor past it. It downloads uv
+  # and Trivy with fetch-tool.sh and runs them without a token. The scheduled security scan
+  # resolves and scans the same trees on the default branch.
+  vuln:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Scan the floor and the ceiling of the published ranges
+        run: .github/scripts/vuln.sh
+
   ci:
     # The branch ruleset requires only this check, so the jobs above and their
     # matrix legs can be renamed without editing the ruleset. always(): GitHub
@@ -407,7 +468,7 @@ jobs:
     # fail, when a needed job fails or is cancelled.
     name: CI
     if: always()
-    needs: [build, e2e-tests, e2e-tests-alpine, binary-stages, secrets, dependency-review]
+    needs: [build, e2e-tests, git-cli-in-image, e2e-scopes, binary-stages, secrets, dependency-review, vuln]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -421,8 +482,9 @@ jobs:
         run: |
           workflow=.github/workflows/tests.yml
           # The parentheses matter: yq reads a - b - c as a - (b - c).
-          unlisted=$(yq -r '((.jobs | keys) - ["ci"]) - .jobs.ci.needs | .[]' "$workflow")
-          unknown=$(yq -r '.jobs.ci.needs - ((.jobs | keys) - ["ci"]) | .[]' "$workflow")
+          # notify runs after CI, so CI cannot need it.
+          unlisted=$(yq -r '((.jobs | keys) - ["ci", "notify"]) - .jobs.ci.needs | .[]' "$workflow")
+          unknown=$(yq -r '.jobs.ci.needs - ((.jobs | keys) - ["ci", "notify"]) | .[]' "$workflow")
           if [[ -n "$unlisted" ]]; then
             echo "Add these jobs to the needs list of the CI job in $workflow:" >&2
             echo "$unlisted" >&2
@@ -440,6 +502,29 @@ jobs:
         env:
           NEEDS: ${{ toJSON(needs) }}
           EVENT: ${{ github.event_name }}
-          EXPECTED_JOBS: 6
-          PULL_REQUEST_JOBS: dependency-review
+          EXPECTED_JOBS: 8
+          PULL_REQUEST_JOBS: dependency-review vuln
         run: .github/scripts/ci-aggregate.sh
+
+  # On a push to master only, when the CI check did not pass: a notice to the security Slack
+  # channel, through .github/scripts/notify.sh and the webhook of the security-scan environment,
+  # which admits master only. Not on pull requests, where the red check is already in front of
+  # the author: a failure on master means it got in. The run's link names the jobs that failed.
+  notify:
+    needs: [ci]
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/master' && needs.ci.result != 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: security-scan
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Post to Slack
+        env:
+          RESULT: ${{ needs.ci.result }}
+          SECURITY_SLACK_WEBHOOK_URL: ${{ secrets.SECURITY_SLACK_WEBHOOK_URL }}
+        run: .github/scripts/notify.sh CI "$RESULT on master at ${GITHUB_SHA:0:12}"

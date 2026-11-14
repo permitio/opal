@@ -5,6 +5,7 @@ reconnecting broadcaster (listeners present, reader task missing) makes
 /healthcheck return 503 so a k8s probe can act, while / stays a trivial
 liveness 200.
 """
+
 import contextlib
 
 import pytest

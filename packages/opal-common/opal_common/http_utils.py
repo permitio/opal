@@ -14,6 +14,7 @@ SENSITIVE_QUERY_PARAMS = frozenset(
         "apikey",
         "key",
         "password",
+        "private_token",
         "secret",
         "sig",
         "signature",
@@ -22,6 +23,17 @@ SENSITIVE_QUERY_PARAMS = frozenset(
 
 #: Matches ``scheme://userinfo@`` anywhere in free text.
 _USERINFO_RE = re.compile(r"(?P<scheme>[a-zA-Z][a-zA-Z0-9+.\-]*://)[^/@\s]+@")
+
+#: Matches the ``user:password@`` of git's scp-like ``user:password@host:path``
+#: in free text, where it starts the text or follows whitespace, a quote, ``=``
+#: or ``(``. The password runs to the last ``@`` that a ``host:`` follows, so
+#: one holding ``@`` or ``:`` goes whole; a ``user@host:path`` with no password
+#: does not match. The user and the password are bounded in length, so text
+#: with many ``:`` and no ``@`` is scanned in linear time.
+_SCP_USERINFO_RE = re.compile(
+    r"(?P<prefix>^|[\s'\"=(])[^\s'\"/@:=]{1,256}:[^\s'\"/]{0,512}@"
+    r"(?=(?:\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9_][A-Za-z0-9_.\-]*):)"
+)
 
 #: Matches ``?token=value`` (or ``&``/``#``/``;``) for a sensitive param in free text.
 #: An already-masked ``***`` value matches alone, so text right after it (e.g. a
@@ -91,11 +103,27 @@ def _mask_sensitive_params(component: str) -> Tuple[str, bool]:
     return "&".join(out), changed
 
 
+def _mask_scp_userinfo(url: str) -> str:
+    """``url`` with the userinfo of git's scp-like ``user:password@host:path``
+    replaced by ``***``.
+
+    The userinfo is everything before the last ``@`` ahead of the first
+    ``/``; without a ``:`` in it there is no password, and ``url`` is
+    returned unchanged.
+    """
+    head, slash, rest = url.partition("/")
+    userinfo, at, host = head.rpartition("@")
+    if not at or ":" not in userinfo:
+        return url
+    return f"***@{host}{slash}{rest}"
+
+
 def redact_url(url: str) -> str:
     """Strip embedded credentials from a URL so it is safe to log.
 
     Data source / policy repo URLs may be of the form
-    ``https://user:token@host/path`` or carry a credential in a query parameter
+    ``https://user:token@host/path``, git's scp-like
+    ``user:password@host:path``, or carry a credential in a query parameter
     (e.g. ``?token=...``). We replace any ``user:password@`` userinfo with
     ``***@`` and mask the values of known sensitive query (and fragment)
     parameters, while keeping the host, port, path and non-sensitive params
@@ -107,12 +135,13 @@ def redact_url(url: str) -> str:
     """
     if not url:
         return url
+    masked = url if "://" in url else _mask_scp_userinfo(url)
     try:
-        parts = urlsplit(url)
+        parts = urlsplit(masked)
     except ValueError:
-        return url
+        return masked
 
-    changed = False
+    changed = masked != url
     netloc = parts.netloc
     try:
         if parts.username or parts.password:
@@ -127,7 +156,7 @@ def redact_url(url: str) -> str:
         # ``urlsplit`` is lazy - accessing ``.username``/``.password``/``.port``
         # is what actually validates and can raise (e.g. "Port out of range").
         # We must never throw from a log path, so bail out unchanged.
-        return url
+        return masked
 
     query, query_changed = _mask_sensitive_params(parts.query)
     fragment, fragment_changed = _mask_sensitive_params(parts.fragment)
@@ -142,8 +171,9 @@ def redact_url_in_text(text: str, url: str = "") -> str:
     """Redact embedded credentials from free text such as a git error message.
 
     Replaces verbatim occurrences of a known ``url`` with its fully redacted
-    form, then scrubs any remaining ``scheme://user:password@`` userinfo and
-    the values of ``SENSITIVE_QUERY_PARAMS`` (``?token=...``, ``&key=...``)
+    form, then scrubs any remaining ``scheme://user:password@`` userinfo, the
+    ``user:password@`` of a scp-like ``user:password@host:path``, and the
+    values of ``SENSITIVE_QUERY_PARAMS`` (``?token=...``, ``&key=...``)
     found anywhere in the text - regexes, so they are robust to the exact URL
     form git or aiohttp happens to print.
 
@@ -157,6 +187,7 @@ def redact_url_in_text(text: str, url: str = "") -> str:
     if url:
         scrubbed = scrubbed.replace(url, redact_url(url))
     scrubbed = _USERINFO_RE.sub(lambda m: f"{m.group('scheme')}***@", scrubbed)
+    scrubbed = _SCP_USERINFO_RE.sub(lambda m: f"{m.group('prefix')}***@", scrubbed)
     scrubbed = _SENSITIVE_PARAM_RE.sub(lambda m: f"{m.group('prefix')}***", scrubbed)
     return scrubbed
 
@@ -186,7 +217,7 @@ def redact_sensitive_text(text: str, url: str = "") -> str:
 
 
 def is_http_error_response(
-    response: Union[aiohttp.ClientResponse, httpx.Response]
+    response: Union[aiohttp.ClientResponse, httpx.Response],
 ) -> bool:
     """HTTP 400 and above are considered error responses."""
     status: int = (

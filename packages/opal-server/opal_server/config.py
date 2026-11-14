@@ -90,7 +90,9 @@ class OpalServerConfig(Confi):
         True,
         description="After a backbone gap that may have lost updates, force this "
         "worker's connected clients to reconnect so they re-fetch full policy + data "
-        "state (guarantees cross-instance consistency).",
+        "state (guarantees cross-instance consistency). With scopes on, the "
+        "leader also runs one sync pass of every scope, so a refresh published "
+        "during the gap is not lost (a source in backoff waits for its delay).",
     )
     BROADCAST_RESYNC_SETTLE_SECONDS = confi.float(
         "BROADCAST_RESYNC_SETTLE_SECONDS",
@@ -101,10 +103,12 @@ class OpalServerConfig(Confi):
     BROADCAST_HEALTHCHECK_ENABLED = confi.bool(
         "BROADCAST_HEALTHCHECK_ENABLED",
         True,
-        description="Make /healthcheck reflect the broadcaster reader's health so a "
-        "k8s readiness/liveness probe can route away from or restart a worker whose "
-        "reader is wedged while clients depend on it. Set to False to revert "
-        "/healthcheck to always returning ok.",
+        description="Make /healthcheck (readiness) and /healthz/live (liveness) "
+        "reflect the broadcaster reader's health, so a k8s probe can route away "
+        "from or restart a worker whose reader is wedged or gave up while clients "
+        "depend on it; in scopes mode /healthcheck also waits for the worker's own "
+        "backbone subscription. Set to False to drop these broadcaster checks "
+        "from both routes.",
     )
     BROADCAST_FREEZE_ON_DISCONNECT = confi.bool(
         "BROADCAST_FREEZE_ON_DISCONNECT",
@@ -140,13 +144,15 @@ class OpalServerConfig(Confi):
     )
 
     AUTH_PRIVATE_KEY = confi.delay(
-        lambda AUTH_PRIVATE_KEY_FORMAT=None, AUTH_PRIVATE_KEY_PASSPHRASE="": confi.private_key(
-            "AUTH_PRIVATE_KEY",
-            default=None,
-            key_format=AUTH_PRIVATE_KEY_FORMAT,
-            passphrase=AUTH_PRIVATE_KEY_PASSPHRASE,
-            description="The private key for authentication",
-            sensitive=True,
+        lambda AUTH_PRIVATE_KEY_FORMAT=None, AUTH_PRIVATE_KEY_PASSPHRASE="": (
+            confi.private_key(
+                "AUTH_PRIVATE_KEY",
+                default=None,
+                key_format=AUTH_PRIVATE_KEY_FORMAT,
+                passphrase=AUTH_PRIVATE_KEY_PASSPHRASE,
+                description="The private key for authentication",
+                sensitive=True,
+            )
         )
     )
 
@@ -225,27 +231,67 @@ class OpalServerConfig(Confi):
     SCOPES_GIT_FETCH_TIMEOUT = confi.float(
         "SCOPES_GIT_FETCH_TIMEOUT",
         120.0,
-        description="Soft timeout in seconds for a single scope git clone/fetch: "
-        "the awaiting operation is abandoned (the event loop and the sync pass "
-        "move on) and the op is logged and skipped, retried next cycle. It is a "
-        "SOFT timeout: the underlying git call keeps running on its own thread, "
-        "and the pinned libgit2 sets no socket/server read timeout, so a "
-        "black-holed remote can keep that thread — and the source's in-flight "
-        "marker — alive for the life of the process (that source is then skipped "
-        "until it recovers or the process restarts); SCOPES_GIT_MAX_ZOMBIES "
-        "bounds how many such threads accumulate. Either way one unreachable repo "
-        "never blocks boot or other scopes (0 = no timeout). With "
-        "SCOPES_GIT_FETCH_WITH_CLI on it is a HARD timeout instead: git is "
-        "stopped at the timeout (see SCOPES_GIT_CLI_KILL_GRACE).",
+        description="Timeout in seconds for a single scope git fetch, and with "
+        "SCOPES_GIT_FETCH_WITH_CLI off for a clone too: the op is logged and "
+        "skipped, retried next cycle, so one unreachable repo never blocks boot "
+        "or other scopes (0 = no timeout). With SCOPES_GIT_FETCH_WITH_CLI on "
+        "(the default) it is a HARD timeout: git is stopped at the timeout (see "
+        "SCOPES_GIT_CLI_KILL_GRACE), and a clone has SCOPES_GIT_CLONE_TIMEOUT "
+        "instead. With it off it is a SOFT timeout: the awaiting operation is "
+        "abandoned (the event loop and the sync pass move on), but the "
+        "underlying libgit2 call keeps running on its own thread, and libgit2 "
+        "sets no socket/server read timeout, so a black-holed remote can keep "
+        "that thread — and the source's in-flight marker — alive for the life "
+        "of the process (that source is then skipped until it recovers or the "
+        "process restarts); SCOPES_GIT_MAX_ZOMBIES bounds how many such threads "
+        "accumulate. A sync that is not part of a sync pass (a refresh, a PUT "
+        "/scopes, the sync a policy bundle request asks for) and finds a git op "
+        "of this process still running on its clone (a libgit2 op past its "
+        "timeout, or a git command-line op until git has been stopped) waits up "
+        "to that op's own timeout for it to end (this one for a fetch, "
+        "SCOPES_GIT_CLONE_TIMEOUT for a git command-line clone), then syncs once "
+        "more (with 0, it does not wait); a pass's sync skips that clone, and the "
+        "next pass syncs it. "
+        "No git op, and no sync waiting for one, delays the scopes leader's heartbeat "
+        "(/healthz/live), which runs on a task of its own: with "
+        "SCOPES_GIT_FETCH_WITH_CLI on, an op holds it only while it is still awaited "
+        "40 seconds past its own timeout (this one, or SCOPES_GIT_CLONE_TIMEOUT for a "
+        "clone) plus SCOPES_GIT_CLI_KILL_GRACE, by when git has been stopped, and an "
+        "op with no timeout never holds it.",
+    )
+    SCOPES_GIT_CLONE_TIMEOUT = confi.float(
+        "SCOPES_GIT_CLONE_TIMEOUT",
+        None,
+        description="With SCOPES_GIT_FETCH_WITH_CLI on: the hard timeout in "
+        "seconds of a scope clone, which downloads the whole repository and "
+        "takes longer than a fetch. git is stopped at it as a fetch is at "
+        "SCOPES_GIT_FETCH_TIMEOUT (see SCOPES_GIT_CLI_KILL_GRACE), and a clone "
+        "stopped there never lands: the next sync starts it over. When unset "
+        "(the default), 5 times SCOPES_GIT_FETCH_TIMEOUT; 0 or less means no "
+        "limit. Size it from a measured clone of the largest repository, with "
+        "room to spare. The pre-fork scope preload waits for each clone, so a "
+        "start can take this long, plus SCOPES_GIT_CLI_KILL_GRACE, when a "
+        "remote stalls a clone: size a startup probe for it. The server does "
+        "not start when it is below "
+        "SCOPES_GIT_FETCH_TIMEOUT (no limit counting as the highest). With "
+        "SCOPES_GIT_FETCH_WITH_CLI off, a libgit2 clone has "
+        "SCOPES_GIT_FETCH_TIMEOUT. "
+        "A clone that runs up to this timeout never fails /healthz/live: see "
+        "SCOPES_GIT_FETCH_TIMEOUT.",
     )
     SCOPES_GIT_FETCH_WITH_CLI = confi.bool(
         "SCOPES_GIT_FETCH_WITH_CLI",
-        False,
+        True,
         description="Whether scope fetches and clones run the git command line "
-        "(git fetch) instead of libgit2. A libgit2 fetch runs on a thread that "
+        "(git fetch; the default) or, when false, libgit2. With the git command "
+        "line each repository has one clone (see SCOPES_REPO_CLONES_SHARDS). "
+        "What it needs is checked at start only in scopes mode (a policy "
+        "repository tracked outside scopes mode, with POLICY_SOURCE_TYPE GIT, "
+        "the default, runs git too). A libgit2 fetch runs on a thread that "
         "cannot be stopped, so one that hangs keeps its clone from syncing until "
         "it returns or the process restarts. With this on each op runs git in a "
-        "process group of its own, and SCOPES_GIT_FETCH_TIMEOUT is hard: at the "
+        "process group of its own, and SCOPES_GIT_FETCH_TIMEOUT "
+        "(SCOPES_GIT_CLONE_TIMEOUT for a clone) is hard: at the "
         "timeout the group gets SIGTERM, then SIGKILL SCOPES_GIT_CLI_KILL_GRACE "
         "seconds later, the lock files and partial pack git left in the clone "
         "are removed, and the next sync fetches the clone again. The group also "
@@ -274,7 +320,36 @@ class OpalServerConfig(Confi):
         "can be switched either way without cloning again, and bundles are "
         "built from it as before; a clone made by git has no checkout, which "
         "nothing reads. Fetches skip tags and prune when SCOPES_GIT_FETCH_PRUNE "
-        "is on. git reads neither the system's nor the user's git config, which "
+        "is on. A fetch asks the remote only for the branches its syncs need, "
+        "each as one protocol v2 ref prefix, so the server lists and sends only "
+        "those: a refresh, a PUT /scopes that changes a scope's source or branch, "
+        "or a sync for a branch the clone lacks asks for its scope's branch; the "
+        "syncs of a clone that wait for its lock while its fetch runs share the "
+        "next fetch, which asks for the branches of those still waiting; a sync "
+        "pass (at start, after a backbone gap, POST /scopes/refresh, the "
+        "periodic one) asks for every branch the stored scopes track on the "
+        "clone, or for every branch above "
+        "SCOPES_GIT_CLI_NARROW_FETCH_MAX_BRANCHES. A branch is asked for as a "
+        "pattern, `+refs/heads/BRANCH*:refs/remotes/<remote>/BRANCH*`: one the "
+        "remote does not have fails nothing, and the branches whose names start "
+        "with it come too (`release` brings `release-2`). A name that cannot be "
+        "a git ref, or whose `refs/remotes/<remote>/BRANCH` is 1,024 bytes or "
+        "more, is never asked for. A fetch stands in for another sync's fetch of "
+        "a branch only if it asked for that branch, started after that sync was "
+        "asked for, and reached the remote: one that failed there makes each "
+        "sync it stood for, outside a pass, fetch once more when the source's "
+        "backoff allows (if that is within 300 seconds), and one that never "
+        "reached it (the clone busy, a failure on this server's side) stands in "
+        "for none. A clone that missed a refresh of one scope catches up at that "
+        "scope's next refresh or the next sync pass, not at a fetch for another "
+        "scope. FETCH_HEAD's age is that of the clone's last fetch or clone that "
+        "succeeded, whatever branches it asked for; when each branch was last "
+        "fetched is the mtime of a file in the clone's .git/opal-fetched, set to "
+        "the start of the fetch, one for a fetch of it that succeeded and one for "
+        "one that reached the remote and failed (ALL for a clone or a fetch of "
+        "every branch, which also removes the older files, FAILED for a fetch of "
+        "every branch that failed). git "
+        "reads neither the system's nor the user's git config, which "
         "libgit2 does read, so whatever else they set (a url.insteadOf, say) is "
         "lost with this on; only their safe.directory is given to git, which "
         "git 2.38 or later honours. As libgit2 does, git runs no hooks, reads "
@@ -291,11 +366,14 @@ class OpalServerConfig(Confi):
         "after 30 seconds and on a link the server stays silent on after about "
         "a minute (4 keepalives, 15 seconds apart, unanswered), with an error "
         "of its own rather than at the timeout. Each op starts git from the "
-        "server process, which under uvloop forks it: the more memory the "
-        "server holds, the longer that takes. Needs git 2.32 or later on PATH, "
+        "server process with Python's subprocess module (vfork on Linux), "
+        "not with the event loop's own process start (uvloop's forks the "
+        "whole process and runs its at-fork hooks), so the start does not "
+        "grow with the memory the server holds and runs none of the process's "
+        "at-fork hooks. Needs git 2.32 or later on PATH, "
         "/bin/sh (git runs under it, which reports git's exit status), and "
         "ssh for SSH sources; the official "
-        "images, Debian and Alpine, have all three, and the server does not "
+        "images have all three, and the server does not "
         "start without git 2.32 or /bin/sh. "
         "Unlike libgit2, ssh needs the server's uid to have an entry in the "
         "user database (/etc/passwd): under a uid with none, an arbitrary one "
@@ -313,30 +391,64 @@ class OpalServerConfig(Confi):
         "which ssh would expand. "
         "SSH host keys: see SCOPES_GIT_SSH_KNOWN_HOSTS.",
     )
+    SCOPES_GIT_CLI_NARROW_FETCH_MAX_BRANCHES = confi.int(
+        "SCOPES_GIT_CLI_NARROW_FETCH_MAX_BRANCHES",
+        1000,
+        description="With SCOPES_GIT_FETCH_WITH_CLI on: the most branches a "
+        "scope fetch names (see SCOPES_GIT_FETCH_WITH_CLI); a fetch that needs "
+        "more fetches every branch, the clone's whole refspec, instead. git "
+        "matches each name against every branch the server lists (and, pruning, "
+        "every branch the clone holds): on a repository with 63,000 branches, a "
+        "fetch of 1,000 names took no longer than one of every branch without "
+        "SCOPES_GIT_FETCH_PRUNE, and a longer list took longer. It also bounds "
+        "git's command line, where the names go. 0: every fetch fetches every "
+        "branch, as before 0.10. The server does not start when it is "
+        "negative. Ignored with SCOPES_GIT_FETCH_WITH_CLI off: libgit2 fetches "
+        "every branch.",
+    )
     SCOPES_GIT_SSH_KNOWN_HOSTS = confi.str(
         "SCOPES_GIT_SSH_KNOWN_HOSTS",
         None,
-        description="With SCOPES_GIT_FETCH_WITH_CLI on: the path of a "
-        "known_hosts file to verify the git host's SSH key against. When set, "
-        "a scope fetch or clone over SSH goes ahead only if the host's key is "
-        "in this file (ssh's StrictHostKeyChecking=yes), and the file is never "
-        "written to. Its lines are OpenSSH known_hosts lines; a host on a port "
-        "other than 22 is written `[host]:port`. When unset (the default), host "
-        "keys are handled as by the libgit2 fetch. A relative path is resolved "
-        "against the server's working directory on each op. With "
-        "SCOPES_GIT_FETCH_WITH_CLI on, the server does not start when this "
-        "names no readable file or its path holds whitespace, % or $, a quote "
-        "or a backslash (ssh would read the path as a list, expand it, or take "
-        "it as quoting); a file that "
-        "becomes unreadable later fails each SSH fetch at once (counted with "
-        "reason `local`). With SCOPES_GIT_FETCH_WITH_CLI off it is ignored, "
-        "and logged at ERROR.",
+        description="The path of a known_hosts file to verify the git host's SSH "
+        "key against, with either fetch backend. When set, a scope fetch or "
+        "clone over SSH goes ahead only if the host's key is in this file (ssh's "
+        "StrictHostKeyChecking=yes), and the file is never written to. Its lines "
+        "are OpenSSH known_hosts lines; a host on a port other than 22 is "
+        "written `[host]:port`. A relative path is resolved against the server's "
+        "working directory on each op. When unset (the default), host keys are "
+        "trusted on first use: the first SSH fetch or clone records the host's "
+        "key, and a later one refuses a different key. The git command line "
+        "records, beside each clone (git_sources/.SOURCE_ID.known_hosts in "
+        "BASE_DIR), the key of the type ssh negotiated; libgit2 records, once "
+        "per host and port in one file for all clones, each key ssh-keyscan "
+        "(which it then needs on PATH) reads from the host, in "
+        "git_sources/.libgit2-home/.ssh/known_hosts (libgit2's home is set to "
+        "git_sources/.libgit2-home, or, with this set, to a directory there "
+        "whose known_hosts links to this file). libgit2 looks a host up as the "
+        "source's URL writes it, capitals included, in this file too. A clone "
+        "made again keeps its record. A refused key fails the op with reason "
+        "`host_key`, backs the source off, and logs an ERROR that names the "
+        "file: when a host did change its key, delete that file (with libgit2, "
+        "the host's lines in it) on each server, or replace the pod when "
+        "BASE_DIR is on an emptyDir, then refresh the scope (POST "
+        "/scopes/:scope_id/refresh, or a PUT of it), whose fetch records the new "
+        "key: until then the source stays backed off. In scopes mode the server "
+        "does not start when "
+        "this names no readable file or its path holds whitespace, % or $, a "
+        "quote or a backslash (ssh would read the path as a list, expand it, or "
+        "take it as quoting); nor, with this unset and SCOPES_GIT_FETCH_WITH_CLI "
+        "on, when BASE_DIR's git_sources path holds those; nor, with "
+        "SCOPES_GIT_FETCH_WITH_CLI off, when that path holds : or $ (libgit2 "
+        "reads its home as a list of directories, and expands $PATH there). A "
+        "file that becomes unreadable later fails each SSH fetch at once "
+        "(counted with reason `local`).",
     )
     SCOPES_GIT_CLI_KILL_GRACE = confi.float(
         "SCOPES_GIT_CLI_KILL_GRACE",
         5.0,
         description="With SCOPES_GIT_FETCH_WITH_CLI on: seconds a git fetch or "
-        "clone that ran past SCOPES_GIT_FETCH_TIMEOUT gets to exit on SIGTERM, "
+        "clone that ran past its timeout (SCOPES_GIT_FETCH_TIMEOUT, or "
+        "SCOPES_GIT_CLONE_TIMEOUT for a clone) gets to exit on SIGTERM, "
         "which lets git remove its own lock files and temporary pack, before its "
         "process group gets SIGKILL. OPAL then waits up to 10 seconds more for "
         "the group to exit, and once it has, removes what git left in the "
@@ -368,7 +480,12 @@ class OpalServerConfig(Confi):
         "SCOPES_GIT_REPACK_PACK_LIMIT); a clone whose refs are packed already "
         "(one made with SCOPES_GIT_FETCH_WITH_CLI on) keeps them packed, and its "
         "fetches pay that cost. Only `refs/remotes/<remote>/*` are pruned; the "
-        "scopes' `refs/heads/scopes/*` stay.",
+        "scopes' `refs/heads/scopes/*` stay. A git command-line fetch that asks "
+        "for some branches (see SCOPES_GIT_FETCH_WITH_CLI) prunes only the refs "
+        "of those branches, and of the branches whose names start with one of "
+        "them: a branch deleted on the remote leaves the clone at the next fetch "
+        "that asks for it (its scope's refresh, or a sync pass), and one that no "
+        "scope tracks only at a fetch of every branch.",
     )
     SCOPES_GIT_MAX_WORKERS = confi.int(
         "SCOPES_GIT_MAX_WORKERS",
@@ -396,9 +513,13 @@ class OpalServerConfig(Confi):
         "tail is bounded by SCOPES_GIT_MAX_ZOMBIES, which is a GLOBAL ceiling: "
         "read its description, because at that ceiling new git ops are refused "
         "for every scope, healthy ones included. With SCOPES_GIT_FETCH_WITH_CLI "
-        "on, a timed-out op leaves no thread behind, and holds its slot until "
+        "on, a timed-out fetch leaves no thread behind, and holds its slot until "
         "git is stopped: up to SCOPES_GIT_CLI_KILL_GRACE plus 10 seconds, plus "
-        "the removal of what git left, past the timeout.",
+        "the removal of what git left, past the timeout. A clone gives its slot "
+        "back once it has run SCOPES_GIT_FETCH_TIMEOUT and runs on outside this "
+        "limit, up to SCOPES_GIT_CLONE_TIMEOUT, still counted against "
+        "SCOPES_GIT_MAX_ZOMBIES: clones of remotes that never answer hold the "
+        "slots no longer than fetches do.",
     )
     SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT = confi.float(
         "SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT",
@@ -411,16 +532,23 @@ class OpalServerConfig(Confi):
         "loop also waits up to this long for git command-line ops still being "
         "stopped; those not done by then get SIGKILL as the loop ends, their "
         "clones stay recorded as unfinished, and the next op on each clone "
-        "removes what git left.",
+        "removes what git left. With libgit2 (opt-in, SCOPES_GIT_FETCH_WITH_CLI "
+        "off), a libgit2 op still running when this wait ends keeps the pack "
+        "files it has open, in the gunicorn master and in every worker forked "
+        "from it: a pack a later repack deletes keeps its disk space until "
+        "the server restarts. With the git command line no such op is left.",
     )
     SCOPES_GIT_RECLONE_HUNG_ON_START = confi.bool(
         "SCOPES_GIT_RECLONE_HUNG_ON_START",
         False,
         description="Whether a server start clones again the scope clones on which a git "
-        "op was still hung when its server process ended. A fetch or clone "
-        "that runs past SCOPES_GIT_FETCH_TIMEOUT keeps running on its daemon "
-        "thread, and the clone is not fetched again while it lasts. With this "
-        "on (and SCOPES_GIT_FETCH_TIMEOUT positive), such an op writes a "
+        "op was still hung when its server process ended. A libgit2 fetch or "
+        "clone that runs past SCOPES_GIT_FETCH_TIMEOUT keeps running on its "
+        "daemon thread, and the clone is not fetched again while it lasts; a "
+        "git command-line one (SCOPES_GIT_FETCH_WITH_CLI) is stopped at its "
+        "timeout (SCOPES_GIT_CLONE_TIMEOUT for a clone), which it can outlive "
+        "only stuck in uninterruptible I/O. With this on (and "
+        "SCOPES_GIT_FETCH_TIMEOUT positive), such an op writes a "
         "marker file of its own, with a unique name, in a directory beside "
         "the clone (git_sources/SOURCE_ID.hung/, SOURCE_ID being the clone's "
         "directory name) and removes it when it returns. A marker whose "
@@ -447,7 +575,11 @@ class OpalServerConfig(Confi):
         "scopes use. Do not share BASE_DIR between running servers (see "
         "BASE_DIR); with this on, any marker counts, whoever wrote it. Each "
         "clone deleted "
-        "increments opal_server.scopes.hung_clone_recloned.",
+        "increments opal_server.scopes.hung_clone_recloned. A marked clone "
+        "of a repository in SCOPES_READY_REQUIRED_REPOS that had landed is "
+        "kept, with a WARNING, and increments "
+        "opal_server.scopes.hung_clone_kept: deleting it would keep the "
+        "server from Ready until the clone lands again.",
     )
     SCOPES_GIT_MAX_ZOMBIES = confi.int(
         "SCOPES_GIT_MAX_ZOMBIES",
@@ -482,13 +614,16 @@ class OpalServerConfig(Confi):
         "nothing else records a failure: without it every pass re-attempts every "
         "dead repo, and so does every duplicate scope sharing that repo — a "
         "handful of dead repositories can account for thousands of clone attempts "
-        "per hour. The periodic pass and the boot preload honour it (in "
+        "per hour. The periodic pass, the pass after a backbone gap and the boot "
+        "preload honour it (in "
         "both phases, and re-checked under the source lock, so duplicates of a "
         "source that fails in a pass cost one attempt, not one per scope), and so "
         "does the sync GET /scopes/:scope_id/policy requests for a scope whose "
         "branch is missing from its clone (SCOPES_POLICY_BRANCH_REFRESH_INTERVAL); "
         "an explicit POST /scopes/:scope_id/refresh, POST /scopes/refresh or "
-        "PUT /scopes attempts the source immediately, so an operator who has "
+        "PUT /scopes attempts the source whatever its backoff (a POST "
+        "/scopes/refresh made while a sync pass runs is served by the pass that "
+        "starts when that one ends), so an operator who has "
         "just repaired credentials recovers at once, and any successful clone or "
         "fetch clears both the delay and the consecutive-failure count. The state "
         "is in-memory and per process — it resets on restart. When a periodic "
@@ -558,7 +693,8 @@ class OpalServerConfig(Confi):
         "when no periodic pass runs (POLICY_REFRESH_INTERVAL=0). A pass never "
         "waits for a clone another sync or refresh is using: it leaves that clone "
         "to the next pass or refresh. No repack starts while a sync pass runs in "
-        "the same process: the pass that ends last repacks what the others left. "
+        "the same process: a repack that a refresh of one scope leaves due while "
+        "a pass runs is run at the end of that pass. "
         "Objects no branch reaches any more, those "
         "of branches deleted upstream included, are kept in the merged pack "
         "rather than deleted, so that a repack never removes an object a fetch in "
@@ -599,11 +735,9 @@ class OpalServerConfig(Confi):
         "limit, so size the limit with room for one more copy of the largest "
         "clone's packs above its usual peak. A repack that fails, or never "
         "finishes because its process died, is not retried for an hour by any "
-        "process of the pod, a new leader included. While sync passes keep "
-        "running back to back, a due repack waits for a gap (each wait counted "
-        "as opal_server.scopes.git_op_skipped with reason pass_in_flight); once "
-        "it has waited 30 minutes, the next attempt runs it beside a pass, which "
-        "can then stall that pass for as long as the repack runs. Raise the "
+        "process of the pod, a new leader included. Each repack put off for a "
+        "pass is counted as opal_server.scopes.git_op_skipped with reason "
+        "pass_in_flight. Raise the "
         "limit to repack less often; 0 or negative disables repacking, and 1 "
         "counts as 2, since a clone always holds a pack after a fetch.",
     )
@@ -635,14 +769,15 @@ class OpalServerConfig(Confi):
         "the repack holds the clone's sync lock while it runs. Repacks run one at "
         "a time at the end of a sync pass, after its notifications, so within one "
         "pass a repack delays none of them, and a refresh of a single scope runs "
-        "its repack right after its own notification. No repack starts while "
-        "another sync pass runs (the boot sync next to the first periodic pass, "
-        "or a POST /scopes/refresh), whose syncs would otherwise queue on the "
-        "clone's lock while holding their SCOPES_GIT_MAX_WORKERS slots and stall "
-        "the whole pass, every other clone's scopes included; the pass that ends "
-        "last runs it. A pass that starts while a repack is already running still "
-        "waits for it in the same way, as it does for a slow fetch. The next "
-        "periodic pass starts only once the repacks are done. The default leaves "
+        "its repack right after its own notification. A sync pass runs one at a "
+        "time in the leader; a repack that a refresh of one scope leaves due "
+        "while a pass runs is run at the end of that pass, since the pass's "
+        "syncs would otherwise queue on the clone's lock while holding their "
+        "SCOPES_GIT_MAX_WORKERS slots and stall the whole pass, every other "
+        "clone's scopes included. A pass that starts while a refresh's repack is "
+        "already running still waits for it in the same way, as it does for a "
+        "slow fetch. The next pass starts only once the repacks of the one "
+        "before are done. The default leaves "
         "several times the time a repack of a clone with tens of thousands of "
         "branches takes, most of it CPU; too low a value is worse than "
         "too high, since a repack that always times out never reclaims any disk. "
@@ -677,7 +812,10 @@ class OpalServerConfig(Confi):
         "under the 60s ALB idle timeout (a longer hold surfaces as a 504, which "
         "the client cannot tell apart from a dead server) and far under the "
         "client's 300s aiohttp total timeout. Readiness is derived from DISK (the "
-        "clone still has no remote-tracking refs), never from an in-process "
+        "clone still has no remote-tracking refs, or has not finished its first "
+        "clone or fetch: libgit2 clones in place and writes those refs one at a "
+        "time, so until then a missing branch may be one it has not written "
+        "yet), never from an in-process "
         "marker, so every worker answers alike: the clone runs in the leader "
         "while this route is served by any worker. The wait covers a git "
         "command-line clone in progress too (SCOPES_GIT_FETCH_WITH_CLI): git "
@@ -702,11 +840,15 @@ class OpalServerConfig(Confi):
         "SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT",
         64,
         description="Maximum number of requests one worker process may hold at "
-        "once inside the SCOPES_POLICY_CLONE_WAIT_SECONDS wait. Requests beyond "
+        "once inside the SCOPES_POLICY_CLONE_WAIT_SECONDS wait, and the "
+        "SCOPES_POLICY_FRESH_FETCH_WAIT_SECONDS one. Requests beyond "
         "the cap get the immediate answer they would have got before the wait "
         "existed (503 + Retry-After 30 for a clone in progress, 409 for a missing "
-        "branch), so the cap can never make things worse than "
-        "not waiting. It exists because polling is cheap but RELEASING is not: "
+        "branch; a request without base_hash shed from the "
+        "SCOPES_POLICY_FRESH_FETCH_WAIT_SECONDS wait gets that 409 only when a "
+        "fetch of the branch on this server succeeded within that wait before it, "
+        "else a 503 with Retry-After 5), so the cap can never make things worse "
+        "than not waiting. It exists because polling is cheap but RELEASING is not: "
         "when the clone lands, every held request builds a full bundle on the "
         "loop's DEFAULT executor: about min(32, cpu+4) threads shared by every "
         "off-loop call this process makes, in front of an unbounded queue. "
@@ -750,7 +892,11 @@ class OpalServerConfig(Confi):
         "misses on that worker while its request is younger than the "
         "clone wait are held too, without asking again, until the first hold's "
         "deadline; after that, for the rest of the interval, a miss gets the "
-        "immediate 409 (503 with no clone) it got before. A request shed at the "
+        "immediate 409 (503 with no clone) it got before. A clone that has the "
+        "scope's branch ref but not the commit it names (an object store gutted "
+        "under it) gets the retryable 503 at once, and the worker asks for one "
+        "sync of the scope per this many seconds, which deletes the clone and "
+        "clones it again. A request shed at the "
         "in-flight cap requests nothing; a request that requests the sync holds "
         "its slot while it does. So a branch that really does not "
         "exist costs, per interval, at most one clone-wait budget of held requests "
@@ -778,7 +924,97 @@ class OpalServerConfig(Confi):
         "disables it (409 or 503 immediately, as before); nan, inf and "
         "-inf are treated as disabled too. Requires "
         "SCOPES_POLICY_CLONE_WAIT_SECONDS > 0: with that wait disabled, no sync is "
-        "requested either.",
+        "requested either. A request without base_hash that waited for this "
+        "server's fetch of the branch (SCOPES_POLICY_FRESH_FETCH_WAIT_SECONDS) is "
+        "not held again for it, nor is one that wait shed at the in-flight cap.",
+    )
+    SCOPES_POLICY_FRESH_FETCH_WAIT_SECONDS = confi.float(
+        "SCOPES_POLICY_FRESH_FETCH_WAIT_SECONDS",
+        10.0,
+        description="With SCOPES_GIT_FETCH_WITH_CLI on: how long GET "
+        "/scopes/:scope_id/policy without base_hash (a client that holds no policy "
+        "yet) waits for this server's fetch of the scope's branch before it builds "
+        "the bundle. A git command-line fetch asks only for the branches its syncs "
+        "need, so a server that missed a refresh of the scope is not caught up by "
+        "the fetches of other scopes, and would serve such a client its old head. "
+        "The request asks every server to fetch the scope's branch, honouring the "
+        "source's failure backoff, and only a fetch that started after it asked "
+        "counts: a clone or a fetch that started before, however recent, may "
+        "predate a branch or a commit pushed since. One worker asks once per "
+        "scope until the fetch it asked for has ended (or this wait has passed), "
+        "and the requests meanwhile wait for that fetch; the first request after "
+        "it asks again. A server answers such a request from a fetch of the "
+        "branch that started after the request reached it, without fetching "
+        "again: during a storm of clients starting each server fetches the "
+        "branch one fetch after another. A fetch of the branch on this server "
+        "that failed within this many seconds before the request answers it at "
+        "once, without asking (the source is in its failure backoff, which the "
+        "fetch asked for would honour). The bundle is built as soon as such a "
+        "fetch of the branch on this server has succeeded or failed (read from "
+        "the clone's fetch marks, see SCOPES_GIT_FETCH_WITH_CLI), or when the "
+        "wait is over, from what the clone holds then. A branch the clone does not "
+        "have then is a 503 with Retry-After 5 after a fetch that failed or did not "
+        "end in time, and the 409 after one that succeeded (the remote has no such "
+        "branch), without the hold of SCOPES_POLICY_BRANCH_REFRESH_INTERVAL. Only "
+        "for a clone that has landed (SCOPES_POLICY_CLONE_WAIT_SECONDS covers one "
+        "that has not) and a branch that can be a git ref. A waiting request holds "
+        "a slot of SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT; with none free it is "
+        "served without waiting, nor held by the branch wait, and a branch the "
+        "clone does not have is the 409 only when a fetch of it on this server "
+        "succeeded within this many seconds before the request, else a 503 with "
+        "Retry-After 5. Any client allowed to read the scope's policy can "
+        "make every server fetch its branch this way, one fetch after another "
+        "while such requests keep coming (before 0.10 only POST "
+        "/scopes/:scope_id/refresh, a datasource token's, forced a fetch). A "
+        "request usually waits about one fetch (two when one is already running) "
+        "and a broadcast round trip. 0, a negative value, nan and inf: no wait; "
+        "above 55 it is clamped to 55, as the clone wait is, and the clone wait a "
+        "request holds after this one gets what is left of 55 seconds. Requests "
+        "with base_hash never wait, nor any with SCOPES_GIT_FETCH_WITH_CLI off.",
+    )
+    SCOPES_MISSING_SCOPE = confi.str(
+        "SCOPES_MISSING_SCOPE",
+        "default",
+        description="What GET /scopes/:scope_id/policy and GET "
+        "/scopes/:scope_id/data answer for a scope that is not stored. default: "
+        "the policy of the scope named default (a 404 when that one is not stored "
+        "either), and an empty data configuration, or a redirect to the "
+        "external_source_url of OPAL_DATA_CONFIG_SOURCES when it has one. "
+        "not_found: a 404 for both, so a client whose scope is gone keeps the "
+        "policy and data it has and never loads the default scope's policy. With "
+        "either, each such request logs a WARNING and counts "
+        "opal_server.scopes.missing_scope, tagged with the route (policy or data; "
+        "the WARNING names the scope), and is posted to "
+        "SCOPES_MISSING_SCOPE_WEBHOOK_URL when that is set. The server does not "
+        "start in scopes mode with any other value.",
+    )
+    SCOPES_MISSING_SCOPE_WEBHOOK_URL = confi.str(
+        "SCOPES_MISSING_SCOPE_WEBHOOK_URL",
+        None,
+        description="An http:// or https:// URL that a worker POSTs to when a "
+        "policy or data request finds a scope that is not stored (see "
+        "SCOPES_MISSING_SCOPE), so that whatever writes the scopes can put it "
+        "back. The body is a JSON object with scope_id, route (policy or data) and "
+        "seen_at (when the request came, ISO 8601, UTC), sent with "
+        "SCOPES_MISSING_SCOPE_WEBHOOK_TOKEN as a Bearer token when that is set. "
+        "Each worker posts a scope at most once per 5 minutes, in the background "
+        "(the request does not wait for it), with a 5-second timeout and no "
+        "retry, and at most 100 at a time: a scope seen while 100 are under way "
+        "is posted at a later request for it. Each POST is counted in "
+        "opal_server.scopes.missing_scope_webhook by outcome. Of the URL, only its "
+        "scheme, host and port are logged. The server does not start in scopes mode when this is not an "
+        "http:// or https:// URL with a host, or carries a password while "
+        "SCOPES_MISSING_SCOPE_WEBHOOK_TOKEN is set. Unset, nothing is posted.",
+        sensitive=True,
+    )
+    SCOPES_MISSING_SCOPE_WEBHOOK_TOKEN = confi.str(
+        "SCOPES_MISSING_SCOPE_WEBHOOK_TOKEN",
+        None,
+        description="The Bearer token of the SCOPES_MISSING_SCOPE_WEBHOOK_URL "
+        "POSTs, sent as their Authorization header and never logged. Unset, the "
+        "POSTs carry no Authorization header. The server does not start in scopes "
+        "mode when this is set without SCOPES_MISSING_SCOPE_WEBHOOK_URL.",
+        sensitive=True,
     )
     LEADER_LOCK_FILE_PATH = confi.str(
         "LEADER_LOCK_FILE_PATH",
@@ -816,7 +1052,9 @@ class OpalServerConfig(Confi):
     POLICY_BUNDLE_GIT_ADD_PATTERN = confi.str(
         "POLICY_BUNDLE_GIT_ADD_PATTERN",
         "*",
-        description="File pattern to add files to git default to all the files (*)",
+        description="Git pathspec (as git add takes it) of the API source bundle's files "
+        "to commit and serve, read with no host git config. * takes every file but those "
+        "a .gitignore in the bundle ignores (a file once committed stays tracked)",
     )
 
     REPO_WATCHER_ENABLED = confi.bool(
@@ -1027,7 +1265,51 @@ class OpalServerConfig(Confi):
     SCOPES_REPO_CLONES_SHARDS = confi.int(
         "SCOPES_REPO_CLONES_SHARDS",
         1,
-        description="The max number of local clones to use for the same repo (reused across scopes).",
+        description="With SCOPES_GIT_FETCH_WITH_CLI off: the number of local "
+        "clones of the same repository (reused across scopes) that libgit2 "
+        "spreads its scopes over, by branch. With SCOPES_GIT_FETCH_WITH_CLI on "
+        "(the default) each repository has one clone and this is ignored, with "
+        "a WARNING at start when it is not 1. That clone is libgit2's first "
+        "one (its directory name ends in -0), so a server switched to the git "
+        "command line fetches it without cloning again, and the clones of the "
+        "other shards stay unused in BASE_DIR's git_sources directory until "
+        "they are removed, by hand or by SCOPES_ORPHAN_SWEEP_INTERVAL's sweep. "
+        "The server does not start in scopes mode when this is below 1.",
+    )
+    SCOPES_READY_REQUIRED_REPOS = confi.list(
+        "SCOPES_READY_REQUIRED_REPOS",
+        [],
+        description="In scopes mode, the repositories whose clones must have "
+        "landed before /healthcheck answers 200: a comma-separated list of "
+        "repository URLs, "
+        "each written exactly as the scopes' policy sources write it. Until "
+        "every clone of each has finished its first clone, /healthcheck "
+        "answers 503 with the missing clones' directory names in BASE_DIR's "
+        "git_sources directory (never a URL), and "
+        "opal_server.scopes.ready_clones_missing reports how many; "
+        "/healthz/started waits for the same clones. A directory "
+        "a clone is still writing does not count. Once a worker has seen a "
+        "clone landed it does not look again: a later failed fetch, a remote "
+        "that is down, or the clone deleted and cloned again does not fail "
+        "readiness. A worker forked from the gunicorn master starts with what "
+        "the pre-fork scope preload saw. Each repository has one clone: with "
+        "SCOPES_GIT_FETCH_WITH_CLI off (libgit2) and SCOPES_REPO_CLONES_SHARDS "
+        "above 1 the server does not start in scopes mode with this set, since "
+        "a shard no scope's branch maps to would never clone and the server "
+        "would never get Ready. A URL no stored scope uses never clones "
+        "either, so /healthcheck stays 503 until a stored scope uses that URL: "
+        "the sync passes (the pre-fork preload's and the leader's) log a "
+        "WARNING for it, once per process, with the URL masked and the number "
+        "of stored scopes. There is no grace period: a new server is not Ready "
+        "until its first clones land, so size a deployment's rollout deadline "
+        "for them. Empty (the default), readiness does not look at the clones. "
+        "The list is read like a shell word list (a # starts a comment, and "
+        "quotes and backslashes are removed), so the server does not start in "
+        "scopes mode when an entry holds a #, a quote or a backslash "
+        "(percent-encode them in a URL), is blank, or starts with [ or ends "
+        "with ] (a JSON list). A URL can carry a credential, so the value is "
+        "never logged.",
+        sensitive=True,
     )
 
     REDIS_URL = confi.str(
@@ -1044,7 +1326,9 @@ class OpalServerConfig(Confi):
         "share it, with SCOPES_GIT_FETCH_WITH_CLI on or off: at each start the "
         "pre-fork scope preload removes the lock files and partial packs it "
         "finds in every clone there, and the clones half made beside them, "
-        "whichever server's git op they belong to.",
+        "whichever server's git op they belong to. In scopes mode the leader "
+        "worker writes its heartbeat there too (scopes-leader.heartbeat), which "
+        "/healthz/live and /healthz/started read.",
     )
 
     POLICY_REFRESH_INTERVAL = confi.int(
@@ -1069,8 +1353,63 @@ class OpalServerConfig(Confi):
         "it (the old source's record is still live, just moved). The clone dir "
         "is unaffected either way: on a store fault the delete floor KEEPS this "
         "worker's clone rather than risk deleting one a live sibling shares, "
-        "leaving an orphan tracked by PER-15612 "
+        "leaving an orphan clone dir for SCOPES_ORPHAN_SWEEP_INTERVAL's sweep "
         "(0 or negative means no timeout).",
+    )
+    SCOPES_ORPHAN_SWEEP_INTERVAL = confi.float(
+        "SCOPES_ORPHAN_SWEEP_INTERVAL",
+        0.0,
+        description="In scopes mode, with REPO_WATCHER_ENABLED on, how often "
+        "(seconds) the leader worker looks in BASE_DIR's git_sources directory "
+        "for scope clones no stored scope uses any more, and removes them: a "
+        "deleted or repointed scope's clone, one whose delete never reached "
+        "this server, the shard clones the git command line or a change of "
+        "SCOPES_REPO_CLONES_SHARDS leaves unused, a clone left by a crash. 0 "
+        "(the default), negative or not finite: off. A clone goes only once two "
+        "looks at least this far apart found no stored scope using it, with "
+        "none in between finding one; a look decides nothing when the scope "
+        "store fails, or when a scope its keys list (as GET /scopes/ids lists "
+        "them) reads back although the listing of the records missed it. "
+        "Nothing goes while the store lists no scope at all, or while more than "
+        "SCOPES_ORPHAN_SWEEP_MAX_SHARE of the clones are unused, and after such "
+        "a refusal a clone goes only once two looks in a row found the store no "
+        "bigger, so a store being refilled keeps the clones of the scopes still "
+        "to come. Only a real directory named like a clone counts, never a "
+        "symlink, and the clones of SCOPES_READY_REQUIRED_REPOS are kept. "
+        "Right before a clone goes, holding its lock_source, the sweep reads "
+        "the store's records again, and reads back each scope its branches "
+        "name, bounded by SCOPES_STORE_READ_TIMEOUT: a scope stored since the "
+        "look that uses the clone keeps it. It goes under its clone's lock and "
+        "the repack lock, taken without waiting: a clone a git op, a repack or "
+        "a delete holds is kept for the next look. With it go its hung-op "
+        "markers, the directories a clone of it was being made in, the SSH "
+        "host keys recorded for it, so the next clone of that repository "
+        "trusts the key its host shows on first use again, and its lock file. "
+        "At most 16 go per look; one that cannot be removed is tried again one "
+        "interval later, then two, four and so on. Each look also removes, in "
+        "the clones it keeps, the fetch marks of branches no stored scope of "
+        "the clone tracks. A scope whose record Redis evicted, or a restore "
+        "lost, counts as deleted: its clone goes, and is cloned again once the "
+        "record is back. What a look saw lives in the leader's memory, so a "
+        "restart or a new leader starts over, which delays a removal and never "
+        "hastens one.",
+    )
+    SCOPES_ORPHAN_SWEEP_MAX_SHARE = confi.float(
+        "SCOPES_ORPHAN_SWEEP_MAX_SHARE",
+        0.5,
+        description="The most of the scope clones in BASE_DIR's git_sources "
+        "directory (real directories named like a clone, the clones of "
+        "SCOPES_READY_REQUIRED_REPOS not counted) that the orphan sweep "
+        "(SCOPES_ORPHAN_SWEEP_INTERVAL) may find unused and still remove any: "
+        "above it, a look removes nothing, forgets what it saw, and counts "
+        "opal_server.scopes.orphan_sweep with outcome refused. A scope store "
+        "that lost its scopes, or a server pointed at another store, looks "
+        "like one whose scopes were all deleted, so after a wipe the clones "
+        "stay until the store is right again or this is raised; a store that "
+        "lists no scope at all is refused whatever the share, unless this is "
+        "1.0. Equal to it is allowed, and 1.0 turns the guard off. Read as 0 "
+        "to 1; not a number reads as 0, which refuses while any clone is "
+        "unused.",
     )
 
     def on_load(self):

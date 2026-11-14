@@ -17,15 +17,30 @@ class TarSafe(tarfile.TarFile):
     ):
         return super().open(name, mode, fileobj, bufsize, **kwargs)
 
-    def extract(self, member, path="", set_attrs=True, *, numeric_owner=False):
-        """Override the parent extract method and add safety checks."""
-        self._safetar_check()
-        super().extract(member, path, set_attrs=set_attrs, numeric_owner=numeric_owner)
+    def extract(
+        self, member, path="", set_attrs=True, *, numeric_owner=False, filter="data"
+    ):
+        """Override the parent extract method and add safety checks.
 
-    def extractall(self, path=".", members=None, numeric_owner=False):
-        """Override the parent extractall method and add safety checks."""
+        Extracts with tarfile's ``data`` filter, Python 3.14's default,
+        passed here so that the extraction never depends on the default.
+        """
         self._safetar_check()
-        super().extractall(path, members, numeric_owner=numeric_owner)
+        super().extract(
+            member,
+            path,
+            set_attrs=set_attrs,
+            numeric_owner=numeric_owner,
+            filter=filter,
+        )
+
+    def extractall(self, path=".", members=None, numeric_owner=False, *, filter="data"):
+        """Override the parent extractall method and add safety checks.
+
+        Extracts with tarfile's ``data`` filter, as extract does.
+        """
+        self._safetar_check()
+        super().extractall(path, members, numeric_owner=numeric_owner, filter=filter)
 
     def _safetar_check(self):
         """Runs all necessary checks for the safety of a tarfile."""

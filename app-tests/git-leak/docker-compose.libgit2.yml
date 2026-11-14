@@ -1,0 +1,8 @@
+# The scope bed on the libgit2 fetch backend, with three clone shards so that sharding is
+# covered on the backend that has it:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.libgit2.yml python -m pytest
+services:
+  opal_server:
+    environment:
+      OPAL_SCOPES_GIT_FETCH_WITH_CLI: "false"
+      OPAL_SCOPES_REPO_CLONES_SHARDS: "${OPAL_TEST_SHARDS:-3}"

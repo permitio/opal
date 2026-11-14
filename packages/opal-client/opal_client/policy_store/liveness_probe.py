@@ -16,6 +16,7 @@ Subclasses provide:
 - `_probe_log_label` (optional) — a short human-readable label (e.g. "OPA",
   "Cedar") used in log messages.
 """
+
 import asyncio
 from abc import abstractmethod
 from typing import Optional

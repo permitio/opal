@@ -5,6 +5,9 @@ import pytest
 from opal_common.schemas.policy_source import GitPolicyScopeSource, NoAuthData
 from opal_server.git_fetcher import GitPolicyFetcher
 
+# What these tests stub or measure is libgit2's fetch and clone.
+pytestmark = pytest.mark.fetch_backend("libgit2")
+
 
 def _make_fetcher(base_dir: Path, scope_id: str, url: str) -> GitPolicyFetcher:
     source = GitPolicyScopeSource(
@@ -215,11 +218,15 @@ def test_branch_head_does_not_touch_shared_handle(monkeypatch, tmp_path):
     # _get_current_branch_head must open a FRESH handle (Repository(self._repo_path))
     # and resolve off it — never the poisoned shared cache handle above.
     class _FreshCommit:
-        hex = "abc123"
+        id = "abc123"
+
+    class _FreshRef:
+        def peel(self, kind):
+            return _FreshCommit()
 
     class _FreshRepo:
-        def resolve_refish(self, refish):
-            return (_FreshCommit(), None)
+        def lookup_reference(self, name):
+            return _FreshRef()
 
         def free(self):
             pass

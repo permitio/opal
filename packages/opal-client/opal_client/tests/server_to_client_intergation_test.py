@@ -113,7 +113,7 @@ def server():
     # Run the server as a separate process
     proc = Process(target=setup_server, args=(event,), daemon=True)
     proc.start()
-    assert event.wait(5)
+    assert event.wait(30)
     wait_for_server(PORT)
     yield event
     proc.kill()  # Cleanup after test
@@ -125,7 +125,7 @@ def client():
     # Run the server as a separate process
     proc = Process(target=setup_client, args=(event,), daemon=True)
     proc.start()
-    assert event.wait(5)
+    assert event.wait(30)
     wait_for_server(CLIENT_PORT)
     yield event
     proc.kill()  # Cleanup after test

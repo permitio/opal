@@ -1,0 +1,21 @@
+# The Python packages of the images docker/Dockerfile builds. The published packages' requires.txt
+# files stay ranges for pip users of opal-common, opal-client and opal-server; the images install
+# requirements.txt instead, compiled from this file: every package at one version, with the hash
+# of each of its files, so every build of a commit installs the same packages. pip and setuptools
+# are listed so that the tools doing the install are pinned too.
+#
+# It resolves for CPython 3.14 on x86_64 Linux, without environment markers. The arm64 images
+# install the same pins (the hashes cover every wheel), and their build fails at pip check if
+# arm64 ever needs another package. After a change to a requires.txt, regenerate it from the
+# repository root with:
+#   uv pip compile --no-config --directory docker/lock --python-version 3.14 \
+#     --python-platform x86_64-unknown-linux-gnu --generate-hashes requirements.in \
+#     --output-file requirements.txt
+# The pip-compile hook in .pre-commit-config.yaml runs that command and fails when the file
+# changes.
+-r ../../packages/requires.txt
+-r ../../packages/opal-common/requires.txt
+-r ../../packages/opal-client/requires.txt
+-r ../../packages/opal-server/requires.txt
+pip
+setuptools

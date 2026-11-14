@@ -10,16 +10,23 @@ asserted — scopes clone lazily, so a just-created scope legitimately has
 no dir yet. Only the orphan direction (dir with no live scope) signals a
 leak.
 """
+
 import hashlib
+from typing import Optional
 
 import requests
-from helpers import compose
+from helpers import clone_shards, compose
 
 BASE_DIR_IN_CONTAINER = "/opal/git_sources"
 
 
-def source_id(url: str, branch: str = "main", shards: int = 1) -> str:
-    """Host-side mirror of GitPolicyFetcher.source_id (sha256(url) + shard)."""
+def source_id(url: str, branch: str = "main", shards: Optional[int] = None) -> str:
+    """Host-side mirror of GitPolicyFetcher.source_id (sha256(url) + shard).
+
+    ``shards`` defaults to the server's SCOPES_REPO_CLONES_SHARDS.
+    """
+    if shards is None:
+        shards = clone_shards()
     base = hashlib.sha256(url.encode("utf-8")).hexdigest()
     index = hashlib.sha256(branch.encode("utf-8")).digest()[0] % shards
     return f"{base}-{index}"
@@ -37,7 +44,9 @@ def clone_dirs(service: str = "opal_server") -> set:
     return {line.strip() for line in out.splitlines() if line.strip()}
 
 
-def live_source_ids(opal, shards: int = 1) -> set:
+def live_source_ids(opal, shards: Optional[int] = None) -> set:
+    if shards is None:
+        shards = clone_shards()
     resp = requests.get(f"{opal.base_url}/scopes", timeout=30)
     resp.raise_for_status()
     return {
@@ -46,7 +55,7 @@ def live_source_ids(opal, shards: int = 1) -> set:
     }
 
 
-def check_invariants(opal, exempt=frozenset(), shards: int = 1) -> None:
+def check_invariants(opal, exempt=frozenset(), shards: Optional[int] = None) -> None:
     exempt = set(exempt)
     failures = []
     live = live_source_ids(opal, shards)

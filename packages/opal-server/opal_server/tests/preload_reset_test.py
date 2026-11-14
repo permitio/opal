@@ -10,6 +10,7 @@ client-less non-leader worker could never drop an inherited handle.
 Clearing the caches in the master before fork means workers start (and
 stay) empty.
 """
+
 import asyncio
 import contextlib
 import gc
@@ -171,9 +172,9 @@ def test_preload_warns_when_the_drain_times_out_with_ops_still_in_flight(monkeyp
     # Against the RENDERED payload, not the formatted record: a bare "3" is
     # supplied by the timestamp and the source line number, so `"3" in record`
     # holds for any drain warning at all and cannot fail.
-    assert (
-        "in flight (3)" in warned[0]
-    ), f"the in-flight count is missing from the warning: {warned[0]}"
+    assert "in flight (3)" in warned[0], (
+        f"the in-flight count is missing from the warning: {warned[0]}"
+    )
 
 
 def test_preload_does_not_warn_when_the_drain_succeeds(monkeypatch):
@@ -205,9 +206,9 @@ def test_preload_does_not_warn_when_the_drain_succeeds(monkeypatch):
     finally:
         opal_logger.remove(sink)
 
-    assert not [
-        r for r in records if "Preload drain timed out" in r
-    ], f"warned on a clean drain: {records}"
+    assert not [r for r in records if "Preload drain timed out" in r], (
+        f"warned on a clean drain: {records}"
+    )
 
 
 async def _read_command(reader: asyncio.StreamReader) -> Optional[List[bytes]]:
@@ -267,7 +268,7 @@ class _RedisServer:
                 else:
                     writer.write(b"+OK\r\n")
                 await writer.drain()
-        except (ConnectionError, asyncio.IncompleteReadError):
+        except ConnectionError, asyncio.IncompleteReadError:
             pass
         finally:
             self.open -= 1
@@ -381,6 +382,6 @@ def test_a_failed_close_of_the_preloads_redis_client_is_logged_and_left(
 
     warned = [r for r in records if "closing its Redis client failed" in r]
     assert warned, f"the failed close was not logged: {records}"
-    assert (
-        "Timed out closing connection" in warned[0]
-    ), f"the close's error is missing from the warning: {warned[0]}"
+    assert "Timed out closing connection" in warned[0], (
+        f"the close's error is missing from the warning: {warned[0]}"
+    )

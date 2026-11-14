@@ -56,27 +56,22 @@ setup(
     long_description_content_type="text/markdown",
     long_description=get_long_description(),
     url="https://github.com/permitio/opal",
-    license=about.__license__,
+    license_expression=about.__license__,
     packages=find_packages(include=("opal_client*",)),
     package_data={
         "": ["engine/healthcheck/opal.rego"],
     },
     classifiers=[
         "Operating System :: OS Independent",
-        "License :: OSI Approved :: Apache Software License",
         "Programming Language :: Python",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.11",
-        "Programming Language :: Python :: 3.12",
-        "Programming Language :: Python :: 3.13",
+        "Programming Language :: Python :: 3 :: Only",
+        "Programming Language :: Python :: 3.14",
         "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
         "Topic :: Internet :: WWW/HTTP :: WSGI",
     ],
-    # <3.14: see the matching note in opal-common/setup.py. opal-client pins
-    # opal-common by exact version and has no pygit2 dependency, so both can
-    # move. opal-server carries the same pin but stays at <3.13 until its
-    # pygit2 is bumped to a release with cp313 wheels.
-    python_requires=">=3.11,<3.14",
+    # The cap goes when a 3.15 CI leg is green.
+    python_requires=">=3.14,<3.15",
     install_requires=client_install_requires + about.get_install_requires(project_root),
     entry_points="""
     [console_scripts]

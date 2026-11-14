@@ -59,9 +59,8 @@ async def test_published_payload_is_json_serializable():
 
 @pytest.mark.asyncio
 async def test_publish_data_updates_line_is_debug_and_missing_topics_warning_stays():
-    """The per-update line is DEBUG (PER-16361: at INFO it was one indexed line
-    per data update); the missing-topics warning stays visible at the deployed
-    level.
+    """The per-update line is DEBUG (at INFO it was one indexed line per data
+    update); the missing-topics warning stays visible at the deployed level.
 
     Both lines redact the entries' credentials.
     """

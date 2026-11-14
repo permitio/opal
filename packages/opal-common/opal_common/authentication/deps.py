@@ -111,7 +111,7 @@ class WebsocketJWTAuthenticator(_JWTAuthenticator):
         token = get_token_from_header(authorization)
         try:
             return verify_logged_in(self._verifier, token)
-        except (Unauthorized, HTTPException):
+        except Unauthorized, HTTPException:
             return None
 
 

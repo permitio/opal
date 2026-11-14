@@ -25,9 +25,11 @@ import opal_server.scopes
 import opal_server.scopes.task as task_module
 import pytest
 from loguru import logger
+from opal_common.confi.confi import describe_settings_source
 from opal_common.config import opal_common_config
 from opal_common.http_utils import redact_url
 from opal_common.logger import configure_logs
+from opal_server import git_cli
 from opal_server.config import opal_server_config
 from uvicorn.config import LOGGING_CONFIG
 
@@ -56,8 +58,9 @@ class MasterLogs:
     def streams(self):
         """configure_logs() binds sys.stderr/stdout when it runs; pytest swaps
         them per test phase, so redirect only around the configuring call."""
-        with contextlib.redirect_stderr(self.stream), contextlib.redirect_stdout(
-            self.stream
+        with (
+            contextlib.redirect_stderr(self.stream),
+            contextlib.redirect_stdout(self.stream),
         ):
             yield
 
@@ -204,6 +207,11 @@ def stub_preload(monkeypatch, preload_sandbox):
     )
 
 
+def _settings_source_line():
+    """The record configure_logs() writes first: where settings came from."""
+    return ("INFO", describe_settings_source())
+
+
 def _run_when_ready(gunicorn_conf, master_logs, monkeypatch, scopes):
     monkeypatch.setattr(opal_server_config, "SCOPES", scopes)
     with master_logs.streams():
@@ -250,7 +258,10 @@ def test_when_ready_scopes_off_warning_goes_to_configured_handler(
     _run_when_ready(gunicorn_conf, master_logs, monkeypatch, scopes=False)
 
     assert master_logs.default_records == []
-    assert master_logs.configured() == [("WARNING", "Finished pre loading scopes...")]
+    assert master_logs.configured() == [
+        _settings_source_line(),
+        ("WARNING", "Finished pre loading scopes..."),
+    ]
 
 
 @pytest.mark.parametrize("scopes", [True, False])
@@ -341,7 +352,10 @@ def test_when_ready_configures_logs_even_when_opal_server_is_absent(
 
     if configure_logs_runs:
         assert master_logs.default_records == []
-        assert master_logs.configured() == [("INFO", "after when_ready")]
+        assert master_logs.configured() == [
+            _settings_source_line(),
+            ("INFO", "after when_ready"),
+        ]
     else:
         assert master_logs.default_records == [("INFO", "after when_ready")]
 
@@ -367,6 +381,7 @@ def test_when_ready_routes_stdlib_logging_to_the_configured_sink(
 
     if configure_logs_runs:
         assert master_logs.configured() == [
+            _settings_source_line(),
             ("INFO", "stdlib info"),
             ("WARNING", "stdlib warning"),
         ]
@@ -391,21 +406,23 @@ def test_preload_scopes_configures_logging_when_nothing_did(
     assert opal_logger.logs_configured()
 
 
-def _ignored_known_hosts(monkeypatch, tmp_path) -> None:
-    """Settings on which the git settings check logs an ERROR (an ignored
-    SCOPES_GIT_SSH_KNOWN_HOSTS) and starts the server all the same."""
-    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", False)
-    monkeypatch.setattr(
-        opal_server_config, "SCOPES_GIT_SSH_KNOWN_HOSTS", str(tmp_path / "known")
-    )
+def _logged_git_settings(monkeypatch, tmp_path) -> None:
+    """Settings on which the git settings check logs an ERROR (in scopes mode,
+    a uid with no entry in the user database, which ssh needs) and starts the
+    server all the same."""
+
+    def no_entry(uid):
+        raise KeyError(f"getpwuid(): uid not found: {uid}")
+
+    monkeypatch.setattr(opal_server_config, "SCOPES", True)
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_WITH_CLI", True)
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_SSH_KNOWN_HOSTS", None)
+    monkeypatch.setattr(opal_server_config, "BASE_DIR", str(tmp_path / "base"))
+    monkeypatch.setattr(git_cli.pwd, "getpwuid", no_entry)
 
 
-def _known_hosts_errors(records) -> list:
-    return [
-        m
-        for level, m in records
-        if level == "ERROR" and "SCOPES_GIT_SSH_KNOWN_HOSTS" in m
-    ]
+def _git_settings_errors(records) -> list:
+    return [m for level, m in records if level == "ERROR" and "user database" in m]
 
 
 def test_preload_scopes_checks_the_git_settings_once_logging_is_configured(
@@ -418,13 +435,13 @@ def test_preload_scopes_checks_the_git_settings_once_logging_is_configured(
     Mutation: checking before configuring sends the check's ERROR there.
     """
     monkeypatch.setattr(opal_server_config, "SCOPES", True)
-    _ignored_known_hosts(monkeypatch, tmp_path)
+    _logged_git_settings(monkeypatch, tmp_path)
 
     with master_logs.streams():
         task_module.ScopesPolicyWatcherTask.preload_scopes()
 
-    assert _known_hosts_errors(master_logs.default_records) == []
-    assert len(_known_hosts_errors(master_logs.configured())) == 1
+    assert _git_settings_errors(master_logs.default_records) == []
+    assert len(_git_settings_errors(master_logs.configured())) == 1
 
 
 # server.py's own startup handlers use FastAPI's deprecated on_event; not what
@@ -441,15 +458,15 @@ def test_a_server_checks_the_git_settings_once_logging_is_configured(
     """
     import opal_server.server as server_module
 
-    _ignored_known_hosts(monkeypatch, tmp_path)
+    _logged_git_settings(monkeypatch, tmp_path)
 
     with master_logs.streams():
         server_module.OpalServer(
             init_policy_watcher=False, broadcaster_uri=None, enable_jwks_endpoint=False
         )
 
-    assert _known_hosts_errors(master_logs.default_records) == []
-    assert len(_known_hosts_errors(master_logs.configured())) == 1
+    assert _git_settings_errors(master_logs.default_records) == []
+    assert len(_git_settings_errors(master_logs.configured())) == 1
 
 
 def test_preload_scopes_keeps_logging_already_configured(

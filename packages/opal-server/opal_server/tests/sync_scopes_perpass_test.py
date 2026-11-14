@@ -7,6 +7,7 @@ executor with policy-bundle serving, so it must honor the same knob
 rather than a hard-coded floor (the earlier max(MAX_WORKERS, 32) made 32
 a floor the knob could not lower and over-subscribed that pool).
 """
+
 import asyncio
 
 import pytest
@@ -114,12 +115,12 @@ async def test_both_passes_bounded_by_the_git_worker_knob(tmp_path, monkeypatch)
 
     # Phase 1 = force_fetch=True (network); phase 2 = force_fetch=False (local).
     assert peak[True] <= 2, f"phase 1 exceeded the git cap: peak={peak[True]}"
-    assert (
-        peak[False] <= 2
-    ), f"phase 2 exceeded SCOPES_GIT_MAX_WORKERS (is the max(,32) floor back?): peak={peak[False]}"
-    assert (
-        peak[False] > 1
-    ), f"phase 2 ran serially, not concurrently: peak={peak[False]}"
+    assert peak[False] <= 2, (
+        f"phase 2 exceeded SCOPES_GIT_MAX_WORKERS (is the max(,32) floor back?): peak={peak[False]}"
+    )
+    assert peak[False] > 1, (
+        f"phase 2 ran serially, not concurrently: peak={peak[False]}"
+    )
 
 
 @pytest.mark.asyncio

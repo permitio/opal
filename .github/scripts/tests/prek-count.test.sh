@@ -40,8 +40,8 @@ check() {
 }
 
 passed='check yaml.....................................Passed'
-nothing='black.............................(no files to check)Skipped'
-skipped='isort...........................................Skipped'
+nothing='ruff format.......................(no files to check)Skipped'
+skipped='ruff check......................................Skipped'
 failed_hook='zizmor..........................................Failed'
 
 check "every hook passed" 0 3 0 "$passed" "$passed" "$passed"

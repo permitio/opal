@@ -38,9 +38,9 @@ class FastApiRpcFetchProvider(BaseFetchProvider):
         )
 
     async def _fetch_(self):
-        assert (
-            self._event is not None
-        ), "FastApiRpcFetchEvent not provided for FastApiRpcFetchProvider"
+        assert self._event is not None, (
+            "FastApiRpcFetchEvent not provided for FastApiRpcFetchProvider"
+        )
         args = self._event.config.rpc_arguments
         method = self._event.config.rpc_method_name
         result = None
