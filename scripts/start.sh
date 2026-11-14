@@ -17,4 +17,9 @@ prefix=""
 if [[ -n "${OPAL_ENABLE_DATADOG_APM+x}" && ( -z "${OPAL_ENABLE_DATADOG_APM}" || "${OPAL_ENABLE_DATADOG_APM}" = "true" ) ]]; then
 	prefix=ddtrace-run
 fi
-(set -x; exec $prefix gunicorn -b 0.0.0.0:${UVICORN_PORT} -k uvicorn_worker.UvicornWorker --workers=${UVICORN_NUM_WORKERS} -c ${GUNICORN_CONF} ${UVICORN_ASGI_APP} -t ${GUNICORN_TIMEOUT} --keep-alive ${GUNICORN_KEEP_ALIVE_TIMEOUT})
+# exec replaces this shell, so gunicorn is the container's PID 1 and gets its SIGTERM: a stop
+# shuts it down gracefully instead of waiting out the grace period for a SIGKILL.
+set -x
+exec $prefix gunicorn -b "0.0.0.0:${UVICORN_PORT}" -k uvicorn_worker.UvicornWorker \
+  --workers="${UVICORN_NUM_WORKERS}" -c "${GUNICORN_CONF}" "${UVICORN_ASGI_APP}" \
+  -t "${GUNICORN_TIMEOUT}" --keep-alive "${GUNICORN_KEEP_ALIVE_TIMEOUT}"

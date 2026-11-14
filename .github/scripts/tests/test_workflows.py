@@ -512,22 +512,32 @@ class TestImageLock:
         lines = self.DOCKERFILE.read_text().splitlines()
         return [line.strip() for line in lines if not line.lstrip().startswith("#")]
 
-    def test_pip_installs_only_the_lock_and_the_test_requirements(self, code):
+    def test_pip_installs_the_lock_the_test_requirements_and_no_package_dependency(
+        self, code
+    ):
         installs = [re.search(r"pip install [^&]*", line) for line in code]
+        package = "pip install --no-cache-dir --no-deps --no-build-isolation ."
 
         assert [m.group().strip() for m in installs if m] == [
             "pip install --no-cache-dir --require-hashes --no-deps --only-binary :all:"
             " -r ./requirements.txt",
+            package,
+            package,
+            package,
             "pip install --no-cache-dir --require-hashes -r /tmp/server-test-requirements.txt",
         ]
         assert "COPY docker/lock/requirements.txt ./requirements.txt" in code
 
     def test_pip_check_follows_every_opal_package_install(self, code):
-        installs = [line for line in code if "setup.py install" in line]
+        package = "pip install --no-cache-dir --no-deps --no-build-isolation . && \\"
+        starts = [i for i, line in enumerate(code) if line == package]
 
-        assert len(installs) == 3
-        for line in installs:
-            assert line.endswith("python setup.py install && pip check")
+        assert len(starts) == 3
+        for i in starts:
+            assert code[i + 1 : i + 3] == [
+                "rm -rf build ./*.egg-info && \\",
+                "pip check",
+            ]
 
 
 class TestUvLocks:

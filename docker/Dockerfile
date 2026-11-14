@@ -42,7 +42,7 @@ ENV PATH=/opt/venv/bin:$PATH
 # --require-hashes refuses a file whose hash the lock does not list, and --no-deps installs the
 # lock as it is, resolving nothing. --only-binary :all: runs no package's build code here: a build
 # from an sdist would also fetch its build backend, unhashed. The lock holds setuptools as well,
-# which a new venv lacks and the deprecated `setup.py install` below needs, so a setuptools major
+# which a new venv lacks and the OPAL package installs below build with, so a setuptools major
 # (82 dropped pkg_resources) arrives only as a lock change whose image build tests it.
 RUN pip install --no-cache-dir --require-hashes --no-deps --only-binary :all: -r ./requirements.txt
 
@@ -83,15 +83,18 @@ COPY ./scripts/gunicorn_conf.py .
 # copy app code
 
 COPY ./README.md .
-# --exclude as well as .dockerignore: a build from a Git context (docker build <git-url>)
-# skips .dockerignore. The trust-store test's fixture holds the compromised eMudhra
-# certificates, and a search of the image's files for them would report it, even though
-# nothing trusts it.
-COPY --exclude=**/tests/*.pem ./packages ./packages/
-# install the opal-common package. setup.py install installs none of its requirements (setuptools
-# no longer has easy_install): they all come from the lock. pip check fails the build when a
-# requires.txt range admits no version the lock pins, or names a package the lock lacks.
-RUN cd ./packages/opal-common && python setup.py install && pip check
+# The packages without their tests, which no image runs (server-test mounts them from a
+# checkout). --exclude as well as .dockerignore: a build from a Git context
+# (docker build <git-url>) skips .dockerignore.
+COPY --exclude=**/tests ./packages ./packages/
+# Install the opal-common package. --no-deps installs none of its requirements: they all come
+# from the lock, whose setuptools builds it (--no-build-isolation). The build's leftovers go in
+# the same layer. pip check fails the build when a requires.txt range admits no version the lock
+# pins, or names a package the lock lacks.
+RUN cd ./packages/opal-common && \
+  pip install --no-cache-dir --no-deps --no-build-isolation . && \
+  rm -rf build ./*.egg-info && \
+  pip check
 # With OPAL_ENABLE_DATADOG_APM, start.sh runs gunicorn under ddtrace-run. ddtrace 4 traces every
 # websocket message by default (3.x did not), which would turn each pub/sub update into spans.
 # Keep the 3.x behaviour; set it to true to opt in. configure_apm applies the same default.
@@ -104,8 +107,11 @@ CMD ["./start.sh"]
 # ---------------------------------------------------
 FROM common AS client-standalone
 # uvicorn config ------------------------------------
-# install the opal-client package
-RUN cd ./packages/opal-client && python setup.py install && pip check
+# install the opal-client package, as opal-common above
+RUN cd ./packages/opal-client && \
+  pip install --no-cache-dir --no-deps --no-build-isolation . && \
+  rm -rf build ./*.egg-info && \
+  pip check
 
 # WARNING: do not change the number of workers on the opal client!
 # only one worker is currently supported for the client.
@@ -244,7 +250,7 @@ USER opal
 # Extract the Cedar Agent binary from the existing image
 # CEDAR AGENT DOWNLOAD STAGE -----------------------
 # Stage to locate and extract the cedar-agent binary
-FROM permitio/cedar-agent:0.2.1 AS cedar-extractor
+FROM permitio/cedar-agent:0.2.1@sha256:82779700b9d6f24398c68fb2000a482e169e1cee472844d8e94be5063b29598c AS cedar-extractor
 
 FROM client-standalone AS client-cedar
 
@@ -264,41 +270,57 @@ ENV OPAL_POLICY_STORE_URL=http://localhost:8180
 EXPOSE 8180
 USER opal
 
+# SSH KNOWN HOSTS -----------------------------------
+# With TRUST_POLICY_REPO_HOST_SSH_FINGERPRINT=true (the default), the build scans the SSH host
+# keys of POLICY_REPO_HOST (github.com by default) into the server's known_hosts, so that ssh to
+# an SSH policy repo there does not stop at its "authenticity of host" prompt. github.com's keys
+# must be the ones GitHub publishes (https://api.github.com/meta, ssh_key_fingerprints): the
+# build fails on any other key. With false, known_hosts is empty.
+# ---------------------------------------------------
+FROM wolfi-base AS known-hosts
+ARG TRUST_POLICY_REPO_HOST_SSH_FINGERPRINT="true"
+ARG POLICY_REPO_HOST="github.com"
+ARG GITHUB_SSH_FINGERPRINTS="SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU SHA256:p2QAMXNIC1TJYWeIOttrVc98/R1BUFWu3/LiyKgUfQM SHA256:uNiVztksCsDhcc0u9e8BujQXVUpKZIDTMczCvj3tD2s"
+RUN apk add --no-cache openssh-keyscan openssh-keygen && \
+  touch /known_hosts && \
+  if [ "$TRUST_POLICY_REPO_HOST_SSH_FINGERPRINT" = "true" ]; then \
+    ssh-keyscan -t ed25519,ecdsa,rsa "$POLICY_REPO_HOST" > /known_hosts && \
+    if [ ! -s /known_hosts ]; then \
+      echo "ssh-keyscan found no host key for $POLICY_REPO_HOST" >&2; exit 1; \
+    fi && \
+    if [ "$POLICY_REPO_HOST" = "github.com" ]; then \
+      for fingerprint in $(ssh-keygen -lf /known_hosts | cut -d ' ' -f 2); do \
+        case " $GITHUB_SSH_FINGERPRINTS " in \
+          *" $fingerprint "*) ;; \
+          *) echo "github.com offered host key $fingerprint, which GitHub does not publish" >&2; \
+             exit 1 ;; \
+        esac; \
+      done; \
+    fi; \
+  fi
+
 # SERVER IMAGE --------------------------------------
 # ---------------------------------------------------
 FROM common AS server
 
-# git and ssh run the git command-line fetch backend; ssh-keyscan fills known_hosts below.
+# git and ssh run the git command-line fetch backend; the libgit2 backend runs ssh-keyscan.
 RUN apk add --no-cache git openssh-client openssh-keyscan && \
   python check_trust_store.py
 
 USER opal
 
-# Potentially trust POLICY REPO HOST ssh signature --
-# opal trackes a remote (git) repository and fetches policy (e.g rego) from it.
-# however, if the policy repo uses an ssh url scheme, authentication to said repo
-# is done via ssh, and without adding the repo remote host (i.e: github.com) to
-# the ssh known hosts file, ssh will issue output an interactive prompt that
-# looks something like this:
-#   The authenticity of host 'github.com (192.30.252.131)' can't be established.
-#   RSA key fingerprint is 16:27:ac:a5:76:28:1d:52:13:1a:21:2d:bz:1d:66:a8.
-#   Are you sure you want to continue connecting (yes/no)?
-# if the docker build arg `TRUST_POLICY_REPO_HOST_SSH_FINGERPRINT` is set to `true`
-# (default), the host specified by `POLICY_REPO_HOST` build arg (i.e: `github.com`)
-# will be added to the known ssh hosts file at build time and prevent said prompt
-# from showing.
-ARG TRUST_POLICY_REPO_HOST_SSH_FINGERPRINT="true"
-ARG POLICY_REPO_HOST="github.com"
-
-RUN if [ "$TRUST_POLICY_REPO_HOST_SSH_FINGERPRINT" = "true" ] ; then \
-  mkdir -p ~/.ssh && \
-  chmod 0700 ~/.ssh && \
-  ssh-keyscan -t ed25519,ecdsa,rsa ${POLICY_REPO_HOST} >> ~/.ssh/known_hosts ; fi
+# The policy repo host's SSH keys (see the known-hosts stage), so that ssh to a policy repo
+# does not stop at its "authenticity of host" prompt.
+RUN mkdir -p -m 0700 ~/.ssh
+COPY --from=known-hosts --chown=opal:opal /known_hosts /opal/.ssh/known_hosts
 
 USER root
 
-# install the opal-server package
-RUN cd ./packages/opal-server && python setup.py install && pip check
+# install the opal-server package, as opal-common above
+RUN cd ./packages/opal-server && \
+  pip install --no-cache-dir --no-deps --no-build-isolation . && \
+  rm -rf build ./*.egg-info && \
+  pip check
 
 # uvicorn config ------------------------------------
 

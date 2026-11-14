@@ -56,14 +56,13 @@ setup(
     long_description_content_type="text/markdown",
     long_description=get_long_description(),
     url="https://github.com/permitio/opal",
-    license=about.__license__,
+    license_expression=about.__license__,
     packages=find_packages(include=("opal_client*",)),
     package_data={
         "": ["engine/healthcheck/opal.rego"],
     },
     classifiers=[
         "Operating System :: OS Independent",
-        "License :: OSI Approved :: Apache Software License",
         "Programming Language :: Python",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3 :: Only",

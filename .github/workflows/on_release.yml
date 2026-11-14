@@ -187,6 +187,12 @@ jobs:
           # none: buildx would put the pull request's event in the provenance.
           provenance: ${{ github.event_name == 'release' && 'mode=max' || 'false' }}
           sbom: ${{ github.event_name == 'release' }}
+          labels: |
+            org.opencontainers.image.title=${{ matrix.repository }}
+            org.opencontainers.image.version=${{ needs.version.outputs.tag }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.licenses=Apache-2.0
 
       - name: Keep the archive for the jobs that test and publish it
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
@@ -257,6 +263,21 @@ jobs:
               echo "::error::$image installs opal-common '$actual', expected '$EXPECTED'"
               exit 1
             fi
+          done
+
+      # The example stack below runs the OPA client; the Cedar and EOPA clients must start their
+      # engines too. Each engine answers its health check without an OPAL server.
+      - name: Check that the Cedar and EOPA clients start their engines
+        run: |
+          for spec in client-cedar:8180 client-eopa:8181; do
+            name=${spec%%:*} port=${spec##*:}
+            docker run -d --rm --name "$name" -p "$port:$port" "permitio/opal-$name:test"
+            if ! ./scripts/wait-for.sh -t 60 "http://localhost:$port/health"; then
+              docker logs "$name"
+              echo "::error::permitio/opal-$name:test did not start its engine"
+              exit 1
+            fi
+            docker stop "$name"
           done
 
       - name: Create modified docker compose file
