@@ -11,6 +11,10 @@ on:
     branches: [ master, 'release/**' ]
   pull_request:
   workflow_dispatch:
+  # Weekly, so the deploy key is used at least once a year: GitHub deletes a deploy key that
+  # goes a year unused.
+  schedule:
+    - cron: "41 4 * * 1"
 
 permissions:
   contents: read

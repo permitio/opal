@@ -365,6 +365,20 @@ class TestE2eGithub:
         assert self.WORKFLOW not in REQUIRED_CHECKS
         assert not set(jobs) & set(load(WORKFLOWS / "tests.yml")["jobs"])
 
+    def test_runs_weekly_so_the_deploy_key_stays_in_use(self):
+        triggers = load(WORKFLOWS / self.WORKFLOW)[True]
+
+        assert set(triggers) == {
+            "push",
+            "pull_request",
+            "workflow_dispatch",
+            "schedule",
+        }
+        (entry,) = triggers["schedule"]
+        minute, hour, day_of_month, month, day_of_week = entry["cron"].split()
+        assert (day_of_month, month) == ("*", "*")
+        assert day_of_week.isdigit() and minute.isdigit() and hour.isdigit()
+
     def test_runs_only_when_the_deploy_key_is_set(self, jobs):
         (check,) = steps_of(jobs["deploy-key"])
         lane = jobs["e2e-github-ssh"]
