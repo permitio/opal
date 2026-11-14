@@ -28,6 +28,12 @@ repos:
     rev: e44834b7b294701f596c9118d6c370f86671a50d  # frozen: 5.12.0
     hooks:
       - id: isort
+  # Syntax errors and undefined names only, the rules the tests job ran with flake8.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: c0f278f1254ccc8fb09676bcdb8d847e7db493e5  # frozen: v0.17.4
+    hooks:
+      - id: ruff-check
+        args: [--select, "E9,F63,F7,F82"]
   - repo: https://github.com/codespell-project/codespell
     rev: ec0f41b9573937aebab66e3ca5b00d00a7b339fa  # frozen: v2.2.4
     hooks:
