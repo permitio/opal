@@ -1374,6 +1374,12 @@ Default: `True`
 
 If set to `FALSE`, OPAL Client will not listen to dynamic data updates.
 
+#### OPAL_DATA_UPDATER_LARGE_PAYLOAD_WARNING_BYTES
+
+Default: `10485760` (10 MiB)
+
+Log a warning when the data fetched for a single data entry is larger than this many bytes (measured as serialized JSON). Very large payloads can exhaust the memory of the policy store, and the warning helps trace such failures back to the data update that caused them. Set to `0` to disable the check.
+
 #### OPAL_DATA_TOPICS
 
 Default: `["policy_data"]`

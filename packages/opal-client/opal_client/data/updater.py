@@ -635,7 +635,41 @@ class DataUpdater:
                 f"Failed to decode response from url: '{redact_url(entry.url)}', got response code {result.status} with response: {error_content}"
             )
 
+        self._warn_if_payload_too_large(entry, result)
         return result
+
+    @staticmethod
+    def _warn_if_payload_too_large(entry: DataSourceEntry, result: Any) -> None:
+        """Logs a warning if the data fetched for ``entry`` is larger than
+        ``DATA_UPDATER_LARGE_PAYLOAD_WARNING_BYTES``.
+
+        Very large payloads can make the policy store run out of memory and
+        restart, which is hard to trace back to the data update that caused
+        it. This never fails the update.
+        """
+        limit = opal_client_config.DATA_UPDATER_LARGE_PAYLOAD_WARNING_BYTES
+        if limit <= 0:
+            return
+        try:
+            serialized = (
+                result
+                if isinstance(result, str)
+                else json.dumps(result, default=to_jsonable_python, ensure_ascii=False)
+            )
+            size = len(serialized.encode("utf-8"))
+        except Exception:
+            # Best effort only; the payload may not be serializable here.
+            return
+        if size > limit:
+            logger.warning(
+                "Data fetched from {url} for dst_path='{dst_path}' is large: "
+                "{size} bytes (warning threshold: {limit} bytes). Very large data "
+                "updates may exhaust the policy store's memory.",
+                url=redact_url(entry.url),
+                dst_path=entry.dst_path or "/",
+                size=size,
+                limit=limit,
+            )
 
     async def _store_fetched_data(
         self,
