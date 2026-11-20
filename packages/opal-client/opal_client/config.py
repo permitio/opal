@@ -343,6 +343,13 @@ class OpalClientConfig(Confi):
         description="Should the client report on updates to callbacks defined in "
         "DEFAULT_UPDATE_CALLBACKS or within the given updates",
     )
+    DATA_UPDATER_LARGE_PAYLOAD_WARNING_BYTES = confi.int(
+        "DATA_UPDATER_LARGE_PAYLOAD_WARNING_BYTES",
+        10 * 1024 * 1024,
+        description="Log a warning when the data fetched for a single data entry is larger than "
+        "this many bytes (measured as serialized JSON), since very large payloads can exhaust the "
+        "memory of the policy store. Set to 0 to disable the check.",
+    )
     DEFAULT_UPDATE_CALLBACK_CONFIG = confi.model(
         "DEFAULT_UPDATE_CALLBACK_CONFIG",
         HttpFetcherConfig,
